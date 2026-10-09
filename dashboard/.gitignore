@@ -1,0 +1,6 @@
+.dashboard-state/
+.env
+.env.*
+*.log
+frontend/node_modules/
+frontend/dist/

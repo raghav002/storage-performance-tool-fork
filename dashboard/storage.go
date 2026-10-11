@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -514,7 +515,8 @@ func parseVerifyOutput(r io.Reader, onNode func(host string, node verifyNode)) s
 }
 
 // checkEndpoint reports whether the S3 endpoint answers HTTPS from the dashboard
-// host. Any HTTP response counts; it does not test credentials or the bucket.
+// host. Any HTTP response counts, as does a TLS handshake that fails only on
+// certificate trust; it does not test credentials or the bucket.
 func checkEndpoint(client *http.Client, endpoint string) (status, message string) {
 	c := http.Client{}
 	if client != nil {
@@ -528,6 +530,12 @@ func checkEndpoint(client *http.Client, endpoint string) (status, message string
 	}
 	resp, err := c.Do(req)
 	if err != nil {
+		// The server answered and presented a certificate, so it is reachable.
+		// Lab storage commonly uses a self-signed or privately issued one.
+		var certErr *tls.CertificateVerificationError
+		if errors.As(err, &certErr) {
+			return "passed", "Reachable from the dashboard host. Its certificate is not from an authority this host trusts."
+		}
 		var urlErr *url.Error
 		if errors.As(err, &urlErr) {
 			err = urlErr.Err

@@ -162,6 +162,11 @@ func TestCheckEndpoint(t *testing.T) {
 	if status != "passed" || !strings.Contains(message, "403") {
 		t.Errorf("reachable endpoint reported as %q: %s", status, message)
 	}
+	// A default client does not trust the test server's self-signed certificate.
+	status, message = checkEndpoint(nil, server.URL)
+	if status != "passed" || !strings.Contains(message, "certificate") {
+		t.Errorf("endpoint with an untrusted certificate reported as %q: %s", status, message)
+	}
 	server.Close()
 	if status, _ := checkEndpoint(server.Client(), server.URL); status != "failed" {
 		t.Errorf("unreachable endpoint reported as %q", status)

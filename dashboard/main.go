@@ -74,7 +74,15 @@ type app struct {
 	sptBin     string
 	metricsURL string
 
+	storageFile    string
+	verifyFile     string
+	endpointClient *http.Client
+	storageMu      sync.Mutex
+	storage        storageConfig
+	verification   verification
+
 	mu            sync.Mutex
+	verifying     bool
 	activeJob     map[string]any
 	activeCmd     *exec.Cmd
 	activeLock    *os.File
@@ -112,7 +120,9 @@ func main() {
 	}
 	_ = os.Chmod(stateDir, 0700)
 	a := &app{root: root, home: home, results: filepath.Join(home, "results"), stateDir: stateDir,
-		stateFile: filepath.Join(stateDir, "latest-job.json"), lockFile: filepath.Join(stateDir, "job.lock"), port: port, sptBin: sptBin}
+		stateFile: filepath.Join(stateDir, "latest-job.json"), lockFile: filepath.Join(stateDir, "job.lock"), port: port, sptBin: sptBin,
+		storageFile: filepath.Join(stateDir, "storage-config.json"), verifyFile: filepath.Join(stateDir, "storage-verification.json")}
+	a.loadStorage()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", a.handleRoot)
 	mux.HandleFunc("GET /index.html", a.handleRoot)
@@ -122,6 +132,7 @@ func main() {
 	mux.HandleFunc("GET /api/runs/{runID}/csv", a.handleRunCSV)
 	mux.HandleFunc("GET /api/runs/{runID}", a.handleSavedRun)
 	mux.HandleFunc("POST /api/runs", a.handleRun)
+	mux.HandleFunc("POST /api/storage/verify", a.handleVerify)
 	server := &http.Server{Addr: "127.0.0.1:" + port, Handler: securityHeaders(mux), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 * 1024}
 	stop, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -131,7 +142,7 @@ func main() {
 		defer c()
 		_ = server.Shutdown(ctx)
 	}()
-	log.Printf("Dashboard listening on http://127.0.0.1:%s; SPT runs are single-node and bounded.", port)
+	log.Printf("Dashboard listening on http://127.0.0.1:%s; SPT runs are bounded and use the verified client machines.", port)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
@@ -508,7 +519,16 @@ func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 503, map[string]any{"error": "SPT is not ready: " + strings.Join(reasons, " ")})
 		return
 	}
+	if !a.verified(target) {
+		writeJSON(w, 409, map[string]any{"error": "Verify the storage configuration before starting a run."})
+		return
+	}
 	a.mu.Lock()
+	if a.verifying {
+		a.mu.Unlock()
+		writeJSON(w, 409, map[string]any{"error": "Storage verification is in progress. Wait for it to finish before starting a run."})
+		return
+	}
 	lock, err := a.lockRun()
 	if err != nil {
 		a.mu.Unlock()
@@ -633,31 +653,16 @@ func unlockClose(f *os.File) {
 }
 
 func (a *app) buildArgv(runDir, runID string, o options, target map[string]any) []string {
-	return []string{a.sptBin, "run", "write-verify", "--headless", "--endpoints", fmt.Sprint(target["endpoint"]), "--bucket", fmt.Sprint(target["bucket"]), "--prefix", "dashboard/" + runID + "/", "--object-count", strconv.Itoa(o.ObjectCount), "--object-size", o.ObjectSize, "--threads", strconv.Itoa(o.Threads), "--test-hosts", "127.0.0.1", "--service-threads", strconv.Itoa(o.Threads), "--auto-terminate-seconds", strconv.Itoa(o.MaxRuntimeSeconds), "--s3-driver", "default", "--auth-version", "4", "--object-data-compressibility", "0", "--object-data-dedupable=true", "--cleanup", "--label", "dashboard", "--results-dir", runDir}
+	return []string{a.sptBin, "run", "write-verify", "--headless", "--endpoints", fmt.Sprint(target["endpoint"]), "--bucket", fmt.Sprint(target["bucket"]), "--prefix", "dashboard/" + runID + "/", "--object-count", strconv.Itoa(o.ObjectCount), "--object-size", o.ObjectSize, "--threads", strconv.Itoa(o.Threads), "--test-hosts", targetHosts(target), "--service-threads", strconv.Itoa(o.Threads), "--auto-terminate-seconds", strconv.Itoa(o.MaxRuntimeSeconds), "--s3-driver", "default", "--auth-version", "4", "--object-data-compressibility", "0", "--object-data-dedupable=true", "--cleanup", "--label", "dashboard", "--results-dir", runDir}
 }
 
 func (a *app) childEnvironment(o options, target map[string]any) []string {
-	values := map[string]string{}
-	for _, path := range []string{filepath.Join(a.home, ".env"), filepath.Join(a.root, ".env")} {
-		for k, v := range readDotenv(path, values) {
-			values[k] = v
-		}
-	}
-	for _, item := range os.Environ() {
-		if k, v, ok := strings.Cut(item, "="); ok {
-			values[k] = v
-		}
-	}
-	set := map[string]string{"S3_ENDPOINT": fmt.Sprint(target["endpoint"]), "S3_ENDPOINTS": fmt.Sprint(target["endpoint"]), "S3_BUCKET": fmt.Sprint(target["bucket"]), "HOSTS": "127.0.0.1", "THREADS": strconv.Itoa(o.Threads), "SPT_ENGINE_OVERRIDES": "", "SPT_SERVICE_THREADS": strconv.Itoa(o.Threads), "SPT_S3_DRIVER": "default", "SPT_IMAGE": "", "SPT_SKIP_IMAGE_PULL": "false", "SPT_OBJECT_DATA_COMPRESSIBILITY": "0", "SPT_OBJECT_DATA_DEDUPABLE": "true", "SPT_DEFER_VERIFICATION": "false", "SPT_CHECKSUM": "", "AWS_EC2_METADATA_DISABLED": "true"}
+	values := a.configValues()
+	set := map[string]string{"S3_ENDPOINT": fmt.Sprint(target["endpoint"]), "S3_ENDPOINTS": fmt.Sprint(target["endpoint"]), "S3_BUCKET": fmt.Sprint(target["bucket"]), "HOSTS": targetHosts(target), "THREADS": strconv.Itoa(o.Threads), "SPT_ENGINE_OVERRIDES": "", "SPT_SERVICE_THREADS": strconv.Itoa(o.Threads), "SPT_S3_DRIVER": "default", "SPT_IMAGE": "", "SPT_SKIP_IMAGE_PULL": "false", "SPT_OBJECT_DATA_COMPRESSIBILITY": "0", "SPT_OBJECT_DATA_DEDUPABLE": "true", "SPT_DEFER_VERIFICATION": "false", "SPT_CHECKSUM": "", "AWS_EC2_METADATA_DISABLED": "true"}
 	for k, v := range set {
 		values[k] = v
 	}
-	out := make([]string, 0, len(values))
-	for k, v := range values {
-		out = append(out, k+"="+v)
-	}
-	sort.Strings(out)
-	return out
+	return envList(values)
 }
 
 func readDotenv(path string, existing map[string]string) map[string]string {
@@ -709,20 +714,15 @@ func readDotenv(path string, existing map[string]string) map[string]string {
 }
 
 func (a *app) targetConfiguration() map[string]any {
-	cfg := map[string]string{}
-	for _, path := range []string{filepath.Join(a.home, ".env"), filepath.Join(a.root, ".env")} {
-		for k, v := range readDotenv(path, cfg) {
-			cfg[k] = v
-		}
-	}
-	for _, item := range os.Environ() {
-		if k, v, ok := strings.Cut(item, "="); ok {
-			cfg[k] = v
-		}
-	}
+	cfg := a.configValues()
+	saved := a.storageSnapshot()
+	source := "env"
 	ep := cfg["S3_ENDPOINTS"]
 	if ep == "" {
 		ep = cfg["S3_ENDPOINT"]
+	}
+	if saved.Endpoint != "" {
+		ep, source = saved.Endpoint, "dashboard"
 	}
 	endpoints := []string{}
 	for _, x := range strings.Split(ep, ",") {
@@ -735,13 +735,9 @@ func (a *app) targetConfiguration() map[string]any {
 	if len(endpoints) != 1 {
 		reasons = append(reasons, "Configure exactly one S3 endpoint in SPT on the VM.")
 	} else {
-		candidate := endpoints[0]
-		u, err := url.Parse(candidate)
-		if err != nil || strings.ToLower(u.Scheme) != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.ContainsAny(candidate, " \t\r\n") {
+		var ok bool
+		if endpoint, label, ok = validateEndpoint(endpoints[0]); !ok {
 			reasons = append(reasons, "The configured S3 endpoint must be a valid HTTPS URL without embedded credentials.")
-		} else {
-			endpoint = candidate
-			label = u.Host
 		}
 	}
 	if !namePattern.MatchString(bucket) {
@@ -757,7 +753,7 @@ func (a *app) targetConfiguration() map[string]any {
 	if _, err := exec.LookPath("docker"); err != nil {
 		reasons = append(reasons, "Docker is not installed on this VM.")
 	}
-	return map[string]any{"ready": len(reasons) == 0, "reasons": reasons, "endpoint": endpoint, "endpoint_label": label, "bucket": bucket, "credentials_configured": creds}
+	return map[string]any{"ready": len(reasons) == 0, "reasons": reasons, "endpoint": endpoint, "endpoint_label": label, "bucket": bucket, "credentials_configured": creds, "endpoint_source": source, "hosts": saved.Hosts}
 }
 
 func drainOutput(src io.Reader, path string) {
@@ -1308,7 +1304,7 @@ func (a *app) liveMetrics(state map[string]any) map[string]any {
 	client := &http.Client{Timeout: 450 * time.Millisecond}
 	metricsURL := a.metricsURL
 	if metricsURL == "" {
-		metricsURL = fmt.Sprintf("http://127.0.0.1:%d/metrics/json", sptAPIPort)
+		metricsURL = a.metricsEndpoint()
 	}
 	req, _ := http.NewRequest(http.MethodGet, metricsURL, nil)
 	req.Header.Set("Accept", "application/json")
@@ -1542,7 +1538,7 @@ func (a *app) currentState() (map[string]any, error) {
 			}
 		}
 		a.activeJob = state
-		return map[string]any{"job": publicJob(state), "metrics": result, "target": a.targetConfiguration()}, nil
+		return a.stateResponse(publicJob(state), result), nil
 	}
 	if state != nil && str(state["status"]) == "running" && !a.lockBusy() {
 		state = a.readStateFile()
@@ -1557,9 +1553,14 @@ func (a *app) currentState() (map[string]any, error) {
 		}
 	}
 	if state != nil {
-		return map[string]any{"job": publicJob(state), "metrics": a.readRealRun(str(state["results_dir"]), str(state["run_id"]), false), "target": a.targetConfiguration()}, nil
+		return a.stateResponse(publicJob(state), a.readRealRun(str(state["results_dir"]), str(state["run_id"]), false)), nil
 	}
-	return map[string]any{"job": nil, "metrics": a.latestSavedRun(), "target": a.targetConfiguration()}, nil
+	return a.stateResponse(nil, a.latestSavedRun()), nil
+}
+
+func (a *app) stateResponse(job, metrics map[string]any) map[string]any {
+	target := a.targetConfiguration()
+	return map[string]any{"job": job, "metrics": metrics, "target": target, "storage": a.storageState(target)}
 }
 
 func retainedLiveMetrics(runID, liveRunID string, samples []map[string]any) map[string]any {

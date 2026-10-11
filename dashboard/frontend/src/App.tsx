@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { HistoryRun, Metrics, Options, Row, Sample, State } from "./types";
 import { MetricCard } from "./components/MetricCard";
+import { StorageConfiguration } from "./components/StorageConfiguration";
 import { TrendChart } from "./components/TrendChart";
 import {
   elapsed,
@@ -142,7 +143,15 @@ function useServer() {
 
 export default function App() {
   const { state, error, received, refresh } = useServer();
-  const [page, setPage] = useState<"dashboard" | "configure" | "history">("dashboard");
+  const [page, setPage] = useState<"dashboard" | "configure" | "history">("configure");
+  const landed = useRef(false);
+  // Open on the live view only when a run is already in progress at first load.
+  useEffect(() => {
+    if (!state || landed.current) return;
+    landed.current = true;
+    if (state.job?.status === "running") setPage("dashboard");
+  }, [state]);
+  const clients = state?.storage?.hosts.length ?? 1;
   const [mode, setMode] = useState<"guided" | "expert">("guided");
   const [selection, setSelection] = useState(fields.map((f) => f.key)),
     [choosing, setChoosing] = useState(false);
@@ -207,13 +216,6 @@ export default function App() {
         <div className="sidebar-label">WORKSPACE</div>
         <nav aria-label="Main navigation">
           <button
-            className={page === "dashboard" ? "selected" : ""}
-            aria-current={page === "dashboard" ? "page" : undefined}
-            onClick={showDashboard}
-          >
-            ◫ <span>Live dashboard</span>
-          </button>
-          <button
             className={page === "configure" ? "selected" : ""}
             aria-current={page === "configure" ? "page" : undefined}
             onClick={() => {
@@ -222,6 +224,13 @@ export default function App() {
             }}
           >
             ＋ <span>Configure run</span>
+          </button>
+          <button
+            className={page === "dashboard" ? "selected" : ""}
+            aria-current={page === "dashboard" ? "page" : undefined}
+            onClick={showDashboard}
+          >
+            ◫ <span>Live dashboard</span>
           </button>
           <button
             className={page === "history" ? "selected" : ""}
@@ -251,7 +260,9 @@ export default function App() {
             : state
               ? "SPT server connected"
               : "Connecting to server"}
-          <p>Single node · Write + verify</p>
+          <p>
+            {clients} client machine{clients === 1 ? "" : "s"} · Write + verify
+          </p>
         </div>
       </aside>
       <div className="workspace">
@@ -304,6 +315,7 @@ export default function App() {
             <Configure
               state={state}
               offline={!!error}
+              onRefresh={refresh}
               onStarted={async () => {
                 await refresh();
                 showDashboard();
@@ -391,18 +403,27 @@ export default function App() {
 function Configure({
   state,
   offline,
+  onRefresh,
   onStarted,
 }: {
   state: State | null;
   offline: boolean;
+  onRefresh: () => Promise<void>;
   onStarted: () => Promise<void>;
 }) {
   const [config, setConfig] = useState<Options>({ ...defaults }),
     [review, setReview] = useState(false),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [storageDirty, setStorageDirty] = useState(false);
+  const clients = state?.storage?.hosts.length ?? 1;
+  const verified =
+    state?.storage?.verification.status === "passed" && !storageDirty;
   const ready =
-    !!state?.target.ready && !offline && state.job?.status !== "running";
+    !!state?.target.ready &&
+    !offline &&
+    state.job?.status !== "running" &&
+    verified;
   async function start() {
     if (busy || !ready) return;
     setBusy(true);
@@ -424,37 +445,45 @@ function Configure({
     }
   }
   return (
-    <section className="panel configure">
+    <div className="configure">
       <span className="eyebrow">NEW BENCHMARK</span>
-      <h1>{review ? "Review your run" : "Configure a run"}</h1>
+      <h1>Configure a run</h1>
       <p>
         Write test objects, read them back to verify integrity, then clean up
         the run’s objects.
       </p>
-      <div className="target-summary">
-        <div>
-          <span>Target</span>
-          <strong>{state?.target.endpoint_label || "Not reported"}</strong>
-        </div>
-        <div>
-          <span>Bucket</span>
-          <strong>{state?.target.bucket || "Not reported"}</strong>
-        </div>
-        <Status status={state?.target.ready ? "ready" : "needs setup"} />
-      </div>
       {state?.job?.status === "running" && (
         <div className="notice">
           A run is already in progress. Its results are available in Live
           dashboard.
         </div>
       )}
-      {!!state?.target.reasons?.length && (
-        <div className="notice">{state.target.reasons.join(" ")}</div>
-      )}
+      <section className="panel">
+        <span className="eyebrow">STEP 1</span>
+        <h2>Storage configuration</h2>
+        <StorageConfiguration
+          state={state}
+          offline={offline}
+          onDirty={setStorageDirty}
+          onRefresh={onRefresh}
+        />
+      </section>
+      <section className="panel">
+        <span className="eyebrow">STEP 2</span>
+        <h2>{review ? "Review your run" : "Workload configuration"}</h2>
+        {!verified && (
+          <div className="notice">
+            Verify the storage configuration to unlock workload settings.
+          </div>
+        )}
+        <fieldset className="plain-fieldset" disabled={!verified}>
       {review ? (
         <>
           <div className="review">
-            <h2>Write + verify · single node</h2>
+            <h2>
+              Write + verify · {clients} client machine
+              {clients === 1 ? "" : "s"}
+            </h2>
             <dl className="review-grid">
               <div>
                 <dt>Maximum objects</dt>
@@ -547,7 +576,7 @@ function Configure({
                   <option key={v}>{v}</option>
                 ))}
               </select>
-              <small>Concurrent requests from one node.</small>
+              <small>Concurrent requests from each client machine.</small>
             </label>
             <label>
               Safety time limit
@@ -585,12 +614,14 @@ function Configure({
           </button>
         </form>
       )}
-      {error && (
-        <div className="error run-error" role="alert">
-          {error}
-        </div>
-      )}
-    </section>
+        </fieldset>
+        {error && (
+          <div className="error run-error" role="alert">
+            {error}
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
 

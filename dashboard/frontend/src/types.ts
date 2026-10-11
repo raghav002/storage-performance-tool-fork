@@ -66,9 +66,33 @@ export type State = {
     endpoint_label?: string;
     bucket?: string;
     credentials_configured?: boolean;
+    endpoint_source?: "env" | "dashboard";
+    hosts?: string[];
   };
   job: Job | null;
   metrics: Metrics | null;
+  storage?: Storage;
+};
+export type CheckStatus = "pending" | "passed" | "failed";
+export type VerifyNode = {
+  host: string;
+  status: CheckStatus;
+  message: string;
+  checks: { name: string; status: "pass" | "fail" | "warn"; message: string }[];
+};
+export type Verification = {
+  status: "idle" | "running" | "passed" | "failed";
+  started_at?: string;
+  finished_at?: string;
+  summary: string;
+  nodes: VerifyNode[];
+  endpoint: { label: string; status: CheckStatus; message: string };
+};
+export type Storage = {
+  hosts: string[];
+  endpoint: string;
+  max_hosts: number;
+  verification: Verification;
 };
 export type HistoryRun = {
   run_id: string;

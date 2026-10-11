@@ -543,10 +543,15 @@ func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]any{"error": "Could not allocate a unique SPT result directory."})
 		return
 	}
-	if err := os.Mkdir(runDir, 0700); err != nil {
+	// SPT's results directory does not exist until the first run on a host.
+	err = os.MkdirAll(a.results, 0700)
+	if err == nil {
+		err = os.Mkdir(runDir, 0700)
+	}
+	if err != nil {
 		unlockClose(lock)
 		a.mu.Unlock()
-		writeJSON(w, 500, map[string]any{"error": "Could not allocate a unique SPT result directory."})
+		writeJSON(w, 500, map[string]any{"error": "Could not create the SPT result directory: " + err.Error()})
 		return
 	}
 	logPath := filepath.Join(a.stateDir, runID+".log")

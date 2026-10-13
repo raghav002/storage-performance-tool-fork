@@ -1564,6 +1564,12 @@ function MeasuredDetails({
       ],
     },
   ];
+  // The sample lists can run to megabytes; the CSV export below carries them.
+  const { samples, chart_samples, ...metadata } = m;
+  const raw = {
+    ...metadata,
+    sample_count: (chart_samples ?? samples ?? []).length,
+  };
   return (
     <details className="panel">
       <summary>
@@ -1600,7 +1606,7 @@ function MeasuredDetails({
             Export all samples CSV
           </a>
         </div>
-        <pre>{JSON.stringify(m, null, 2)}</pre>
+        <pre>{JSON.stringify(raw, null, 2)}</pre>
       </details>
     </details>
   );

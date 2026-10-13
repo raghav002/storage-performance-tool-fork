@@ -75,6 +75,12 @@ func TestLiveHistoryPersistenceAndDeduplication(t *testing.T) {
 	if len(rows) != 1 || rows[0]["step_id"] != "create" || numberValue(rows[0], "interval_iops", 0) != 8 {
 		t.Fatalf("saved sample was not recovered: %#v", recovered)
 	}
+	next := map[string]any{"timestamp": "2026-09-30T19:00:02Z", "step_id": "create", "cumulative_ops": 20, "count_failed": 0, "interval_iops": 9, "bandwidth_mib_s": 9, "p50_latency_us": 40, "op_type": "CREATE"}
+	grown := a.rememberLive(map[string]any{"run_id": "mt-isolated-test", "samples": []map[string]any{next}})
+	latest := grown["samples"].([]map[string]any)
+	if len(grown["chart_samples"].([]map[string]any)) != 2 || len(latest) != 1 || latest[0]["cumulative_ops"] != 20 {
+		t.Fatalf("live history was duplicated or the latest sample was lost: %#v", grown)
+	}
 }
 
 func TestRetainedLiveMetricsRemainAvailableBetweenPhases(t *testing.T) {

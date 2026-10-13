@@ -1299,9 +1299,17 @@ func (a *app) rememberLive(metrics map[string]any) map[string]any {
 		}
 	}
 	out := cloneMap(metrics)
-	out["samples"] = append([]map[string]any(nil), a.liveSamples...)
+	out["samples"] = latestSample(a.liveSamples)
 	out["chart_samples"] = append([]map[string]any(nil), a.liveSamples...)
 	return out
+}
+
+// latestSample keeps the full live history out of "samples"; "chart_samples" already carries it.
+func latestSample(samples []map[string]any) []map[string]any {
+	if len(samples) == 0 {
+		return []map[string]any{}
+	}
+	return []map[string]any{samples[len(samples)-1]}
 }
 
 func (a *app) liveMetrics(state map[string]any) map[string]any {
@@ -1578,8 +1586,8 @@ func retainedLiveMetrics(runID, liveRunID string, samples []map[string]any) map[
 	copy := append([]map[string]any(nil), samples...)
 	return map[string]any{
 		"run_id": runID, "workload_type": "write-verify", "updated_at": copy[len(copy)-1]["timestamp"],
-		"is_active": true, "is_aggregate": false, "samples": copy,
-		"chart_samples": append([]map[string]any(nil), copy...),
+		"is_active": true, "is_aggregate": false, "samples": latestSample(copy),
+		"chart_samples": copy,
 	}
 }
 

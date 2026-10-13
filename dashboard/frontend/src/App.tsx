@@ -22,6 +22,8 @@ const sizeBytes: Record<string, number> = {
   "64KiB": 65536,
   "256KiB": 262144,
   "1MiB": 1048576,
+  "4MiB": 4194304,
+  "16MiB": 16777216,
 };
 const fields = [
   {
@@ -544,7 +546,7 @@ function Configure({
                   setConfig({ ...config, object_count: Number(e.target.value) })
                 }
               >
-                {[10, 25, 50, 100].map((v) => (
+                {[10, 25, 50, 100, 250, 320].map((v) => (
                   <option key={v}>{v}</option>
                 ))}
               </select>
@@ -589,7 +591,7 @@ function Configure({
                   })
                 }
               >
-                {[60, 120].map((v) => (
+                {[60, 120, 300, 600].map((v) => (
                   <option key={v} value={v}>
                     {v} seconds
                   </option>

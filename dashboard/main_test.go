@@ -13,9 +13,10 @@ import (
 )
 
 func TestValidateOptionsBounds(t *testing.T) {
-	good := options{100, "1MiB", 1, 60}
-	if err := validateOptions(good); err != nil {
-		t.Fatal(err)
+	for _, good := range []options{{100, "1MiB", 1, 60}, {320, "16MiB", 2, 600}} {
+		if err := validateOptions(good); err != nil {
+			t.Fatal(err)
+		}
 	}
 	bad := []options{{1000, "1MiB", 1, 60}, {100, "100MiB", 1, 60}, {100, "1MiB", 20, 60}, {100, "1MiB", 1, 999}}
 	for _, got := range bad {

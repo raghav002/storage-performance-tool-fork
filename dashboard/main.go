@@ -34,22 +34,25 @@ import (
 var assets embed.FS
 
 const (
-	maxObjects      = 100
+	maxObjects      = 320
 	maxThreads      = 2
-	maxRuntime      = 120
+	maxRuntime      = 600
 	maxRequestBytes = 4096
 	maxCSVBytes     = 10_000_000
 	maxLogBytes     = 2_000_000
 	maxMetricsBytes = 1_000_000
+	// Live samples kept per run: enough for the longest run at the 500 ms poll.
+	maxSamples      = 1500
+	maxSamplesBytes = 4_000_000
 	sptAPIPort      = 9999
 	metricsContract = "SPT live metrics API"
 )
 
 var (
-	objectCounts   = map[int]bool{10: true, 25: true, 50: true, 100: true}
-	objectSizes    = map[string]bool{"64KiB": true, "256KiB": true, "1MiB": true}
+	objectCounts   = map[int]bool{10: true, 25: true, 50: true, 100: true, 250: true, 320: true}
+	objectSizes    = map[string]bool{"64KiB": true, "256KiB": true, "1MiB": true, "4MiB": true, "16MiB": true}
 	threadCounts   = map[int]bool{1: true, 2: true}
-	runtimes       = map[int]bool{60: true, 120: true}
+	runtimes       = map[int]bool{60: true, 120: true, 300: true, 600: true}
 	namePattern    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{1,61}[A-Za-z0-9]$`)
 	runPattern     = regexp.MustCompile(`^mt-[A-Za-z0-9_.-]+$`)
 	keyPattern     = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -92,7 +95,7 @@ type app struct {
 }
 
 func main() {
-	if maxThreads > 4 || maxRuntime > 180 || maxObjects > 100 {
+	if maxThreads > 4 || maxRuntime > 600 || maxObjects > 320 {
 		log.Fatal("dashboard safety limits exceed the reviewed VM profile")
 	}
 	root, err := os.Executable()
@@ -1177,8 +1180,8 @@ func (a *app) readRealRun(runDir, runID string, active bool) map[string]any {
 			chart = append(chart, samples...)
 		}
 		sort.Slice(chart, func(i, j int) bool { return str(chart[i]["timestamp"]) < str(chart[j]["timestamp"]) })
-		if len(chart) > 100 {
-			chart = chart[len(chart)-100:]
+		if len(chart) > maxSamples {
+			chart = chart[len(chart)-maxSamples:]
 		}
 		result["chart_samples"] = chart
 		if !active {
@@ -1238,7 +1241,7 @@ func (a *app) savedLiveSamples(runID string) []map[string]any {
 	}
 	path := filepath.Join(a.stateDir, runID+".samples.json")
 	info, e := os.Stat(path)
-	if e != nil || info.Size() > maxMetricsBytes {
+	if e != nil || info.Size() > maxSamplesBytes {
 		return nil
 	}
 	b, e := os.ReadFile(path)
@@ -1249,8 +1252,8 @@ func (a *app) savedLiveSamples(runID string) []map[string]any {
 	if json.Unmarshal(b, &list) != nil {
 		return nil
 	}
-	if len(list) > 100 {
-		list = list[len(list)-100:]
+	if len(list) > maxSamples {
+		list = list[len(list)-maxSamples:]
 	}
 	out := []map[string]any{}
 	for _, m := range list {
@@ -1279,8 +1282,8 @@ func (a *app) rememberLive(metrics map[string]any) map[string]any {
 		sig := string(b)
 		if sig != a.liveSignature {
 			a.liveSamples = append(a.liveSamples, raw)
-			if len(a.liveSamples) > 100 {
-				a.liveSamples = a.liveSamples[len(a.liveSamples)-100:]
+			if len(a.liveSamples) > maxSamples {
+				a.liveSamples = a.liveSamples[len(a.liveSamples)-maxSamples:]
 			}
 			a.liveSignature = sig
 			changed = true

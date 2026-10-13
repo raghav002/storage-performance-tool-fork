@@ -111,6 +111,11 @@ func main() {
 	if port == "" {
 		port = "8000"
 	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		log.Fatal("DASHBOARD_PORT must be a number between 1 and 65535")
+	}
+	port = strconv.Itoa(n)
 	sptBin, _ := exec.LookPath("spt")
 	if sptBin == "" {
 		if executable("/usr/local/bin/spt") {
@@ -121,7 +126,7 @@ func main() {
 	if err := os.MkdirAll(stateDir, 0700); err != nil {
 		log.Fatal(err)
 	}
-	_ = os.Chmod(stateDir, 0700)
+	_ = os.Chmod(stateDir, 0700) // #nosec G302 -- a directory needs the execute bit; 0700 is owner-only
 	a := &app{root: root, home: home, results: filepath.Join(home, "results"), stateDir: stateDir,
 		stateFile: filepath.Join(stateDir, "latest-job.json"), lockFile: filepath.Join(stateDir, "job.lock"), port: port, sptBin: sptBin,
 		storageFile: filepath.Join(stateDir, "storage-config.json"), verifyFile: filepath.Join(stateDir, "storage-verification.json")}
@@ -145,7 +150,7 @@ func main() {
 		defer c()
 		_ = server.Shutdown(ctx)
 	}()
-	log.Printf("Dashboard listening on http://127.0.0.1:%s; SPT runs are bounded and use the verified client machines.", port)
+	log.Printf("Dashboard listening on http://127.0.0.1:%s; SPT runs are bounded and use the verified client machines.", port) // #nosec G706 -- port is validated above as a number from 1 to 65535
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
@@ -401,7 +406,7 @@ func (a *app) savedRun(runID string, latest map[string]any, includeMetrics bool)
 	metrics := a.readRealRun(dir, runID, false)
 	var params map[string]any
 	for _, candidate := range []string{filepath.Join(dir, "spt_run_params.json")} {
-		if b, e := os.ReadFile(candidate); e == nil {
+		if b, e := os.ReadFile(candidate); e == nil { // #nosec G304 -- dir is checked above to be a direct child of the results directory
 			_ = json.Unmarshal(b, &params)
 		}
 	}
@@ -411,7 +416,7 @@ func (a *app) savedRun(runID string, latest map[string]any, includeMetrics bool)
 			if !child.IsDir() {
 				continue
 			}
-			if b, e := os.ReadFile(filepath.Join(dir, child.Name(), "spt_run_params.json")); e == nil && json.Unmarshal(b, &params) == nil {
+			if b, e := os.ReadFile(filepath.Join(dir, child.Name(), "spt_run_params.json")); e == nil && json.Unmarshal(b, &params) == nil { // #nosec G304 -- child folder listed from the checked run directory
 				break
 			}
 		}
@@ -559,7 +564,7 @@ func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 	}
 	logPath := filepath.Join(a.stateDir, runID+".log")
 	argv := a.buildArgv(runDir, runID, opts, target)
-	cmd := exec.Command(a.sptBin, argv[1:]...)
+	cmd := exec.Command(a.sptBin, argv[1:]...) // #nosec G204 -- no shell; arguments are whitelisted options, validated hosts and server-side config
 	cmd.Dir = a.root
 	cmd.Env = a.childEnvironment(opts, target)
 	cmd.Stdin = nil
@@ -675,7 +680,7 @@ func (a *app) childEnvironment(o options, target map[string]any) []string {
 
 func readDotenv(path string, existing map[string]string) map[string]string {
 	out := map[string]string{}
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- fixed .env locations chosen by the server, never by a request
 	if err != nil {
 		return out
 	}
@@ -765,7 +770,7 @@ func (a *app) targetConfiguration() map[string]any {
 }
 
 func drainOutput(src io.Reader, path string) {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600) // #nosec G304 -- state directory plus a server-generated run ID
 	if err != nil {
 		_, _ = io.Copy(io.Discard, src)
 		return
@@ -1001,7 +1006,7 @@ func (a *app) parseMetricsFile(path, runID, workload string, active, aggregate b
 	if info.Size() > maxCSVBytes {
 		return nil, errors.New("SPT metrics file exceeded the dashboard's 10 MB read limit.")
 	}
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- metrics file found by listing a run directory under the results directory
 	if err != nil {
 		return nil, err
 	}
@@ -1124,7 +1129,7 @@ func (a *app) readRealRun(runDir, runID string, active bool) map[string]any {
 		return a != nil && b != nil && a.ModTime().After(b.ModTime())
 	})
 	for _, folder := range folders {
-		b, err := os.ReadFile(filepath.Join(folder, "spt_run_params.json"))
+		b, err := os.ReadFile(filepath.Join(folder, "spt_run_params.json")) // #nosec G304 -- folder is the checked run directory or a child listed from it
 		if err != nil {
 			continue
 		}
@@ -1244,7 +1249,7 @@ func (a *app) savedLiveSamples(runID string) []map[string]any {
 	if e != nil || info.Size() > maxSamplesBytes {
 		return nil
 	}
-	b, e := os.ReadFile(path)
+	b, e := os.ReadFile(path) // #nosec G304 -- runID matches runPattern above, so path stays inside the state directory
 	if e != nil {
 		return nil
 	}

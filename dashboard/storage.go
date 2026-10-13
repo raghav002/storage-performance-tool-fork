@@ -417,7 +417,7 @@ func (a *app) runVerification(hosts []string, endpoint string) {
 func (a *app) runSptVerify(hosts []string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), verifyTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, a.sptBin, "verify", "--test-hosts", strings.Join(hosts, ","))
+	cmd := exec.CommandContext(ctx, a.sptBin, "verify", "--test-hosts", strings.Join(hosts, ",")) // #nosec G204 -- no shell; hosts pass validateHostEntry, so none can be read as an option
 	cmd.Dir = a.root
 	values := a.configValues()
 	for k, v := range map[string]string{"HOSTS": strings.Join(hosts, ","), "SPT_IMAGE": "", "SPT_SKIP_IMAGE_PULL": "false", "NO_COLOR": "1"} {

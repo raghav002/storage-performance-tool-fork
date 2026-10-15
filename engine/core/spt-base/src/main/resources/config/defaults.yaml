@@ -152,7 +152,7 @@ run:
   node: false
   port: 9999
   scenario: null
-  version: 5.15.2
+  version: 5.16.0
 
 log:
   level: info
@@ -194,6 +194,9 @@ storage:
       requireNonEmpty: false
   namespace: null
   net:
+    endpoint:
+      # default, round-robin or per-request-dns; non-default modes require the Netty s3 driver
+      selection: default
     node:
       slice: false
 

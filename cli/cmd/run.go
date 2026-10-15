@@ -2165,7 +2165,9 @@ func init() {
 	runCmd.Flags().StringP("access-key", "a", "", "The S3 access key credential")
 	runCmd.Flags().StringP("secret-key", "s", "", "The S3 secret key credential")
 	runCmd.Flags().StringP("bucket", "b", "", "Target bucket; for DELETE --items-file it is an optional assertion applied to every manifest row")
-	runCmd.Flags().String("prefix", "", "Write-verify: generated-key namespace; seeded DELETE: owned namespace root; guarded existing DELETE: exact S3 prefix without a leading slash; list/read-verify: listing constraint")
+	runCmd.Flags().String("prefix", "", "Write/write-verify: generated-key prefix (literal, include trailing / for a directory); seeded DELETE: owned namespace root; guarded existing DELETE: exact S3 prefix without a leading slash; list/read-verify: listing constraint")
+	runCmd.Flags().String("region", "", "AWS region for S3 requests (empty preserves engine region selection)")
+	registerEndpointSelectionFlags(runCmd.Flags())
 	runCmd.Flags().Int("auth-version", 4, "S3 authentication signature version (2 or 4; default 4)")
 
 	// Workload Definition Options
@@ -2277,6 +2279,12 @@ Shorthand: --use-rdma is equivalent to --s3-driver rdma. (env: SPT_S3_DRIVER)`)
 	runCmd.Flags().String("rdma-device", "auto", "RDMA device name or 'auto' for auto-detection (env: RDMA_DEVICE)")
 	runCmd.Flags().String("rdma-log-level", "WARN", "RDMA native library log level (env: RDMA_LOG_LEVEL)")
 	runCmd.Flags().Int64("rdma-timeout-ms", 30000, "RDMA operation timeout in milliseconds (env: RDMA_TIMEOUT_MS)")
+	runCmd.Flags().Bool("rdma-allow-missing-bytes-header", false,
+		"Legacy servers: accept RDMA GET successes without x-amz-rdma-bytes-transferred and count the requested size (env: RDMA_ALLOW_MISSING_BYTES_HEADER)")
+	runCmd.Flags().Bool("rdma-buffer-pool", true,
+		"Reuse registered RDMA buffers across operations; false registers a buffer per operation (env: RDMA_BUFFER_POOL)")
+	runCmd.Flags().Int("rdma-copy-threads", 1,
+		"Threads copying one RDMA PUT payload into its buffer; 1 copies on the dispatcher thread alone (env: RDMA_COPY_THREADS)")
 
 	// Checksum Options
 	runCmd.Flags().String("checksum", "",
@@ -2316,6 +2324,9 @@ func buildScenarioParams(workloadType string, cmd *cobra.Command) (scenario.Para
 		WorkloadType:        workloadType,
 		ObjectDataDedupable: true,
 	}
+
+	rawLabel, _ := cmd.Flags().GetString("label")
+	params.Label = sanitizeLabel(rawLabel)
 
 	// Get connection parameters (not required for mock)
 	if workloadType != WorkloadTypeMock {
@@ -2360,6 +2371,12 @@ func buildScenarioParams(workloadType string, cmd *cobra.Command) (scenario.Para
 
 		accessKey, _ := cmd.Flags().GetString("access-key")
 		params.AccessKey = accessKey
+		params.Region, _ = cmd.Flags().GetString("region")
+		selection, err := endpointSelectionFromFlags(cmd)
+		if err != nil {
+			return params, err
+		}
+		params.EndpointSelection = selection
 
 		secretKey, _ := cmd.Flags().GetString("secret-key")
 		params.SecretKey = secretKey
@@ -2571,6 +2588,14 @@ func buildScenarioParams(workloadType string, cmd *cobra.Command) (scenario.Para
 		params.RdmaDevice, _ = cmd.Flags().GetString("rdma-device")
 		params.RdmaLogLevel, _ = cmd.Flags().GetString("rdma-log-level")
 		params.RdmaTimeoutMs, _ = cmd.Flags().GetInt64("rdma-timeout-ms")
+		params.RdmaAllowMissingBytesHeader, _ = cmd.Flags().GetBool("rdma-allow-missing-bytes-header")
+		bufferPool, _ := cmd.Flags().GetBool("rdma-buffer-pool")
+		params.RdmaDisableBufferPool = !bufferPool
+		copyThreads, _ := cmd.Flags().GetInt("rdma-copy-threads")
+		if copyThreads < 1 {
+			return params, fmt.Errorf("invalid --rdma-copy-threads value %d: must be at least 1", copyThreads)
+		}
+		params.RdmaCopyThreads = copyThreads
 	}
 
 	// Checksum validation
@@ -2642,6 +2667,14 @@ func buildScenarioParams(workloadType string, cmd *cobra.Command) (scenario.Para
 	if _, err := scenario.ParseRangePolicy(params); err != nil {
 		return params, err
 	}
+	if err := scenario.ValidateEndpointSelection(params.EndpointSelection, scenario.EndpointSelectionTarget{
+		RawEndpoints:   rawEndpointFlags(cmd),
+		S3Driver:       params.S3Driver,
+		SliceEndpoints: params.SliceEndpoints,
+		WorkloadType:   workloadType,
+	}); err != nil {
+		return params, err
+	}
 	return params, nil
 }
 
@@ -2687,44 +2720,9 @@ func buildResultsOptions(cmd *cobra.Command) ResultsOptions {
 	}
 }
 
-// sanitizeLabel enforces the allowed character set and length for labels.
-// Allowed: A–Z, a–z, 0–9, dot, underscore, hyphen. Others become '_'.
-// Empty after trimming yields default "mt".
+// sanitizeLabel shares the step-ID label rules with scenario generation.
 func sanitizeLabel(s string) string {
-	const (
-		allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-"
-		maxLen  = 64
-		def     = "mt"
-	)
-
-	// Trim whitespace
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return def
-	}
-
-	// Replace any disallowed rune with '_'
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		if strings.ContainsRune(allowed, r) {
-			b.WriteRune(r)
-		} else {
-			b.WriteByte('_')
-		}
-	}
-	out := b.String()
-
-	// Enforce max length
-	if len(out) > maxLen {
-		out = out[:maxLen]
-	}
-
-	// Avoid empty (could happen if input had only spaces)
-	if out == "" {
-		return def
-	}
-	return out
+	return scenario.SanitizeLabel(s)
 }
 
 func applyPrefixShards(params *scenario.Params, shardCount int) error {

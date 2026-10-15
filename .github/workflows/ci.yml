@@ -13,6 +13,40 @@ permissions:
   pull-requests: read
 
 jobs:
+  dashboard-build:
+    name: Dashboard Build & Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: dashboard/go.mod
+
+      - name: Run dashboard Go tests
+        working-directory: dashboard
+        run: go test ./...
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: dashboard/frontend
+        run: npm ci
+
+      - name: Build frontend and embedded page
+        working-directory: dashboard/frontend
+        run: npm run build
+
+      - name: Check embedded page is up to date
+        run: git diff --exit-code -- dashboard/index.html
+
   yaml-lint:
     name: YAML Lint
     runs-on: ubuntu-latest

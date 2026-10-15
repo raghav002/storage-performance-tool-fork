@@ -39,6 +39,7 @@ type RunClusterConfig struct {
 
 // StorageConfig represents storage configuration
 type StorageConfig struct {
+	Region   string          `yaml:"region,omitempty"`
 	Driver   DriverConfig    `yaml:"driver,omitempty"`
 	Net      NetConfig       `yaml:"net,omitempty"`
 	Auth     AuthConfig      `yaml:"auth,omitempty"`
@@ -76,6 +77,12 @@ type RdmaConfig struct {
 	LocalIP   string `yaml:"localIp,omitempty"`
 	LogLevel  string `yaml:"logLevel,omitempty"`
 	TimeoutMs int64  `yaml:"timeoutMs"`
+	// Emitted only when enabled so engines without this schema key still accept the defaults.
+	AllowMissingBytesHeader bool `yaml:"allowMissingBytesHeader,omitempty"`
+	// Emitted only when the pool is disabled; the engine default reuses registered buffers.
+	BufferPool *bool `yaml:"bufferPool,omitempty"`
+	// Emitted only above 1; the engine default copies a PUT payload on the dispatcher alone.
+	CopyThreads int `yaml:"copyThreads,omitempty"`
 }
 
 // DriverConfig represents storage driver configuration
@@ -98,8 +105,28 @@ type MultipartLimits struct {
 
 // NetConfig represents network configuration
 type NetConfig struct {
-	Node NodeConfig `yaml:"node,omitempty"`
-	SSL  SSLConfig  `yaml:"ssl,omitempty"`
+	Node     NodeConfig      `yaml:"node,omitempty"`
+	SSL      SSLConfig       `yaml:"ssl,omitempty"`
+	Endpoint *EndpointConfig `yaml:"endpoint,omitempty"` // pointer so omitted in the default mode
+}
+
+// EndpointConfig represents storage.net.endpoint (opt-in endpoint selection).
+type EndpointConfig struct {
+	Selection string                 `yaml:"selection"`
+	Hostname  string                 `yaml:"hostname,omitempty"`
+	DNS       *EndpointDNSConfig     `yaml:"dns,omitempty"`
+	Connect   *EndpointConnectConfig `yaml:"connect,omitempty"`
+}
+
+// EndpointDNSConfig represents storage.net.endpoint.dns.
+type EndpointDNSConfig struct {
+	Server          string `yaml:"server,omitempty"`
+	TimeoutMilliSec int    `yaml:"timeoutMilliSec,omitempty"`
+}
+
+// EndpointConnectConfig represents storage.net.endpoint.connect.
+type EndpointConnectConfig struct {
+	TimeoutMilliSec int `yaml:"timeoutMilliSec,omitempty"`
 }
 
 // NodeConfig represents node configuration
@@ -213,6 +240,7 @@ func GenerateDefaults(params Params) ([]byte, error) {
 			return nil, fmt.Errorf("invalid port in endpoint %q", eps[0])
 		}
 		config.Storage = StorageConfig{
+			Region: params.Region,
 			Driver: DriverConfig{
 				Type:  storageDriverTypeS3Tables,
 				Limit: DriverLimits{Concurrency: params.Tables.ConcurrentWriters},
@@ -337,6 +365,7 @@ func GenerateDefaults(params Params) ([]byte, error) {
 		}
 
 		config.Storage = StorageConfig{
+			Region: params.Region,
 			Driver: DriverConfig{
 				Limit: DriverLimits{
 					Concurrency: params.Threads,
@@ -354,7 +383,8 @@ func GenerateDefaults(params Params) ([]byte, error) {
 					}(),
 					Slice: params.SliceEndpoints,
 				},
-				SSL: SSLConfig{Enabled: scheme == schemeHTTPS},
+				SSL:      SSLConfig{Enabled: scheme == schemeHTTPS},
+				Endpoint: endpointConfig(params.EndpointSelection),
 			},
 			Auth: AuthConfig{UID: params.AccessKey, Secret: params.SecretKey, Version: authVersion},
 		}
@@ -385,6 +415,15 @@ func GenerateDefaults(params Params) ([]byte, error) {
 				LocalIP:   params.RdmaLocalIP,
 				LogLevel:  logLevel,
 				TimeoutMs: timeoutMs,
+
+				AllowMissingBytesHeader: params.RdmaAllowMissingBytesHeader,
+			}
+			if params.RdmaDisableBufferPool {
+				bufferPool := false
+				config.Storage.Rdma.BufferPool = &bufferPool
+			}
+			if params.RdmaCopyThreads > 1 {
+				config.Storage.Rdma.CopyThreads = params.RdmaCopyThreads
 			}
 		}
 

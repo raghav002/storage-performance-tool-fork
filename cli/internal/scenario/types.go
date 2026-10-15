@@ -7,20 +7,24 @@ type Params struct {
 	WorkloadType string
 	Endpoint     string
 	Endpoints    []string
-	AccessKey    string
-	SecretKey    string
-	Bucket       string
-	Prefix       string
-	Threads      int
-	ObjectSize   string
-	PartSize     string // Multipart upload part size (e.g. "64MB"); empty = single PUT
-	MpuObjects   int    // Max concurrent multipart objects in flight (0 = unlimited)
-	MpuParts     int    // Max concurrent parts in flight per multipart object (0 = unlimited)
-	ObjectCount  int
-	Duration     string
-	AuthVersion  int
-	Cleanup      bool // Automatically delete created objects after test
-	KeepScenario bool // Keep the scenario file after test completes
+	Region       string // Optional AWS region; empty preserves engine defaults.
+
+	// EndpointSelection is the opt-in per-request endpoint selection; the zero value keeps the default.
+	EndpointSelection EndpointSelection
+	AccessKey         string
+	SecretKey         string
+	Bucket            string
+	Prefix            string
+	Threads           int
+	ObjectSize        string
+	PartSize          string // Multipart upload part size (e.g. "64MB"); empty = single PUT
+	MpuObjects        int    // Max concurrent multipart objects in flight (0 = unlimited)
+	MpuParts          int    // Max concurrent parts in flight per multipart object (0 = unlimited)
+	ObjectCount       int
+	Duration          string
+	AuthVersion       int
+	Cleanup           bool // Automatically delete created objects after test
+	KeepScenario      bool // Keep the scenario file after test completes
 	// Engine tuning
 	ServiceThreads  int      // VT carrier thread parallelism (0 = JVM default)
 	EngineOverrides []string // Advanced engine defaults overrides as YAML path=value entries
@@ -72,6 +76,15 @@ type Params struct {
 	RdmaDevice         string // RDMA device name (default: "auto")
 	RdmaLogLevel       string // Native RDMA log level (default: "WARN")
 	RdmaTimeoutMs      int64  // RDMA operation timeout (default: 30000)
+	// RdmaAllowMissingBytesHeader accepts RDMA GET successes without x-amz-rdma-bytes-transferred
+	// and counts the requested size (legacy servers; default: false).
+	RdmaAllowMissingBytesHeader bool
+	// RdmaDisableBufferPool registers a buffer per operation instead of reusing registered
+	// buffers (default: false, so the pool is used).
+	RdmaDisableBufferPool bool
+	// RdmaCopyThreads is the number of threads copying one PUT payload into its buffer, the
+	// dispatcher included (default: 1; 0 leaves the engine default).
+	RdmaCopyThreads int
 
 	// Checksum validation
 	Checksum string // Checksum algorithm: crc32, crc32c, sha1, sha256, crc64-nvme (empty = disabled)
@@ -83,7 +96,8 @@ type Params struct {
 	// functions use this value instead of calling time.Now(), ensuring that
 	// repeated generation from the same Params produces identical step IDs.
 	BaseTimestamp string
-	RunID         int64 // Positive public-run identity shared by generated steps, defaults, and staged input markers
+	Label         string // Output directory and step-ID prefix; empty defaults to mt.
+	RunID         int64  // Positive public-run identity shared by generated steps, defaults, and staged input markers
 
 	// TUI layout
 	MinimalTUI                  bool

@@ -50,7 +50,15 @@ mv spt-*-linux-amd64 spt
 After configuring the target and hosts below, run `./spt verify` to check the
 runtime infrastructure automatically. For a distributed configuration, it
 validates SSH connectivity, Docker availability, and required ports on every
-configured node.
+configured node. After container launch, verification polls the required service
+ports for up to 30 seconds, then checks the metrics and control endpoints.
+
+If verification fails, distinguish the failed stage: `Container Start` means the
+Docker launch failed; `Ports Accessible` means the services did not become reachable
+within the startup window. Rerun `./spt verify --debug` and retain the report and
+`spt.log`. For a container-launch failure, also inspect the Docker daemon logs for
+the same time window; a JVM readiness delay cannot explain a container that never
+started. Verification attempts to remove its temporary container after the checks.
 
 ### Engine image selection
 
@@ -108,16 +116,18 @@ Start with a local mock workload, which requires no S3 endpoint:
 
 > **Data safety:** S3 write and mixed workloads mutate the target (mixed
 > workloads include DELETE), and standalone `delete` can remove selected objects.
-> Use a dedicated benchmark bucket or isolated prefix; never use production data.
+> Use a dedicated benchmark bucket; never use production data. For `write`,
+> `--prefix` groups generated keys under a literal prefix, before any shard directories.
 > Seeded DELETE owns a unique run namespace; `--items-file` and
 > `--delete-existing` target scopes you select. Review the [S3 DELETE safety
 > guide](cli/docs/S3_DELETE.md) before deleting existing data.
 
-After configuring `.env`, run an S3 write workload in an isolated prefix:
+After configuring `.env` with a dedicated benchmark bucket, run an S3 write workload:
 
 ```bash
 ./spt run write \
   --prefix spt-quickstart/write/ \
+  --label qs-write \
   --duration 2m \
   --threads 8 \
   --object-size 1MB
@@ -125,7 +135,11 @@ After configuring `.env`, run an S3 write workload in an isolated prefix:
 
 For unattended execution, add `--headless` and a bounded
 `--auto-terminate-seconds` value. Add `--cleanup` when you want SPT to remove
-objects created by the workload.
+objects created by the workload. `--save-items` retains the full object keys in
+`<step-id>.items.csv`, including when `--cleanup` is used. With sharding enabled,
+this example writes keys such as `spt-quickstart/write/s0000000/<id>`; the trailing
+slash is part of the supplied prefix. `--label qs-write` names both the results
+directory and generated step files, such as `qs-write-001-<timestamp>-create.metrics.total.csv`.
 
 ### TUI navigation
 

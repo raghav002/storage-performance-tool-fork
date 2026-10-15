@@ -46,7 +46,7 @@ You can use these variables to avoid repeating sensitive or commonly used parame
 - **Integrity qualification:** `SPT_DEFER_VERIFICATION` (true/false), `SPT_INTEGRITY_MAX_CONSOLE_FAILURES`, `SPT_INTEGRITY_RUNTIME_IDENTITY_TIER` (`image` or `payload`)
 - **Data shaping:** `SPT_OBJECT_DATA_COMPRESSIBILITY` (0-100, default 0), `SPT_OBJECT_DATA_DEDUPABLE` (true/false, default true)
 - **Storage driver:** `SPT_S3_DRIVER` (driver backend: `default`, `aws`, `rdma`)
-- **RDMA:** `SPT_RDMA_ENABLED`, `RDMA_LOCAL_IP`, `RDMA_DEVICE`, `RDMA_LOG_LEVEL`, `RDMA_THRESHOLD_BYTES`, `RDMA_TIMEOUT_MS`, `RDMA_FALLBACK_ENABLED`
+- **RDMA:** `SPT_RDMA`, `RDMA_LOCAL_IP`, `RDMA_DEVICE`, `RDMA_LOG_LEVEL`, `RDMA_THRESHOLD_BYTES`, `RDMA_TIMEOUT_MS`, `RDMA_FALLBACK_ENABLED`, `RDMA_ALLOW_MISSING_BYTES_HEADER`, `RDMA_BUFFER_POOL`, `RDMA_COPY_THREADS`
 
 Variable expansion: use `$VAR` or `${VAR}`. Command substitutions like `$(pwd)` are not supported; use `$PWD` instead.
 
@@ -83,12 +83,26 @@ Required for S3 workloads, optional/ignored for `mock`.
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
 | `--endpoints` | `-e` | *(required)* | One or more S3 endpoint URLs (comma-separated or repeatable) |
+| `--region` | | *(engine selection)* | AWS region for S3 requests; passed to engine YAML `storage.region`. Empty or omitted preserves the driver’s existing selection. |
 | `--access-key` | `-a` | *(required)* | S3 access key credential |
 | `--secret-key` | `-s` | *(required)* | S3 secret key credential |
 | `--bucket` | `-b` | *(required)* | Target bucket to use for the test. In explicit-manifest DELETE mode it is an optional safety assertion checked against every source row; omit it to permit multiple buckets |
-| `--prefix` | | `""` | Generated-key namespace for `write-verify`; owned namespace root for seeded DELETE; listing constraint for `list` and LIST-based `read-verify` |
+| `--prefix` | | `""` | Literal generated-key prefix for `write` and `write-verify`; owned namespace root for seeded DELETE; listing constraint for `list` and LIST-based `read-verify`; rejected for `read`, `mixed`, `mock`, and `tables` |
 | `--auth-version` | | `4` | S3 signature version (`2` or `4`) |
 | `--slice-endpoints` | | `false` | Partition endpoints across nodes in distributed runs |
+| `--endpoint-selection` | | `default` | Connect destination per S3 request attempt: `default`, `round-robin` over the `--endpoints` IPv4 addresses, or `per-request-dns` for the single `--endpoints` hostname. Netty S3 driver only. See [Endpoint Selection](ENDPOINT_SELECTION.md) |
+| `--endpoint-hostname` | | *(none)* | Round robin: hostname used for HTTP Host, request signing and TLS SNI |
+| `--dns-server` | | *(host DNS configuration)* | Per-request DNS: `IPv4[:port]` DNS server queried without fallback |
+| `--dns-timeout` | | `5s` | Per-request DNS: total deadline of one lookup |
+| `--endpoint-connect-timeout` | | `30s` | Round robin and per-request DNS: TCP connect deadline |
+
+For `write`, the key is `<prefix><shard-directory>/<object-id>` when sharding is enabled,
+or `<prefix><object-id>` with `--prefix-shards 0`. The prefix is literal: use `quickstart/`
+for `quickstart/s0000000/<id>`, or `quickstart-` for `quickstart-s0000000/<id>`.
+No separator is inserted automatically. Saved item lists retain complete object identities;
+`read --items-file` and write cleanup use those identities without prepending the prefix again.
+`write --save-items --cleanup` keeps the created-item manifest in the results even after the
+objects have been removed; those entries therefore no longer refer to readable objects.
 
 #### 2. Workload Definition Options
 
@@ -557,7 +571,7 @@ spt run write \
 |------|---------|-------------|
 | `--auto-results` | `true` | Automatically retrieve results artifacts at end of run |
 | `--results-dir` | `./results` | Directory to write retrieved results artifacts |
-| `--label` | `""` | Label for output directory naming and step ID prefix (default: `mt`) |
+| `--label` | `""` | Label for output directory naming and step ID prefix (default: `mt`); step artifacts use the same prefix |
 | `--auto-results-debug` | `false` | Enable verbose debug logs for results retrieval |
 | `--shutdown-on-complete` | `true` | Request `/shutdown` on all hosts after fetching results |
 | `--shutdown-linger` | `5` | Seconds to wait for `/status` linger after `/shutdown` |
@@ -602,12 +616,15 @@ See [S3_RDMA.md](S3_RDMA.md) for detailed documentation, architecture, and troub
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--use-rdma` | `false` | Use the S3-RDMA driver. Standalone DELETE requests use HTTP, but driver startup still requires RDMA access unless `--rdma-fallback` is enabled |
-| `--rdma-local-ip` | `""` | Local RDMA interface IP address |
+| `--rdma-local-ip` | `""` | Local RDMA interface IP address. When unset and `--rdma-device` is `auto`, each worker uses the local address it routes toward the first S3 endpoint; leave it unset for multi-host runs |
 | `--rdma-threshold` | `1MB` | Minimum object size for RDMA transfer (e.g., `0`, `256KB`, `4MB`) |
-| `--rdma-fallback` | `false` | Fall back to HTTP if RDMA initialization fails |
-| `--rdma-device` | `auto` | RDMA device name or `auto` for auto-detection |
+| `--rdma-fallback` | `false` | Use HTTP when RDMA initialization or per-operation buffer preparation fails, and count GET bodies returned by a server that declines RDMA. When disabled, those operations fail |
+| `--rdma-device` | `auto` | RDMA device name or `auto` for auto-detection. A named device disables automatic local address selection |
 | `--rdma-log-level` | `WARN` | RDMA native library log level |
 | `--rdma-timeout-ms` | `30000` | RDMA operation timeout in milliseconds |
+| `--rdma-allow-missing-bytes-header` | `false` | Legacy servers only: accept an RDMA GET success without `x-amz-rdma-bytes-transferred` and count the requested size. By default such a response fails as corrupt |
+| `--rdma-buffer-pool` | `true` | Reuse registered RDMA buffers across operations. `false` allocates and registers a buffer for every operation (the previous behavior) |
+| `--rdma-copy-threads` | `1` | Threads that copy one PUT payload into its RDMA buffer. `1` copies on the driver's dispatcher thread alone. A higher value splits each payload of 2 MiB or more across that many threads; each worker then keeps that many threads less one for the copy |
 
 #### 8. S3 Tables Options
 
@@ -1027,7 +1044,6 @@ spt run write \
     --object-size 4MB \
     --duration 5m \
     --use-rdma \
-    --rdma-local-ip 10.247.128.125 \
     --rdma-threshold 1MB
 ```
 

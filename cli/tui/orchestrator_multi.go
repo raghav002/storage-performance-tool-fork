@@ -71,9 +71,9 @@ const (
 	// HostStatusStopped indicates the test container has been stopped.
 	HostStatusStopped HostStatus = "stopped"
 
-	entryLogRelayModeStream = "stream"
-	entryLogRelayModePoll   = "poll"
-	fleetLocalContributorID = constants.MetricsLocalContributorID
+	entryLogRelayModeDockerAPI = "docker-api-stream"
+	entryLogRelayModeSSH       = "ssh-stream"
+	fleetLocalContributorID    = constants.MetricsLocalContributorID
 )
 
 // MultiHostOrchestrator manages tests across multiple Docker hosts
@@ -1769,7 +1769,7 @@ func selectCurrentMetricSetForRun(
 		consider(metric)
 	}
 	if newest == nil {
-		return nil, fmt.Errorf("%w: no current metrics rows", ErrMetricsIncompatible)
+		return nil, fmt.Errorf("%w: no current metrics rows", ErrMetricsPending)
 	}
 
 	sameRun := func(metric *PerformanceMetric) bool {
@@ -1802,7 +1802,7 @@ func selectCurrentMetricSetForRun(
 		selected = append(selected, metric)
 	}
 	if len(selected) == 0 {
-		return nil, fmt.Errorf("%w: no current metrics rows", ErrMetricsIncompatible)
+		return nil, fmt.Errorf("%w: no current metrics rows", ErrMetricsPending)
 	}
 	return selected, nil
 }
@@ -2470,45 +2470,7 @@ func (m *MultiHostTestOrchestrator) StartTestWithLaunchHooks(
 			m.StartMetricsPolling(ctx)
 
 			// 7) Start entry-node log relay to surface Spt stdout in headless/TUI
-			if len(m.multiHost.hosts) > 0 {
-				entry := m.multiHost.hosts[0]
-				if entry != nil && entry.DockerManager != nil && entry.ContainerID != "" {
-					var relay *EntryLogRelay
-					mode := ""
-					if dm, ok := entry.DockerManager.(*DockerManager); ok {
-						if dm.client != nil {
-							fetcher := newSDKLogFetcher(dm, entry.ContainerID)
-							relay = NewEntryLogRelay(fetcher, true, 0)
-							mode = entryLogRelayModeStream
-						} else if dm.remote != nil {
-							fetcher := newRemoteLogFetcher(dm.remote.ops, entry.ContainerID)
-							relay = NewEntryLogRelay(fetcher, false, constants.APIPollingTimeout)
-							mode = entryLogRelayModePoll
-						}
-					}
-					if relay != nil {
-						if m.multiHost != nil && len(m.multiHost.hosts) > 0 {
-							logging.LogInfo("entry-log-relay", "starting entry log relay",
-								"host", m.multiHost.hosts[0].Info.Original,
-								"mode", mode)
-						}
-						sink := m.messageSink
-						if sink == nil {
-							sink = func(s string) {
-								if m.multiHost != nil && m.multiHost.notifier != nil {
-									m.multiHost.notifier(s)
-									return
-								}
-								if m.onOutput != nil {
-									m.onOutput(s)
-								}
-							}
-						}
-						relay.Start(ctx, sink)
-						m.entryRelay = relay
-					}
-				}
-			}
+			m.startEntryLogRelay(ctx)
 			return nil
 		}
 		// Multi-host distributed test - use RMI coordination
@@ -2583,7 +2545,7 @@ func (m *MultiHostTestOrchestrator) StartTestWithContentAndLaunchHooks(
 		if m.onStatusUpdate != nil {
 			m.onStatusUpdate(&TestStatus{
 				State:   constants.StateRunning,
-				Message: fmt.Sprintf("Multi-host distributed replay running on %d hosts", len(readyHosts)),
+				Message: fmt.Sprintf("Distributed run running on %d hosts", len(readyHosts)),
 			})
 		}
 		if m.onOutput != nil {
@@ -2591,14 +2553,14 @@ func (m *MultiHostTestOrchestrator) StartTestWithContentAndLaunchHooks(
 			for i, host := range readyHosts {
 				hostList[i] = host.Info.Original
 			}
-			m.onOutput(fmt.Sprintf("Starting distributed replay on hosts: %s", strings.Join(hostList, ", ")))
+			m.onOutput(fmt.Sprintf("Starting distributed run on hosts: %s", strings.Join(hostList, ", ")))
 		}
 
 		if err := m.multiHost.StartDistributedTestWithContent(ctx, image, params, scenarioContent); err != nil {
 			return errors.Join(err, m.multiHost.cleanupManagedContainersAfterStartFailure(ctx))
 		}
 		return m.startEntryAPIRun(
-			ctx, image, params, scenarioContent, defaultsContent, "Distributed replay", hooks)
+			ctx, image, params, scenarioContent, defaultsContent, "Distributed run", hooks)
 	}
 
 	host := readyHosts[0]
@@ -2800,13 +2762,11 @@ func (m *MultiHostTestOrchestrator) startEntryLogRelay(ctx context.Context) {
 	mode := ""
 	if dm, ok := entry.DockerManager.(*DockerManager); ok {
 		if dm.client != nil {
-			fetcher := newSDKLogFetcher(dm, entry.ContainerID)
-			relay = NewEntryLogRelay(fetcher, true, 0)
-			mode = entryLogRelayModeStream
+			relay = NewEntryLogRelay(newSDKLogFetcher(dm, entry.ContainerID))
+			mode = entryLogRelayModeDockerAPI
 		} else if dm.remote != nil {
-			fetcher := newRemoteLogFetcher(dm.remote.ops, entry.ContainerID)
-			relay = NewEntryLogRelay(fetcher, false, constants.APIPollingTimeout)
-			mode = entryLogRelayModePoll
+			relay = NewEntryLogRelay(newRemoteLogFetcher(dm.remote.ops, entry.ContainerID))
+			mode = entryLogRelayModeSSH
 		}
 	}
 	if relay == nil {

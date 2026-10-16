@@ -123,3 +123,39 @@ func TestHandleRunRejectsInvalidRequests(t *testing.T) {
 		})
 	}
 }
+
+func TestHandleRunRejectsUnavailableOrBusyTarget(t *testing.T) {
+	tests := []struct {
+		name       string
+		setup      func(*testing.T, *app)
+		wantStatus int
+	}{
+		{"missing credentials", func(t *testing.T, a *app) { t.Setenv("S3_SECRET_KEY", "") }, http.StatusServiceUnavailable},
+		{"missing SPT executable", func(t *testing.T, a *app) { a.sptBin = filepath.Join(a.root, "missing-spt") }, http.StatusServiceUnavailable},
+		{"unverified storage", func(t *testing.T, a *app) { a.verification = verification{} }, http.StatusConflict},
+		{"failed verification", func(t *testing.T, a *app) { a.verification.Status = "failed" }, http.StatusConflict},
+		{"changed hosts after verification", func(t *testing.T, a *app) { a.storage.Hosts = []string{"worker.example.invalid"} }, http.StatusConflict},
+		{"changed endpoint after verification", func(t *testing.T, a *app) { a.storage.Endpoint = "https://other.example.invalid" }, http.StatusConflict},
+		{"verification in progress", func(t *testing.T, a *app) { a.verifying = true }, http.StatusConflict},
+		{"run lock already held", func(t *testing.T, a *app) {
+			lock, err := a.lockRun()
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { unlockClose(lock) })
+		}, http.StatusConflict},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a, marker := newRunHandlerTestApp(t)
+			tt.setup(t, a)
+			request := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(validRunRequest))
+			request.Host = "localhost:8000"
+			request.Header.Set("Origin", "http://localhost:8000")
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			a.handleRun(response, request)
+			assertRejectedRun(t, a, marker, response, tt.wantStatus)
+		})
+	}
+}

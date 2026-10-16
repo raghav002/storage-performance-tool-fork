@@ -1,4 +1,6 @@
+export type RunMode = "guided" | "expert";
 export type Options = {
+  mode?: RunMode;
   object_count: number;
   object_size: string;
   threads: number;
@@ -72,6 +74,24 @@ export type State = {
   job: Job | null;
   metrics: Metrics | null;
   storage?: Storage;
+  limits?: RunLimits;
+};
+export type Range = { min: number; max: number };
+// Published by the server; it enforces the same values on POST /api/runs.
+export type RunLimits = {
+  guided: {
+    object_counts: number[];
+    object_sizes: string[];
+    threads: number[];
+    max_runtime_seconds: number[];
+  };
+  expert: {
+    object_count: Range;
+    object_size_bytes: Range;
+    threads: Range;
+    max_runtime_seconds: Range;
+    max_total_bytes: number;
+  };
 };
 export type CheckStatus = "pending" | "passed" | "failed";
 export type VerifyNode = {

@@ -1685,3 +1685,41 @@ button:disabled {
     scroll-behavior: auto !important;
   }
 }
+.field-error {
+  color: #a3401c;
+}
+[aria-invalid="true"] {
+  border-color: #c9623a;
+}
+.notice-warn {
+  background: #fff7ec;
+  border-color: #edd3b0;
+}
+.size-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.preset-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+}
+.preset-chips button {
+  display: grid;
+  gap: 3px;
+  text-align: left;
+}
+.preset-chips small {
+  color: #65768c;
+  font-size: 11px;
+}
+.host-list li {
+  flex-wrap: wrap;
+}
+.host-error {
+  order: 3;
+  flex-basis: 100%;
+  font-size: 11px;
+}

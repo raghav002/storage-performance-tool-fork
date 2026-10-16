@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { State } from "../types";
 import { ConnectionGraph } from "./ConnectionGraph";
+import { endpointError, hostErrors, readJSON } from "../utils/validation";
 
 type Form = { hosts: string[]; endpoint: string };
 
@@ -42,6 +43,9 @@ export function StorageConfiguration({
     running = v.status === "running",
     locked = busy || running,
     target = state!.target;
+  const rowErrors = hostErrors(form.hosts, saved.max_hosts),
+    urlError = endpointError(form.endpoint.trim()),
+    invalid = rowErrors.some(Boolean) || !!urlError;
   const setHost = (index: number, value: string) =>
     setForm({
       ...form,
@@ -54,6 +58,10 @@ export function StorageConfiguration({
       setError("Add at least one client machine.");
       return;
     }
+    if (invalid) {
+      setError("Fix the highlighted fields before verifying.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -63,11 +71,7 @@ export function StorageConfiguration({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ hosts: entered, endpoint }),
       });
-      const payload = await r.json();
-      if (!r.ok)
-        throw new Error(
-          payload.error ?? `Verification request failed (${r.status}).`,
-        );
+      await readJSON(r, "Verification request failed.");
       setForm({ hosts: entered, endpoint });
       await onRefresh();
     } catch (e) {
@@ -119,9 +123,22 @@ export function StorageConfiguration({
                   placeholder="user@hostname"
                   autoComplete="off"
                   spellCheck={false}
+                  maxLength={300}
                   value={host}
+                  aria-invalid={!!rowErrors[i]}
+                  aria-describedby={
+                    rowErrors[i] ? `host-error-${i}` : undefined
+                  }
                   onChange={(e) => setHost(i, e.target.value)}
                 />
+                {rowErrors[i] && (
+                  <small
+                    id={`host-error-${i}`}
+                    className="field-error host-error"
+                  >
+                    {rowErrors[i]}
+                  </small>
+                )}
                 <button
                   type="button"
                   disabled={form.hosts.length === 1}
@@ -159,9 +176,17 @@ export function StorageConfiguration({
               }
               autoComplete="off"
               spellCheck={false}
+              maxLength={2048}
               value={form.endpoint}
+              aria-invalid={!!urlError}
+              aria-describedby={urlError ? "endpoint-error" : undefined}
               onChange={(e) => setForm({ ...form, endpoint: e.target.value })}
             />
+            {urlError && (
+              <small id="endpoint-error" className="field-error">
+                {urlError}
+              </small>
+            )}
             <small>
               Leave blank to use the endpoint configured on the host. The bucket
               and access keys always come from the host.
@@ -172,7 +197,9 @@ export function StorageConfiguration({
           <button
             className="primary"
             type="submit"
-            disabled={locked || offline || state?.job?.status === "running"}
+            disabled={
+              locked || offline || invalid || state?.job?.status === "running"
+            }
           >
             {locked ? "Verifying…" : "Verify connection"}
           </button>

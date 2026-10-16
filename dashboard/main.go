@@ -46,6 +46,20 @@ const (
 	maxSamplesBytes = 4_000_000
 	sptAPIPort      = 9999
 	metricsContract = "SPT live metrics API"
+
+	// Expert mode accepts any value in these ranges; guided mode only the presets below.
+	expertMinObjects     = 1
+	expertMaxObjects     = 100_000
+	expertMinObjectBytes = 1 << 10
+	expertMaxObjectBytes = 1 << 30
+	expertMinThreads     = 1
+	expertMaxThreads     = 64
+	expertMinRuntime     = 10
+	expertMaxRuntime     = 3600
+	expertMaxTotalBytes  = 100 << 30
+
+	modeGuided = "guided"
+	modeExpert = "expert"
 )
 
 var (
@@ -53,6 +67,7 @@ var (
 	objectSizes    = map[string]bool{"64KiB": true, "256KiB": true, "1MiB": true, "4MiB": true, "16MiB": true}
 	threadCounts   = map[int]bool{1: true, 2: true}
 	runtimes       = map[int]bool{60: true, 120: true, 300: true, 600: true}
+	sizePattern    = regexp.MustCompile(`^([1-9][0-9]{0,6})(KiB|MiB|GiB)$`)
 	namePattern    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{1,61}[A-Za-z0-9]$`)
 	runPattern     = regexp.MustCompile(`^mt-[A-Za-z0-9_.-]+$`)
 	keyPattern     = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -60,6 +75,8 @@ var (
 )
 
 type options struct {
+	// Mode is "guided" or "expert"; an empty mode is treated as guided.
+	Mode              string `json:"mode,omitempty"`
 	ObjectCount       int    `json:"object_count"`
 	ObjectSize        string `json:"object_size"`
 	Threads           int    `json:"threads"`
@@ -97,6 +114,9 @@ type app struct {
 func main() {
 	if maxThreads > 4 || maxRuntime > 600 || maxObjects > 320 {
 		log.Fatal("dashboard safety limits exceed the reviewed VM profile")
+	}
+	if expertMaxThreads > 64 || expertMaxRuntime > 3600 || expertMaxObjects > 100_000 || expertMaxTotalBytes > 100<<30 {
+		log.Fatal("dashboard expert limits exceed the agreed ceiling")
 	}
 	root, err := os.Executable()
 	if err != nil {
@@ -624,6 +644,17 @@ func ensureEOF(dec *json.Decoder) error {
 }
 
 func validateOptions(o options) error {
+	switch o.Mode {
+	case "", modeGuided:
+		return validateGuided(o)
+	case modeExpert:
+		return validateExpert(o)
+	default:
+		return errors.New("Choose the guided or expert run mode.")
+	}
+}
+
+func validateGuided(o options) error {
 	if !objectCounts[o.ObjectCount] {
 		return errors.New("Object count is outside the dashboard's allowed choices.")
 	}
@@ -637,6 +668,66 @@ func validateOptions(o options) error {
 		return errors.New("Maximum runtime is outside the dashboard's allowed choices.")
 	}
 	return nil
+}
+
+func validateExpert(o options) error {
+	if o.ObjectCount < expertMinObjects || o.ObjectCount > expertMaxObjects {
+		return fmt.Errorf("Object count must be between %d and %d.", expertMinObjects, expertMaxObjects)
+	}
+	size, ok := parseSize(o.ObjectSize)
+	if !ok || size < expertMinObjectBytes || size > expertMaxObjectBytes {
+		return errors.New("Object size must be a whole number of KiB, MiB, or GiB between 1KiB and 1GiB.")
+	}
+	if o.Threads < expertMinThreads || o.Threads > expertMaxThreads {
+		return fmt.Errorf("Thread count must be between %d and %d.", expertMinThreads, expertMaxThreads)
+	}
+	if o.MaxRuntimeSeconds < expertMinRuntime || o.MaxRuntimeSeconds > expertMaxRuntime {
+		return fmt.Errorf("Maximum runtime must be between %d and %d seconds.", expertMinRuntime, expertMaxRuntime)
+	}
+	if int64(o.ObjectCount)*size > expertMaxTotalBytes {
+		return fmt.Errorf("Total test data must not exceed %d GiB.", expertMaxTotalBytes>>30)
+	}
+	return nil
+}
+
+// parseSize accepts only canonical sizes such as "512KiB", so a value can never be read as an SPT option.
+func parseSize(value string) (int64, bool) {
+	m := sizePattern.FindStringSubmatch(value)
+	if m == nil {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(m[1], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	shift := map[string]uint{"KiB": 10, "MiB": 20, "GiB": 30}[m[2]]
+	return n << shift, true
+}
+
+// runLimits tells the browser which values each run mode accepts.
+func runLimits() map[string]any {
+	sortedInts := func(set map[int]bool) []int {
+		out := make([]int, 0, len(set))
+		for v := range set {
+			out = append(out, v)
+		}
+		sort.Ints(out)
+		return out
+	}
+	sizes := make([]string, 0, len(objectSizes))
+	for v := range objectSizes {
+		sizes = append(sizes, v)
+	}
+	sort.Slice(sizes, func(i, j int) bool {
+		x, _ := parseSize(sizes[i])
+		y, _ := parseSize(sizes[j])
+		return x < y
+	})
+	span := func(lo, hi int64) map[string]int64 { return map[string]int64{"min": lo, "max": hi} }
+	return map[string]any{
+		"guided": map[string]any{"object_counts": sortedInts(objectCounts), "object_sizes": sizes, "threads": sortedInts(threadCounts), "max_runtime_seconds": sortedInts(runtimes)},
+		"expert": map[string]any{"object_count": span(expertMinObjects, expertMaxObjects), "object_size_bytes": span(expertMinObjectBytes, expertMaxObjectBytes), "threads": span(expertMinThreads, expertMaxThreads), "max_runtime_seconds": span(expertMinRuntime, expertMaxRuntime), "max_total_bytes": int64(expertMaxTotalBytes)},
+	}
 }
 
 func randomHex4() string {
@@ -1581,7 +1672,7 @@ func (a *app) currentState() (map[string]any, error) {
 
 func (a *app) stateResponse(job, metrics map[string]any) map[string]any {
 	target := a.targetConfiguration()
-	return map[string]any{"job": job, "metrics": metrics, "target": target, "storage": a.storageState(target)}
+	return map[string]any{"job": job, "metrics": metrics, "target": target, "storage": a.storageState(target), "limits": runLimits()}
 }
 
 func retainedLiveMetrics(runID, liveRunID string, samples []map[string]any) map[string]any {

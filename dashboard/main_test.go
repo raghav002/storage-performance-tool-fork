@@ -13,16 +13,64 @@ import (
 )
 
 func TestValidateOptionsBounds(t *testing.T) {
-	for _, good := range []options{{100, "1MiB", 1, 60}, {320, "16MiB", 2, 600}} {
+	for _, good := range []options{
+		{"", 100, "1MiB", 1, 60},
+		{"guided", 320, "16MiB", 2, 600},
+		{"expert", 1, "1KiB", 1, 10},
+		{"expert", 777, "3MiB", 13, 1234},
+		{"expert", 100_000, "1MiB", 64, 3600},
+		{"expert", 100, "1GiB", 1, 60},
+	} {
 		if err := validateOptions(good); err != nil {
-			t.Fatal(err)
+			t.Errorf("rejected %+v: %v", good, err)
 		}
 	}
-	bad := []options{{1000, "1MiB", 1, 60}, {100, "100MiB", 1, 60}, {100, "1MiB", 20, 60}, {100, "1MiB", 1, 999}}
+	bad := []options{
+		{"", 1000, "1MiB", 1, 60},
+		{"guided", 100, "100MiB", 1, 60},
+		{"guided", 100, "1MiB", 20, 60},
+		{"guided", 100, "1MiB", 1, 999},
+		{"guided", 777, "3MiB", 13, 1234},
+		{"admin", 100, "1MiB", 1, 60},
+		{"expert", 0, "1MiB", 1, 60},
+		{"expert", 100_001, "1KiB", 1, 60},
+		{"expert", 100, "1MiB", 0, 60},
+		{"expert", 100, "1MiB", 65, 60},
+		{"expert", 100, "1MiB", 1, 9},
+		{"expert", 100, "1MiB", 1, 3601},
+		{"expert", 100, "2GiB", 1, 60},
+		{"expert", 101, "1GiB", 1, 60},
+		{"expert", 100, "--help", 1, 60},
+	}
 	for _, got := range bad {
 		if validateOptions(got) == nil {
 			t.Errorf("accepted unsafe settings: %+v", got)
 		}
+	}
+}
+
+func TestParseSize(t *testing.T) {
+	for in, want := range map[string]int64{"1KiB": 1024, "64KiB": 65536, "3MiB": 3 << 20, "1GiB": 1 << 30} {
+		if got, ok := parseSize(in); !ok || got != want {
+			t.Errorf("parseSize(%q) = %d, %v; want %d", in, got, ok, want)
+		}
+	}
+	for _, in := range []string{"", "-1MiB", "1 MiB", " 1MiB", "0KiB", "01MiB", "1TB", "1MB", "1mib", "--help", "1.5MiB", "12345678KiB"} {
+		if _, ok := parseSize(in); ok {
+			t.Errorf("parseSize(%q) accepted", in)
+		}
+	}
+}
+
+func TestRunLimitsMatchValidation(t *testing.T) {
+	guided := runLimits()["guided"].(map[string]any)
+	for _, size := range guided["object_sizes"].([]string) {
+		if !objectSizes[size] {
+			t.Errorf("published guided size %q is not accepted", size)
+		}
+	}
+	if sizes := guided["object_sizes"].([]string); sizes[0] != "64KiB" || sizes[len(sizes)-1] != "16MiB" {
+		t.Errorf("guided sizes not ordered by bytes: %v", sizes)
 	}
 }
 

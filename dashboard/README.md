@@ -29,6 +29,20 @@ It listens on `127.0.0.1:8000` by default. For remote access, use SSH port forwa
 
 The dashboard enforces bounded workload choices and allows one dashboard-managed run at a time. Run results are stored on the host in SPT's results directory.
 
+## Run modes
+
+The Guided/Expert switch in the top bar selects how the workload step is configured:
+
+| Setting | Guided (presets) | Expert (any value in range) |
+|---|---|---|
+| Objects | 10, 25, 50, 100, 250, 320 | 1–100,000 |
+| Object size | 64KiB, 256KiB, 1MiB, 4MiB, 16MiB | 1KiB–1GiB, whole KiB/MiB/GiB |
+| Threads | 1, 2 | 1–64 |
+| Runtime limit | 60, 120, 300, 600 s | 10–3600 s |
+| Total test data | — | at most 100 GiB (objects × size) |
+
+The limits are constants in `main.go`. The server publishes them in `/api/state` as `limits`, and it validates every `POST /api/runs` against the requested mode, whatever the browser sends. The browser repeats the same checks for inline feedback. Object sizes must match `<number><KiB|MiB|GiB>` exactly, so a value can never be passed to SPT as an option.
+
 ## Storage configuration
 
 The app opens on **Configure run**, which has two steps. Workload settings stay locked until the storage step has been verified, and the server refuses to start a run without a passing verification.

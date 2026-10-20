@@ -23,5 +23,5 @@ html = html.replace(
   "<html",
   "<!-- UI adapted from Dell Technologies SPT frontend, MIT license. See frontend/LICENSE and frontend/UPSTREAM.md. -->\n<html",
 );
-await writeFile(resolve(root, "../index.html"), html);
-console.log("Built standalone index.html for the existing Go server.");
+await writeFile(resolve(root, "../server/index.html"), html);
+console.log("Built server/index.html for the Go server.");

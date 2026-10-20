@@ -45,7 +45,7 @@ jobs:
         run: npm run build
 
       - name: Check embedded page is up to date
-        run: git diff --exit-code -- dashboard/index.html
+        run: git diff --exit-code -- dashboard/server/index.html
 
   yaml-lint:
     name: YAML Lint

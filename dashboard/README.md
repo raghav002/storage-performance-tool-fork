@@ -15,15 +15,31 @@ go test ./...
 go build -o spt-dashboard .
 ```
 
-The frontend build writes the self-contained page to `dashboard/index.html`, which the Go server embeds at compile time. Rebuild the Go executable after changing the UI.
+The frontend build writes the self-contained page to `dashboard/server/index.html`, which the Go server embeds at compile time. Rebuild the Go executable after changing the UI.
 
 ## Run
+
+From the SPT CLI:
+
+```sh
+spt --dashboard
+```
+
+This starts the dashboard, prints its local URL, and opens a browser. Keep the terminal open while using the dashboard. Closing the browser leaves the server and any active run running. Ctrl+C stops the server and interrupts an active run or verification, waiting for the CLI to finish its cleanup.
+
+The flag belongs to the root command. `spt run write --dashboard` (or similar) is not supported. The dashboard still starts its own headless `write-verify` subprocess using the same SPT executable.
+
+CLI mode reads `.env` from the directory where you launch SPT and from your home directory, with environment variables taking precedence. State is stored under your user configuration directory in `spt/dashboard` (`~/.config/spt/dashboard` on Linux). Results remain in `~/results`.
+
+`DASHBOARD_PORT` selects the local port, default 8000. Set it to `0` to choose a free port automatically. If a browser cannot be opened, use the printed URL. Over SSH, forward that port to your local machine.
 
 Run the server on a host where SPT is installed and configured:
 
 ```sh
 ./spt-dashboard
 ```
+
+The standalone launcher uses the same server package and retains its executable-directory `.env` and `.dashboard-state/` locations.
 
 It listens on `127.0.0.1:8000` by default. For remote access, use SSH port forwarding and keep the server bound to loopback. Do not expose this service directly to the public internet. SPT's storage target and credentials must be configured on the host; the dashboard does not accept credentials from the browser.
 
@@ -41,7 +57,7 @@ The Guided/Expert switch in the top bar selects how the workload step is configu
 | Runtime limit | 60, 120, 300, 600 s | 10–3600 s |
 | Total test data | — | at most 100 GiB (objects × size) |
 
-The limits are constants in `main.go`. The server publishes them in `/api/state` as `limits`, and it validates every `POST /api/runs` against the requested mode, whatever the browser sends. The browser repeats the same checks for inline feedback. Object sizes must match `<number><KiB|MiB|GiB>` exactly, so a value can never be passed to SPT as an option.
+The limits are constants in `server/app.go`. The server publishes them in `/api/state` as `limits`, and it validates every `POST /api/runs` against the requested mode, whatever the browser sends. The browser repeats the same checks for inline feedback. Object sizes must match `<number><KiB|MiB|GiB>` exactly, so a value can never be passed to SPT as an option.
 
 ## Storage configuration
 
@@ -51,4 +67,4 @@ The app opens on **Configure run**, which has two steps. Workload settings stay 
 - **S3 endpoint** (optional): overrides the endpoint from `.env`. It must be an HTTPS URL. The bucket and access keys always come from `.env`.
 - **Verify connection** saves these settings, runs `spt verify` against the client machines, and checks that the endpoint answers HTTPS from the dashboard host. The endpoint check proves reachability only, not credentials or bucket access.
 
-Changing the client machines or the endpoint requires verifying again. Verification and runs never overlap, because both start SPT containers on the same ports. The settings and the last result are kept in `.dashboard-state/`, and SPT's raw verification output is in `.dashboard-state/verify.log`.
+Changing the client machines or the endpoint requires verifying again. Verification and runs never overlap, because both start SPT containers on the same ports. Settings, the last job, and `verify.log` are kept in the dashboard state directory: the user configuration location for CLI mode, or `.dashboard-state/` beside the standalone executable.

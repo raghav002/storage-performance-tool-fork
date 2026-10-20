@@ -152,6 +152,18 @@ directory and generated step files, such as `qs-write-001-<timestamp>-create.met
 Headless mode activates automatically when no TTY is available; use
 `--headless` to force it.
 
+### Web dashboard
+
+Open the dashboard in your browser:
+
+```bash
+./spt --dashboard
+```
+
+Set up and start tests in the dashboard. Keep the terminal open, press Ctrl+C
+to stop the dashboard and any active test. Use `--dashboard` on its own, without
+`run`. See the [dashboard guide](dashboard/README.md) for more options.
+
 ## Core Capabilities
 
 - **Workload coverage**: run write, read, write-verify, read-verify, delete, list,
@@ -167,8 +179,8 @@ Headless mode activates automatically when no TTY is available; use
   for storage-efficiency tests.
 - **Distributed execution**: run preflight checks and orchestrate benchmark
   containers across multiple clients.
-- **Interactive and automated operation**: monitor runs in the TUI or emit
-  headless logs and result artifacts for CI/CD.
+- **Interactive and automated operation**: start and monitor tests in the web
+  dashboard or TUI, or run without a UI for scripts and CI/CD.
 - **Replay and decoupled workflows**: replay archived workloads or save object
   lists for independent read passes.
 - **Modern transport options**: use SigV4-first authentication and optional

@@ -6,6 +6,7 @@ name: PR Build Artifacts
     branches: ["**"]
     paths:
       - 'cli/**'
+      - 'dashboard/**'
       - 'engine/**'
       - '.github/workflows/pr-artifacts.yaml'
   workflow_dispatch:

@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"bufio"
@@ -326,7 +326,7 @@ func (a *app) handleVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	// Verification starts SPT containers on the ports a run uses, so the two never overlap.
 	a.mu.Lock()
-	busy := a.verifying
+	busy := a.stopping || a.verifying
 	if !busy {
 		lock, lockErr := a.lockRun()
 		busy = lockErr != nil
@@ -338,9 +338,11 @@ func (a *app) handleVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.verifying = true
+	a.processes.Add(1)
 	a.mu.Unlock()
 
 	if err := writeFileAtomic(a.storageFile, cfg); err != nil {
+		a.processes.Done()
 		a.mu.Lock()
 		a.verifying = false
 		a.mu.Unlock()
@@ -366,6 +368,7 @@ func (a *app) handleVerify(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) runVerification(hosts []string, endpoint string) {
+	defer a.processes.Done()
 	defer func() {
 		a.mu.Lock()
 		a.verifying = false
@@ -430,9 +433,24 @@ func (a *app) runSptVerify(hosts []string) (string, error) {
 		return "", err
 	}
 	cmd.Stderr = cmd.Stdout
+	prepareProcess(cmd, nil)
+	a.mu.Lock()
+	if a.stopping {
+		a.mu.Unlock()
+		_ = stdout.Close()
+		return "", context.Canceled
+	}
 	if err = cmd.Start(); err != nil {
+		a.mu.Unlock()
 		return "", err
 	}
+	a.verifyCmd = cmd
+	a.mu.Unlock()
+	defer func() {
+		a.mu.Lock()
+		a.verifyCmd = nil
+		a.mu.Unlock()
+	}()
 	var output io.Reader = stdout
 	if f, e := os.OpenFile(filepath.Join(a.stateDir, "verify.log"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600); e == nil {
 		defer f.Close()

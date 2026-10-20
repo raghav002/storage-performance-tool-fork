@@ -5,6 +5,7 @@ go 1.25.14
 require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/dell/storage-performance-tool/dashboard v0.0.0
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.8.2
 	github.com/docker/go-units v0.5.0
@@ -69,3 +70,5 @@ require (
 	golang.org/x/time v0.12.0 // indirect
 	gotest.tools/v3 v3.5.2 // indirect
 )
+
+replace github.com/dell/storage-performance-tool/dashboard => ../dashboard

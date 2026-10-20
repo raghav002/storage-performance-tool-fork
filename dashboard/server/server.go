@@ -47,7 +47,7 @@ func Run(ctx context.Context, opts Options) error {
 			a.mu.Lock()
 			a.stopping = true
 			a.mu.Unlock()
-			shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			shutdown, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
 			if err := server.Shutdown(shutdown); err != nil {
 				_ = server.Close()
@@ -116,7 +116,12 @@ func newApp(opts Options) (*app, error) {
 	if err := os.MkdirAll(stateDir, 0700); err != nil {
 		return nil, err
 	}
-	if err := os.Chmod(stateDir, 0700); err != nil {
+	dir, err := os.Open(filepath.Clean(stateDir))
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+	if err := dir.Chmod(0700); err != nil {
 		return nil, err
 	}
 	a := &app{root: root, home: home, results: filepath.Join(home, "results"), stateDir: stateDir,

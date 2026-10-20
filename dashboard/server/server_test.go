@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -116,5 +117,30 @@ func TestBrowserCommand(t *testing.T) {
 	}
 	if _, err := browserCommand("unsupported", url); err == nil {
 		t.Fatal("unsupported browser command succeeded")
+	}
+}
+
+func TestStateDirectoryPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix directory permissions")
+	}
+	root := t.TempDir()
+	t.Setenv("HOME", root)
+	stateDir := filepath.Join(root, "state")
+	if err := os.Mkdir(stateDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(stateDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newApp(Options{WorkDir: root, StateDir: stateDir, Port: "0"}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0700 {
+		t.Fatalf("state directory permissions = %o, want 700", info.Mode().Perm())
 	}
 }

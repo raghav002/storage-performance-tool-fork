@@ -7,16 +7,19 @@ import (
 )
 
 func browserCommand(platform, url string) (*exec.Cmd, error) {
+	var cmd *exec.Cmd
 	switch platform {
 	case "linux":
-		return exec.Command("xdg-open", url), nil
+		cmd = exec.Command("xdg-open")
 	case "darwin":
-		return exec.Command("open", url), nil
+		cmd = exec.Command("open")
 	case "windows":
-		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url), nil
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler")
 	default:
 		return nil, fmt.Errorf("automatic browser opening is unavailable on %s", platform)
 	}
+	cmd.Args = append(cmd.Args, url)
+	return cmd, nil
 }
 
 func openBrowser(url string) error {

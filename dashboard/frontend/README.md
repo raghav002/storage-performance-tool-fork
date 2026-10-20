@@ -1,6 +1,6 @@
 # SPT dashboard frontend
 
-React UI adapted from the project branch identified in `UPSTREAM.md`. The production output is a single `dashboard/index.html`, embedded by the Go server in `dashboard/`.
+React UI adapted from the project branch identified in `UPSTREAM.md`. The production output is a single `dashboard/server/index.html`, embedded by the shared Go server in `dashboard/server/`.
 
 ## Build
 
@@ -12,7 +12,7 @@ npm ci
 npm run build
 ```
 
-The build checks TypeScript, bundles React and CSS locally, then embeds the bundles into `../index.html`. There are no runtime CDN dependencies. Commit the source and the generated `dashboard/index.html` together; CI fails if they differ.
+The build checks TypeScript, bundles React and CSS locally, then embeds the bundles into `../server/index.html`. There are no runtime CDN dependencies. Commit the source and the generated `dashboard/server/index.html` together; CI fails if they differ.
 
 ## Run with the backend
 

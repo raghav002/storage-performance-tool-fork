@@ -23,29 +23,29 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version-file: go.work
+          go-version-file: cli/go.mod
 
       - name: Run dashboard Go tests
-        working-directory: dashboard
-        run: go test ./...
+        working-directory: cli
+        run: go test ./internal/dashboard/...
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: dashboard/frontend/package-lock.json
+          cache-dependency-path: cli/internal/dashboard/frontend/package-lock.json
 
       - name: Install frontend dependencies
-        working-directory: dashboard/frontend
+        working-directory: cli/internal/dashboard/frontend
         run: npm ci
 
       - name: Build frontend and embedded page
-        working-directory: dashboard/frontend
+        working-directory: cli/internal/dashboard/frontend
         run: npm run build
 
       - name: Check embedded page is up to date
-        run: git diff --exit-code -- dashboard/server/index.html
+        run: git diff --exit-code -- cli/internal/dashboard/server/index.html
 
   yaml-lint:
     name: YAML Lint
@@ -264,3 +264,31 @@ jobs:
           name: cli-linux-amd64-${{ github.sha }}
           path: dist/cli
           if-no-files-found: error
+
+  ci-gate:
+    name: All checks passed
+    if: ${{ always() }}
+    needs:
+      - dashboard-build
+      - yaml-lint
+      - go-quality
+      - engine-build
+      - cli-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every CI job to pass
+        env:
+          DASHBOARD_BUILD: ${{ needs.dashboard-build.result }}
+          YAML_LINT: ${{ needs.yaml-lint.result }}
+          GO_QUALITY: ${{ needs.go-quality.result }}
+          ENGINE_BUILD: ${{ needs.engine-build.result }}
+          CLI_BUILD: ${{ needs.cli-build.result }}
+        run: |
+          set -euo pipefail
+          for result in "$DASHBOARD_BUILD" "$YAML_LINT" "$GO_QUALITY" "$ENGINE_BUILD" "$CLI_BUILD"; do
+            if [[ "$result" != "success" ]]; then
+              echo "A required CI job finished with '$result'."
+              exit 1
+            fi
+          done
+          echo "All required CI jobs passed."

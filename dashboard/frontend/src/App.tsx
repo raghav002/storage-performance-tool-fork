@@ -963,15 +963,15 @@ function Dashboard({
           {historical && (
             <button onClick={onBackHistory}>Back to run history</button>
           )}
-          {m && (
-            <a
-              className="button-link"
-              href={`/api/runs/${encodeURIComponent(m.run_id)}/csv?kind=summary`}
-              download
-            >
-              Export run CSV
-            </a>
-          )}
+          {job?.status === "completed" && summaries.length > 0 && m && (
+	    <a
+		className="button-link"
+		href={`/api/runs/${encodeURIComponent(m.run_id)}/csv?kind=summary`}
+		download
+	    >
+		Download CSV report
+	    </a>
+	  )}
           <button className="primary" onClick={onConfigure}>
             ＋ Configure run
           </button>
@@ -1576,17 +1576,15 @@ function Charts({
                 Follow latest
               </button>
             </div>
-            {shown.length ? (
-              <a
-                className="button-link"
-                href={`/api/runs/${encodeURIComponent(m.run_id)}/csv?kind=window&phase=${phase}&start=${start}&end=${end}`}
-                download
-              >
-                Export window CSV
-              </a>
-            ) : (
-              <button disabled>Export window CSV</button>
-            )}
+            {!m.is_active && shown.length > 0 && (
+		<a
+		  className="button-link"
+		  href={`/api/runs/${encodeURIComponent(m.run_id)}/csv?kind=window&phase=${phase}&start=${start}&end=${end}`}
+		  download
+		>
+		  Export window CSV
+		</a>
+	    )}
           </div>
           {samples.length > 1 && (
             <label className="timeline-pan">

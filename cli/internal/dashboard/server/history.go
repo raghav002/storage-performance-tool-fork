@@ -1,0 +1,297 @@
+package server
+
+import (
+	"context"
+	"encoding/csv"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math"
+	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/dell/storage-performance-tool/cli/internal/results/summary"
+)
+
+func (a *app) handleRunHistory(w http.ResponseWriter, r *http.Request) {
+	if r.URL.RawQuery != "" {
+		writeJSON(w, 404, map[string]any{"error": "Endpoint not found."})
+		return
+	}
+	entries, err := os.ReadDir(a.results)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		writeJSON(w, 500, map[string]any{"error": "Could not read saved SPT runs."})
+		return
+	}
+	a.mu.Lock()
+	latest := cloneMap(a.activeJob)
+	a.mu.Unlock()
+	if latest == nil {
+		latest = a.readStateFile()
+	}
+	items := []map[string]any{}
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "mt-dashboard-") || !runPattern.MatchString(entry.Name()) {
+			continue
+		}
+		item, err := a.savedRun(entry.Name(), latest, false)
+		if err == nil {
+			items = append(items, item)
+		}
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return str(items[i]["started_at"]) > str(items[j]["started_at"])
+	})
+	if len(items) > 200 {
+		items = items[:200]
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"runs": items})
+}
+
+func (a *app) handleSavedRun(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("runID")
+	if r.URL.RawQuery != "" || !runPattern.MatchString(runID) || filepath.Base(runID) != runID || !strings.HasPrefix(runID, "mt-dashboard-") {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Saved run not found."})
+		return
+	}
+	a.mu.Lock()
+	latest := cloneMap(a.activeJob)
+	a.mu.Unlock()
+	if latest == nil {
+		latest = a.readStateFile()
+	}
+	item, err := a.savedRun(runID, latest, true)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Saved run not found."})
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+func (a *app) handleRunCSV(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("runID")
+	query := r.URL.Query()
+	for key := range query {
+		if key != "kind" && key != "phase" && key != "start" && key != "end" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Unsupported CSV export options."})
+			return
+		}
+	}
+	if !runPattern.MatchString(runID) || filepath.Base(runID) != runID || !strings.HasPrefix(runID, "mt-dashboard-") {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Saved run not found."})
+		return
+	}
+	item, err := a.savedRun(runID, nil, true)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Saved run not found."})
+		return
+	}
+	metrics, _ := item["metrics"].(map[string]any)
+	kind := query.Get("kind")
+	if kind == "" {
+		kind = "summary"
+	}
+	rows := []map[string]any{}
+	phase := strings.ToUpper(query.Get("phase"))
+	switch kind {
+	case "summary":
+		rows = metricsSummaries(metrics)
+		if len(rows) == 0 && metrics != nil {
+			rows, _ = metrics["chart_samples"].([]map[string]any)
+		}
+	case "samples":
+		if metrics != nil {
+			rows, _ = metrics["chart_samples"].([]map[string]any)
+		}
+	case "phase", "window":
+		if phase != "CREATE" && phase != "VERIFY" && phase != "READ" && phase != "DELETE" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Choose a supported run phase."})
+			return
+		}
+		if metrics != nil {
+			all, _ := metrics["chart_samples"].([]map[string]any)
+			started, _ := time.Parse(time.RFC3339Nano, str(item["job"].(map[string]any)["started_at"]))
+			var min, max float64
+			if kind == "window" {
+				var e1, e2 error
+				min, e1 = strconv.ParseFloat(query.Get("start"), 64)
+				max, e2 = strconv.ParseFloat(query.Get("end"), 64)
+				if e1 != nil || e2 != nil || math.IsNaN(min) || math.IsNaN(max) || math.IsInf(min, 0) || math.IsInf(max, 0) || min < 0 || max < min {
+					writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Choose a valid visible time window."})
+					return
+				}
+			}
+			for _, row := range all {
+				if phaseCodeForBackend(str(row["op_type"])) != phase {
+					continue
+				}
+				if kind == "window" {
+					t, e := time.Parse(time.RFC3339Nano, str(row["timestamp"]))
+					if e != nil || started.IsZero() {
+						continue
+					}
+					elapsed := t.Sub(started).Seconds()
+					if elapsed < min || elapsed > max {
+						continue
+					}
+				}
+				rows = append(rows, row)
+			}
+		}
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Choose summary, samples, phase, or window CSV."})
+		return
+	}
+	if len(rows) == 0 {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "No measurements are available for this CSV export."})
+		return
+	}
+	filename := "spt-" + runID + "-" + kind + ".csv"
+	if phase != "" {
+		filename = "spt-" + runID + "-" + strings.ToLower(phase) + "-" + kind + ".csv"
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "no-store")
+	writer := csv.NewWriter(w)
+	fields := map[string]bool{}
+	for _, row := range rows {
+		for key := range row {
+			if keyPattern.MatchString(key) {
+				fields[key] = true
+			}
+		}
+	}
+	columns := make([]string, 0, len(fields))
+	for key := range fields {
+		columns = append(columns, key)
+	}
+	sort.Strings(columns)
+	_ = writer.Write(columns)
+	for _, row := range rows {
+		record := make([]string, len(columns))
+		for i, key := range columns {
+			if value := row[key]; value != nil {
+				record[i] = fmt.Sprint(value)
+			}
+		}
+		_ = writer.Write(record)
+	}
+	writer.Flush()
+}
+
+func phaseCodeForBackend(value string) string {
+	s := strings.ToUpper(value)
+	switch {
+	case strings.Contains(s, "CREATE"), strings.Contains(s, "WRITE"):
+		return "CREATE"
+	case strings.Contains(s, "VERIFY"), strings.Contains(s, "READ"):
+		return "VERIFY"
+	case strings.Contains(s, "DELETE"), strings.Contains(s, "CLEANUP"):
+		return "DELETE"
+	default:
+		return "SPT"
+	}
+}
+
+func (a *app) savedRun(runID string, latest map[string]any, includeMetrics bool) (map[string]any, error) {
+	dir := filepath.Join(a.results, runID)
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() || filepath.Dir(dir) != a.results {
+		return nil, os.ErrNotExist
+	}
+	metrics := a.readRealRun(dir, runID, false)
+	var params map[string]any
+	paramsDir := dir
+	for _, candidate := range []string{filepath.Join(dir, "spt_run_params.json")} {
+		if b, e := os.ReadFile(candidate); e == nil { // #nosec G304 -- dir is checked above to be a direct child of the results directory
+			if json.Unmarshal(b, &params) == nil {
+				paramsDir = filepath.Dir(candidate)
+			}
+		}
+	}
+	if params == nil {
+		children, _ := os.ReadDir(dir)
+		for _, child := range children {
+			if !child.IsDir() {
+				continue
+			}
+			childDir := filepath.Join(dir, child.Name())
+			if b, e := os.ReadFile(filepath.Join(childDir, "spt_run_params.json")); e == nil && json.Unmarshal(b, &params) == nil { // #nosec G304 -- child folder listed from the checked run directory
+				paramsDir = childDir
+				break
+			}
+		}
+	}
+	if params == nil {
+		return nil, os.ErrNotExist
+	}
+	if metrics != nil {
+		if data, loadErr := summary.NewLoader().Load(context.Background(), paramsDir); loadErr == nil {
+			if aggregated, aggregateErr := summary.Aggregate(data); aggregateErr == nil {
+				metrics["spt_summary_report"] = summary.NewRenderer(summary.RenderOptions{}).FullReport(aggregated)
+			}
+		}
+	}
+
+	startedAt := ""
+	if match := runTimePattern.FindStringSubmatch(runID); len(match) == 2 {
+		if stamp, e := time.ParseInLocation("20060102T150405", match[1], time.UTC); e == nil {
+			startedAt = stamp.Format(time.RFC3339)
+		}
+	}
+	if startedAt == "" {
+		startedAt = str(params["generatedAt"])
+	}
+	scenario, _ := params["scenarioParams"].(map[string]any)
+	options := map[string]any{
+		"object_count":        scenario["ObjectCount"],
+		"object_size":         scenario["ObjectSize"],
+		"threads":             scenario["Threads"],
+		"max_runtime_seconds": params["autoTerminateSeconds"],
+	}
+	status := "partial"
+	if regularFile(filepath.Join(dir, "results_summary.txt")) || len(metricsSummaries(metrics)) >= 3 {
+		status = "completed"
+	}
+	job := map[string]any{"run_id": runID, "status": status, "started_at": startedAt, "options": options}
+	if latest != nil && str(latest["run_id"]) == runID {
+		job = publicJob(latest)
+		if opts, ok := latest["options"].(map[string]any); ok {
+			options = opts
+		}
+		job["options"] = options
+	}
+	if metrics != nil {
+		metrics["run_id"] = runID
+	}
+	item := map[string]any{"job": job, "metrics": metrics}
+	if includeMetrics {
+		item["target"] = a.targetConfiguration()
+	} else {
+		item = map[string]any{
+			"run_id": runID, "started_at": startedAt, "status": status,
+			"options": options, "phase_summaries": metricsSummaries(metrics),
+		}
+		if latest != nil && str(latest["run_id"]) == runID {
+			item["status"] = str(latest["status"])
+		}
+	}
+	return item, nil
+}
+
+func metricsSummaries(metrics map[string]any) []map[string]any {
+	if metrics == nil {
+		return []map[string]any{}
+	}
+	if rows, ok := metrics["phase_summaries"].([]map[string]any); ok {
+		return rows
+	}
+	return []map[string]any{}
+}

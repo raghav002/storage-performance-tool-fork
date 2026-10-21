@@ -112,7 +112,7 @@ export function hostError(entry: string): string | null {
     : "The host name is not valid.";
 }
 
-// Mirrors validateEndpoint: an HTTPS URL without credentials, query, fragment, or whitespace.
+// Mirrors validateEndpoint: an HTTP(S) URL without credentials, query, fragment, or whitespace.
 export function endpointError(value: string): string | null {
   if (!value) return null;
   if (/\s/.test(value)) return "Remove spaces from the endpoint.";
@@ -122,7 +122,7 @@ export function endpointError(value: string): string | null {
   } catch {
     return "Enter a full URL such as https://s3.example.com.";
   }
-  if (url.protocol !== "https:") return "The endpoint must use https://.";
+  if (url.protocol !== "https:" && url.protocol !== "http:") return "The endpoint must use http:// or https://.";
   if (url.username || url.password)
     return "Do not put credentials in the endpoint URL.";
   if (url.search || url.hash || value.includes("?") || value.includes("#"))

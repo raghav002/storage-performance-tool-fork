@@ -172,7 +172,7 @@ export function StorageConfiguration({
               placeholder={
                 target.endpoint_source === "env" && target.endpoint
                   ? `${target.endpoint} (from the host)`
-                  : "https://s3.example.com"
+                  : "https://s3.example.com or http://127.0.0.1:9000"
               }
               autoComplete="off"
               spellCheck={false}
@@ -188,6 +188,7 @@ export function StorageConfiguration({
               </small>
             )}
             <small>
+              Use HTTP or HTTPS. Prefer HTTPS when the endpoint is outside a trusted private network.
               Leave blank to use the endpoint configured on the host. The bucket
               and access keys always come from the host.
             </small>

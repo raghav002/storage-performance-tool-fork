@@ -1,0 +1,174 @@
+import { useEffect, useState } from "react";
+import type { Row, State } from "../types";
+import { defaults } from "../config";
+import { formatNumber as fmt, numeric, phaseName } from "../utils/metrics";
+
+type Limits = {
+  iops: number | null;
+  bandwidth: number | null;
+  latency: number | null;
+};
+const noLimits: Limits = { iops: null, bandwidth: null, latency: null };
+
+export function PerformanceLimits({
+  state,
+  row,
+  phase,
+}: {
+  state: State;
+  row?: Row;
+  phase: string;
+}) {
+  const o = state.job?.options ?? defaults;
+  const key = [
+    "spt-performance-limits-v1",
+    `${state.target.endpoint_label ?? ""}/${state.target.bucket ?? ""}`,
+    o.object_size,
+    o.threads,
+  ].join(":");
+  const [limits, setLimits] = useState<Limits>(noLimits),
+    [draft, setDraft] = useState({ iops: "", bandwidth: "", latency: "" }),
+    [message, setMessage] = useState("");
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(key) ?? "null") ?? noLimits;
+      const safe = {
+        iops: numeric(saved.iops),
+        bandwidth: numeric(saved.bandwidth),
+        latency: numeric(saved.latency),
+      };
+      setLimits(safe);
+      setDraft({
+        iops: safe.iops === null ? "" : String(safe.iops),
+        bandwidth: safe.bandwidth === null ? "" : String(safe.bandwidth),
+        latency: safe.latency === null ? "" : String(safe.latency),
+      });
+    } catch {
+      setLimits(noLimits);
+      setDraft({ iops: "", bandwidth: "", latency: "" });
+    }
+    setMessage("");
+  }, [key]);
+  const checks = [
+    {
+      key: "iops" as const,
+      value: numeric(row?.interval_iops),
+      label: "IOPS",
+      minimum: true,
+    },
+    {
+      key: "bandwidth" as const,
+      value: numeric(row?.bandwidth_mib_s),
+      label: "Bandwidth",
+      minimum: true,
+    },
+    {
+      key: "latency" as const,
+      value: numeric(row?.p50_latency_us),
+      label: "P50 latency",
+      minimum: false,
+    },
+  ];
+  function save() {
+    const parsed = Object.fromEntries(
+      Object.entries(draft).map(([k, v]) => [
+        k,
+        v.trim() === "" ? null : Number(v),
+      ]),
+    ) as Limits;
+    if (
+      Object.values(parsed).some(
+        (v) => v !== null && (!Number.isFinite(v) || v < 0),
+      )
+    ) {
+      setMessage("Enter zero or a positive number.");
+      return;
+    }
+    try {
+      localStorage.setItem(key, JSON.stringify(parsed));
+      setLimits(parsed);
+      setMessage("Limits saved in this browser.");
+    } catch {
+      setMessage("Browser storage unavailable; limits could not be saved.");
+    }
+  }
+  return (
+    <details className="panel limits">
+      <summary>
+        Performance limits{" "}
+        <span className="summary-note">
+          {phaseName(phase)} ·{" "}
+          {checks.filter((c) => limits[c.key] !== null).length}/3 set
+        </span>
+      </summary>
+      <p className="form-help">
+        Set your team’s expectations for {state.target.endpoint_label},{" "}
+        {o.object_size} objects, and {o.threads} thread
+        {o.threads === 1 ? "" : "s"}. These limits stay in this browser and
+        apply to the selected phase.
+      </p>
+      <div className="form-grid limits-grid">
+        {checks.map((c) => {
+          const limit = limits[c.key],
+            value = c.value;
+          const result =
+            limit === null
+              ? "No limit set"
+              : value === null
+                ? "Not measured"
+                : (c.minimum ? value >= limit : value <= limit)
+                  ? "Within limit"
+                  : "Outside limit";
+          return (
+            <label key={c.key}>
+              {c.minimum ? "Minimum" : "Maximum"} {c.label} (
+              {c.key === "iops"
+                ? "ops/s"
+                : c.key === "bandwidth"
+                  ? "MiB/s"
+                  : "µs"}
+              )
+              <input
+                type="number"
+                min="0"
+                step="any"
+                placeholder="No limit set"
+                value={draft[c.key]}
+                onChange={(e) =>
+                  setDraft({ ...draft, [c.key]: e.target.value })
+                }
+              />
+              <span
+                className={result === "Outside limit" ? "limit-bad" : "subtle"}
+              >
+                {result} · measured {fmt(value, 2)}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      <div className="actions">
+        <button className="primary" onClick={save}>
+          Save limits
+        </button>
+        <button
+          onClick={() => {
+            try {
+              localStorage.removeItem(key);
+              setLimits(noLimits);
+              setDraft({ iops: "", bandwidth: "", latency: "" });
+              setMessage("Limits cleared.");
+            } catch {
+              setMessage("Browser storage unavailable.");
+            }
+          }}
+        >
+          Clear limits
+        </button>
+        <span className="subtle" role="status">
+          {message}
+        </span>
+      </div>
+    </details>
+  );
+}

@@ -12,6 +12,7 @@ func TestValidateStorage(t *testing.T) {
 		{Hosts: []string{"127.0.0.1"}},
 		{Hosts: []string{" root@node1 ", "", "admin@10.0.0.7", "worker-3.lab.example"}},
 		{Hosts: []string{"localhost"}, Endpoint: " https://s3.example:9021 "},
+		{Hosts: []string{"localhost"}, Endpoint: " http://127.0.0.1:9000 "},
 	}
 	for _, cfg := range good {
 		if _, err := validateStorage(cfg); err != nil {
@@ -36,7 +37,6 @@ func TestValidateStorage(t *testing.T) {
 		{Hosts: []string{"node1", "root@NODE1"}},
 		{Hosts: []string{"localhost", "127.0.0.1"}},
 		{Hosts: []string{"n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9"}},
-		{Hosts: []string{"node1"}, Endpoint: "http://s3.example"},
 		{Hosts: []string{"node1"}, Endpoint: "https://key:secret@s3.example"},
 		{Hosts: []string{"node1"}, Endpoint: "https://s3.example/?list"},
 	}
@@ -44,67 +44,6 @@ func TestValidateStorage(t *testing.T) {
 		if _, err := validateStorage(cfg); err == nil {
 			t.Errorf("accepted unsafe settings: %+v", cfg)
 		}
-	}
-}
-
-func TestParseVerifyOutput(t *testing.T) {
-	output := strings.Join([]string{
-		"Starting parallel verification of 2 hosts...",
-		"  - localhost (127.0.0.1)",
-		"  - node2",
-		"",
-		"  ❌ node2 verification failed (SSH connection failed for root@node2)",
-		"  ✅ 127.0.0.1 verification complete",
-		"",
-		"═══ Spt Distributed Testing Verification ═══",
-		"Nodes tested: 2",
-		"Time: 12.4s",
-		"",
-		"Node: 127.0.0.1",
-		"  ✓ SSH Connectivity:    PASS - Local Docker connectivity confirmed (0.1s)",
-		"  ⚠ Clock Sync:          WARN - Clock skew of 3s detected",
-		"  ✓ Docker Available:    PASS - Docker daemon is running (0.4s)",
-		"  Overall: ✅ All checks passed",
-		"",
-		"Node: node2",
-		"  ✗ SSH Connectivity:    FAIL - SSH connection failed for root@node2 (5.0s)",
-		"    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-		"    Failed Command: ssh -o BatchMode=yes root@node2 true",
-		"    Error Output:",
-		"    │ ssh: connect to host node2 port 22: Connection refused",
-		"  Overall: ❌ SSH connectivity failed",
-		"",
-		"═══ Summary ═══",
-		"❌ NOT READY: 1/2 nodes passed (required: 2). Failed: node2 (SSH connectivity failed)",
-		"Please address the issues above before running tests.",
-	}, "\n")
-
-	latest := map[string]verifyNode{}
-	updates := []string{}
-	summary := parseVerifyOutput(strings.NewReader(output), func(host string, node verifyNode) {
-		latest[host] = node
-		updates = append(updates, host+":"+node.Status)
-	})
-
-	if !strings.HasPrefix(summary, "1/2 nodes passed") {
-		t.Errorf("wrong summary: %q", summary)
-	}
-	if len(updates) < 2 || updates[0] != "node2:failed" || updates[1] != "127.0.0.1:passed" {
-		t.Errorf("per-machine results were not reported as they arrived: %v", updates)
-	}
-	local := latest["127.0.0.1"]
-	if local.Status != "passed" || local.Message != "All checks passed" || len(local.Checks) != 3 {
-		t.Fatalf("wrong local result: %#v", local)
-	}
-	if local.Checks[0].Name != "SSH Connectivity" || local.Checks[0].Status != "pass" || local.Checks[1].Status != "warn" {
-		t.Errorf("wrong local checks: %#v", local.Checks)
-	}
-	remote := latest["node2"]
-	if remote.Status != "failed" || remote.Message != "SSH connectivity failed" || len(remote.Checks) != 1 || remote.Checks[0].Status != "fail" {
-		t.Fatalf("wrong remote result: %#v", remote)
-	}
-	if !strings.Contains(remote.Checks[0].Message, "SSH connection failed for root@node2") {
-		t.Errorf("failed check lost its message: %#v", remote.Checks[0])
 	}
 }
 

@@ -640,6 +640,51 @@ pre {
   margin-bottom: 20px;
   font-size: 12px;
 }
+.connect-panel {
+  max-width: 880px;
+  padding: 28px;
+}
+.connect-panel h2 {
+  margin-top: 10px;
+}
+.connect-panel > p {
+  margin-top: 8px;
+  max-width: 650px;
+}
+.connect-host {
+  display: grid;
+  gap: 8px;
+  max-width: 420px;
+  margin: 26px 0;
+  color: #52647d;
+  font-size: 12px;
+}
+.connect-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 28px;
+}
+.connection-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #356c58;
+  font-size: 12px;
+}
+.connection-state .source-dot {
+  position: static;
+}
+@media (max-width: 620px) {
+  .connect-panel {
+    padding: 20px;
+  }
+  .connect-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
 .empty-chart {
   height: 120px;
   display: grid;

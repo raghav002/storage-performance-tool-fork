@@ -19,6 +19,7 @@ type Options struct {
 	WorkDir     string
 	StateDir    string
 	Port        string
+	ConfigFile  string
 	Output      io.Writer
 	OpenBrowser bool
 }
@@ -73,12 +74,6 @@ func Run(ctx context.Context, opts Options) error {
 }
 
 func newApp(opts Options) (*app, error) {
-	if maxThreads > 4 || maxRuntime > 600 || maxObjects > 320 {
-		return nil, errors.New("dashboard safety limits exceed the reviewed VM profile")
-	}
-	if expertMaxThreads > 64 || expertMaxRuntime > 3600 || expertMaxObjects > 100_000 || expertMaxTotalBytes > 100<<30 {
-		return nil, errors.New("dashboard expert limits exceed the agreed ceiling")
-	}
 	root := opts.WorkDir
 	if root == "" {
 		executable, err := os.Executable()
@@ -104,9 +99,9 @@ func newApp(opts Options) (*app, error) {
 	}
 	sptBin := opts.SPTBinary
 	if sptBin == "" {
-		sptBin, _ = exec.LookPath("spt")
-		if sptBin == "" && executable("/usr/local/bin/spt") {
-			sptBin = "/usr/local/bin/spt"
+		sptBin, err = os.Executable()
+		if err != nil {
+			return nil, fmt.Errorf("resolve SPT executable: %w", err)
 		}
 	}
 	stateDir := opts.StateDir
@@ -127,6 +122,10 @@ func newApp(opts Options) (*app, error) {
 	a := &app{root: root, home: home, results: filepath.Join(home, "results"), stateDir: stateDir,
 		stateFile: filepath.Join(stateDir, "latest-job.json"), lockFile: filepath.Join(stateDir, "job.lock"), port: strconv.Itoa(n), sptBin: sptBin,
 		storageFile: filepath.Join(stateDir, "storage-config.json"), verifyFile: filepath.Join(stateDir, "storage-verification.json")}
+	a.settings, err = loadSettings(opts.ConfigFile)
+	if err != nil {
+		return nil, err
+	}
 	a.loadStorage()
 	return a, nil
 }
@@ -137,6 +136,8 @@ func (a *app) httpServer() *http.Server {
 	mux.HandleFunc("GET /index.html", a.handleRoot)
 	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	mux.HandleFunc("GET /api/state", a.handleState)
+	mux.HandleFunc("POST /api/attach", a.handleAttach)
+	mux.HandleFunc("DELETE /api/attach", a.handleDetach)
 	mux.HandleFunc("GET /api/runs", a.handleRunHistory)
 	mux.HandleFunc("GET /api/runs/{runID}/csv", a.handleRunCSV)
 	mux.HandleFunc("GET /api/runs/{runID}", a.handleSavedRun)
@@ -148,7 +149,7 @@ func (a *app) httpServer() *http.Server {
 func (a *app) stopProcesses() {
 	a.mu.Lock()
 	a.stopping = true
-	commands := []*exec.Cmd{a.activeCmd, a.verifyCmd}
+	commands := []*exec.Cmd{a.activeCmd}
 	a.mu.Unlock()
 	for _, cmd := range commands {
 		if cmd != nil {

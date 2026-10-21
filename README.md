@@ -157,12 +157,11 @@ Headless mode activates automatically when no TTY is available; use
 Open the dashboard in your browser:
 
 ```bash
-./spt --dashboard
+./spt dashboard
 ```
 
 Set up and start tests in the dashboard. Keep the terminal open, press Ctrl+C
-to stop the dashboard and any active test. Use `--dashboard` on its own, without
-`run`. See the [dashboard guide](dashboard/README.md) for more options.
+to stop the dashboard and any active test. See the [dashboard guide](cli/internal/dashboard/README.md) for port and configuration options.
 
 ## Core Capabilities
 

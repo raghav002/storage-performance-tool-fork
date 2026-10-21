@@ -1,27 +1,26 @@
 # SPT dashboard frontend
 
-React UI adapted from the project branch identified in `UPSTREAM.md`. The production output is a single `dashboard/server/index.html`, embedded by the shared Go server in `dashboard/server/`.
+React UI adapted from the project branch identified in `UPSTREAM.md`. The production output is a single `../server/index.html`, embedded by the shared Go server.
 
 ## Build
 
 From the repository root:
 
 ```sh
-cd dashboard/frontend
+cd cli/internal/dashboard/frontend
 npm ci
 npm run build
 ```
 
-The build checks TypeScript, bundles React and CSS locally, then embeds the bundles into `../server/index.html`. There are no runtime CDN dependencies. Commit the source and the generated `dashboard/server/index.html` together; CI fails if they differ.
+The build checks TypeScript, bundles React and CSS locally, then embeds the bundles into `../server/index.html`. There are no runtime CDN dependencies. Commit the source and the generated `../server/index.html` together; CI fails if they differ.
 
 ## Run with the backend
 
 Rebuild the Go executable after updating the HTML, because `go:embed` captures it at build time:
 
 ```sh
-cd dashboard
-go build -o spt-dashboard .
-./spt-dashboard
+cd cli
+go run ./cmd/spt dashboard
 ```
 
 Open `http://127.0.0.1:8000` directly or through an SSH tunnel. See `../README.md` for server setup.

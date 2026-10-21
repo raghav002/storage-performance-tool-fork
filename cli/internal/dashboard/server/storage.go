@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bufio"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -9,12 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -22,11 +19,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dell/storage-performance-tool/cli/internal/constants"
+	"github.com/dell/storage-performance-tool/cli/internal/hostparse"
+	verifyapi "github.com/dell/storage-performance-tool/cli/internal/verification"
 )
 
 const (
 	maxHosts        = 8
-	verifyTimeout   = 5 * time.Minute
 	endpointTimeout = 5 * time.Second
 	localHost       = "127.0.0.1"
 )
@@ -34,13 +34,6 @@ const (
 var (
 	userPattern      = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]{0,31}$`)
 	hostLabelPattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
-
-	// Line shapes printed by `spt verify`; it has no machine-readable output.
-	verifyDonePattern    = regexp.MustCompile(`^\s*(✅|❌)\s+(\S+) verification (?:complete|failed)(?: \((.*)\))?\s*$`)
-	verifyNodePattern    = regexp.MustCompile(`^Node:\s+(\S+)\s*$`)
-	verifyCheckPattern   = regexp.MustCompile(`^\s*(?:✓|✗|⚠)\s+(.+?):\s+(PASS|FAIL|WARN) - (.*)$`)
-	verifyOverallPattern = regexp.MustCompile(`^\s*Overall:\s+(✅|❌)\s*(.*)$`)
-	verifySummaryPattern = regexp.MustCompile(`^(?:✅ READY|❌ NOT READY):\s*(.*)$`)
 )
 
 // storageConfig is the part of the target the browser may set. The bucket and
@@ -131,7 +124,7 @@ func validateHostEntry(entry string) error {
 
 func validateEndpoint(candidate string) (endpoint, label string, ok bool) {
 	u, err := url.Parse(candidate)
-	if err != nil || strings.ToLower(u.Scheme) != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.ContainsAny(candidate, " \t\r\n") {
+	if err != nil || (strings.ToLower(u.Scheme) != "http" && strings.ToLower(u.Scheme) != "https") || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.ContainsAny(candidate, " \t\r\n") {
 		return "", "", false
 	}
 	return candidate, u.Host, true
@@ -163,7 +156,7 @@ func validateStorage(c storageConfig) (storageConfig, error) {
 	}
 	if out.Endpoint != "" {
 		if _, _, ok := validateEndpoint(out.Endpoint); !ok {
-			return out, errors.New("The S3 endpoint must be a valid HTTPS URL without embedded credentials.")
+			return out, errors.New("The S3 endpoint must be a valid HTTP or HTTPS URL without embedded credentials.")
 		}
 	}
 	return out, nil
@@ -287,7 +280,7 @@ func targetHosts(target map[string]any) string {
 // metricsEndpoint is SPT's live metrics API, served by the entry node (the first client machine).
 func (a *app) metricsEndpoint() string {
 	entry := hostAddress(a.storageSnapshot().Hosts[0])
-	return "http://" + net.JoinHostPort(entry, strconv.Itoa(sptAPIPort)) + "/metrics/json"
+	return "http://" + net.JoinHostPort(entry, strconv.Itoa(constants.SptAPIPortInt)) + "/metrics/json"
 }
 
 func (a *app) handleVerify(w http.ResponseWriter, r *http.Request) {
@@ -387,7 +380,7 @@ func (a *app) runVerification(hosts []string, endpoint string) {
 			v.Endpoint.Message = message
 		})
 	}()
-	summary, err := a.runSptVerify(hosts)
+	summary, err := a.runVerificationAPI(hosts)
 	wg.Wait()
 
 	a.updateVerification(func(v *verification) {
@@ -415,124 +408,72 @@ func (a *app) runVerification(hosts []string, endpoint string) {
 	})
 }
 
-// runSptVerify runs `spt verify` against the client machines and records each
-// machine's result as SPT reports it.
-func (a *app) runSptVerify(hosts []string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), verifyTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, a.sptBin, "verify", "--test-hosts", strings.Join(hosts, ",")) // #nosec G204 -- no shell; hosts pass validateHostEntry, so none can be read as an option
-	cmd.Dir = a.root
-	values := a.configValues()
-	for k, v := range map[string]string{"HOSTS": strings.Join(hosts, ","), "SPT_IMAGE": "", "SPT_SKIP_IMAGE_PULL": "false", "NO_COLOR": "1"} {
-		values[k] = v
-	}
-	cmd.Env = envList(values)
-	cmd.Stdin = nil
-	stdout, err := cmd.StdoutPipe()
+// runVerificationAPI consumes the CLI's structured verifier results directly.
+func (a *app) runVerificationAPI(hosts []string) (string, error) {
+	parsed, err := hostparse.ParseTestHosts(strings.Join(hosts, ","))
 	if err != nil {
 		return "", err
 	}
-	cmd.Stderr = cmd.Stdout
-	prepareProcess(cmd, nil)
 	a.mu.Lock()
-	if a.stopping {
-		a.mu.Unlock()
-		_ = stdout.Close()
+	stopping := a.stopping
+	a.mu.Unlock()
+	if stopping {
 		return "", context.Canceled
 	}
-	if err = cmd.Start(); err != nil {
-		a.mu.Unlock()
-		return "", err
-	}
-	a.verifyCmd = cmd
-	a.mu.Unlock()
-	defer func() {
-		a.mu.Lock()
-		a.verifyCmd = nil
-		a.mu.Unlock()
-	}()
-	var output io.Reader = stdout
-	if f, e := os.OpenFile(filepath.Join(a.stateDir, "verify.log"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600); e == nil {
-		defer f.Close()
-		output = io.TeeReader(stdout, &limitedWriter{w: f, left: maxLogBytes})
-	}
-	index := map[string]int{}
+	report := verifyapi.NewVerifier(parsed, verifyapi.Config{
+		NetworkMode:  constants.DefaultNetworkMode,
+		APIPort:      constants.SptAPIPortInt,
+		RMIPortStart: constants.DefaultRMIPortStart,
+		RMIPortCount: constants.DefaultRMIPortCount,
+		MinHosts:     len(parsed),
+		ShowProgress: false,
+	}).VerifyAll()
+	index := make(map[string]int, len(hosts))
 	for i, host := range hosts {
 		index[strings.ToLower(hostAddress(host))] = i
 	}
-	summary := parseVerifyOutput(output, func(host string, node verifyNode) {
+	for host, result := range report.Results {
 		i, ok := index[strings.ToLower(host)]
-		if !ok {
-			return
+		if !ok || i >= len(hosts) {
+			continue
 		}
-		a.updateVerification(func(v *verification) {
-			if i < len(v.Nodes) {
-				v.Nodes[i].Status = node.Status
-				v.Nodes[i].Message = node.Message
-				v.Nodes[i].Checks = node.Checks
+		node := verifyNode{Host: hosts[i], Status: "failed", Message: result.Overall.Message, Checks: []verifyCheck{}}
+		if result.Overall.Passed {
+			node.Status = "passed"
+		}
+		checks := []struct {
+			name  string
+			check verifyapi.Check
+		}{
+			{"SSH connectivity", result.SSHConnectivity}, {"Clock skew", result.ClockSkew},
+			{"Docker available", result.DockerAvailable}, {"Docker image", result.DockerImagePull},
+			{"Container start", result.ContainerStart}, {"RDMA device", result.RdmaDevice},
+			{"RDMA driver", result.RdmaDriver}, {"RDMA readiness", result.RdmaReadiness},
+			{"Ports accessible", result.PortsAccessible}, {"Metrics endpoint", result.MetricsEndpoint},
+			{"Control endpoint", result.ControlEndpoint}, {"Container cleanup", result.ContainerCleanup},
+		}
+		for _, item := range checks {
+			if item.check.Message == "" {
+				continue
 			}
-		})
-	})
-	_, _ = io.Copy(io.Discard, output)
-	err = cmd.Wait()
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		err = errors.New("it did not finish within the time limit")
+			status := "fail"
+			if item.check.Passed {
+				status = "pass"
+			}
+			if item.check.Warning {
+				status = "warn"
+			}
+			node.Checks = append(node.Checks, verifyCheck{Name: item.name, Status: status, Message: item.check.Message})
+		}
+		a.updateVerification(func(v *verification) { v.Nodes[i] = node })
 	}
-	return summary, err
+	if report.Ready {
+		return report.Summary, nil
+	}
+	return report.Summary, errors.New("one or more client machines did not pass verification")
 }
 
-// parseVerifyOutput reads `spt verify` output, calls onNode with a machine's
-// result each time it changes, and returns SPT's summary line.
-func parseVerifyOutput(r io.Reader, onNode func(host string, node verifyNode)) string {
-	nodes := map[string]*verifyNode{}
-	get := func(host string) *verifyNode {
-		if nodes[host] == nil {
-			nodes[host] = &verifyNode{Host: host, Status: "pending", Checks: []verifyCheck{}}
-		}
-		return nodes[host]
-	}
-	current, summary := "", ""
-	scan := bufio.NewScanner(r)
-	scan.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scan.Scan() {
-		line := strings.TrimRight(scan.Text(), "\r")
-		if m := verifyDonePattern.FindStringSubmatch(line); m != nil {
-			n := get(m[2])
-			n.Status, n.Message = "passed", "Verification complete."
-			if m[1] == "❌" {
-				n.Status, n.Message = "failed", m[3]
-			}
-			onNode(m[2], n.clone())
-			continue
-		}
-		if m := verifyNodePattern.FindStringSubmatch(line); m != nil {
-			current = m[1]
-			get(current).Checks = []verifyCheck{}
-			continue
-		}
-		if m := verifySummaryPattern.FindStringSubmatch(line); m != nil {
-			current, summary = "", m[1]
-			continue
-		}
-		if current == "" {
-			continue
-		}
-		n := get(current)
-		if m := verifyCheckPattern.FindStringSubmatch(line); m != nil {
-			n.Checks = append(n.Checks, verifyCheck{Name: m[1], Status: strings.ToLower(m[2]), Message: m[3]})
-			onNode(current, n.clone())
-		} else if m := verifyOverallPattern.FindStringSubmatch(line); m != nil {
-			n.Status, n.Message = "passed", m[2]
-			if m[1] == "❌" {
-				n.Status = "failed"
-			}
-			onNode(current, n.clone())
-		}
-	}
-	return summary
-}
-
-// checkEndpoint reports whether the S3 endpoint answers HTTPS from the dashboard
+// checkEndpoint reports whether the S3 endpoint answers HTTP(S) from the dashboard
 // host. Any HTTP response counts, as does a TLS handshake that fails only on
 // certificate trust; it does not test credentials or the bucket.
 func checkEndpoint(client *http.Client, endpoint string) (status, message string) {

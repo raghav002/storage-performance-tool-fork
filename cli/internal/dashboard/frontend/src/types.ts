@@ -47,6 +47,7 @@ export type Metrics = {
   chart_samples?: Row[];
   phase_summaries?: Row[];
   total_failed?: number | null;
+  spt_summary_report?: string;
 };
 export type Job = {
   run_id: string;
@@ -61,6 +62,13 @@ export type Job = {
   options?: Options;
 };
 export type State = {
+  connection?: {
+    status: "connected" | "disconnected";
+    mode?: "attached" | "local";
+    host?: string;
+    run_id?: string;
+    read_only?: boolean;
+  };
   target: {
     ready: boolean;
     reasons?: string[];
@@ -75,6 +83,7 @@ export type State = {
   metrics: Metrics | null;
   storage?: Storage;
   limits?: RunLimits;
+  branding?: { product_name: string; environment_label: string };
 };
 export type Range = { min: number; max: number };
 // Published by the server; it enforces the same values on POST /api/runs.

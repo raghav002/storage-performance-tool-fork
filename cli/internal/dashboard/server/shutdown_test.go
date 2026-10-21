@@ -80,31 +80,3 @@ func TestShutdownInterruptsRun(t *testing.T) {
 		t.Fatalf("child did not finish and release its lock: active=%v status=%v", active, status)
 	}
 }
-
-func TestShutdownInterruptsVerification(t *testing.T) {
-	a, marker, _ := prepareShutdownTest(t)
-	endpoint := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusForbidden) }))
-	defer endpoint.Close()
-	a.endpointClient = endpoint.Client()
-	t.Setenv("S3_ENDPOINTS", endpoint.URL)
-	request := httptest.NewRequest(http.MethodPost, "/api/storage/verify", strings.NewReader(`{"hosts":["127.0.0.1"],"endpoint":""}`))
-	request.Host = "localhost:8000"
-	request.Header.Set("Origin", "http://localhost:8000")
-	request.Header.Set("Content-Type", "application/json")
-	response := httptest.NewRecorder()
-	a.handleVerify(response, request)
-	if response.Code != http.StatusAccepted {
-		t.Fatalf("start verification: %d %s", response.Code, response.Body.String())
-	}
-	waitForChild(t, a.root)
-	a.stopProcesses()
-	if data, err := os.ReadFile(marker); err != nil || string(data) != "stopped" {
-		t.Fatalf("verification was not gracefully interrupted: %q, %v", data, err)
-	}
-	a.mu.Lock()
-	active := a.verifying || a.verifyCmd != nil
-	a.mu.Unlock()
-	if active {
-		t.Fatal("verification is still active")
-	}
-}

@@ -483,11 +483,11 @@ spt run write \
 
 ### Command Reference
 
-#### `spt --dashboard`
+#### `spt dashboard`
 
 Starts the embedded web dashboard and opens its URL in your browser. Each run uses the same SPT executable in headless mode. Keep the terminal open and press Ctrl+C to stop the dashboard and gracefully interrupt an active run.
 
-This flag is available only on the root command, not on `spt run`. See the [dashboard guide](../dashboard/README.md) for state paths, port selection, and SSH access.
+Use `spt dashboard --port 8000 --config dashboard.json` to set its local port and optional deployment branding/workload limits. See the [dashboard guide](internal/dashboard/README.md) for state paths, SSH access, and settings format.
 
 #### Global Flags
 

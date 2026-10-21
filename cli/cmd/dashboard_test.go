@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dell/storage-performance-tool/dashboard/server"
+	"github.com/dell/storage-performance-tool/cli/internal/dashboard/server"
 	"github.com/spf13/cobra"
 )
 
@@ -40,15 +40,11 @@ func TestDashboardLauncher(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	workDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.SPTBinary != executable || got.WorkDir != workDir || got.StateDir != filepath.Join(configDir, "spt", "dashboard") {
+	if got.SPTBinary != executable || got.WorkDir != filepath.Dir(executable) || got.StateDir != filepath.Join(configDir, "spt", "dashboard") {
 		t.Fatalf("unexpected dashboard paths: %+v", got)
 	}
 	if !got.OpenBrowser || got.Output != output {

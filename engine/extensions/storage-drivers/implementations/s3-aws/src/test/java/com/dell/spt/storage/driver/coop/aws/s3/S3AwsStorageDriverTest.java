@@ -1787,10 +1787,9 @@ public class S3AwsStorageDriverTest {
 		when(mockS3Client.listObjectVersions(any(ListObjectVersionsRequest.class)))
 						.thenReturn(CompletableFuture.completedFuture(response));
 
-		CompletionException failure = assertThrows(
-						CompletionException.class,
+		assertThrows(
+						IllegalStateException.class,
 						() -> drv.execute((Operation<Item>) (Operation<?>) op).join());
-		assertInstanceOf(IllegalStateException.class, failure.getCause());
 		verify(op, never()).listedObjects(anyList());
 	}
 
@@ -1815,14 +1814,13 @@ public class S3AwsStorageDriverTest {
 		when(mockS3Client.listObjectVersions(any(ListObjectVersionsRequest.class)))
 						.thenReturn(CompletableFuture.completedFuture(response));
 
-		CompletionException failure = assertThrows(
-						CompletionException.class,
+		IllegalStateException failure = assertThrows(
+						IllegalStateException.class,
 						() -> drv.execute((Operation<Item>) (Operation<?>) op).join());
 
-		assertInstanceOf(IllegalStateException.class, failure.getCause());
 		assertEquals(
 						"Truncated S3 version LIST result is missing its next markers",
-						failure.getCause().getMessage());
+						failure.getMessage());
 		verify(op, never()).listedObjects(anyList());
 	}
 
@@ -1846,14 +1844,13 @@ public class S3AwsStorageDriverTest {
 		when(mockS3Client.listObjectVersions(any(ListObjectVersionsRequest.class)))
 						.thenReturn(CompletableFuture.completedFuture(response));
 
-		CompletionException failure = assertThrows(
-						CompletionException.class,
+		IllegalStateException failure = assertThrows(
+						IllegalStateException.class,
 						() -> drv.execute((Operation<Item>) (Operation<?>) op).join());
 
-		assertInstanceOf(IllegalStateException.class, failure.getCause());
 		assertEquals(
 						"S3 LIST entry is missing Size for key \"prefix/key\"",
-						failure.getCause().getMessage());
+						failure.getMessage());
 		verify(op, never()).listedObjects(anyList());
 	}
 
@@ -2155,6 +2152,60 @@ public class S3AwsStorageDriverTest {
 			var ex = assertThrows(java.util.concurrent.CompletionException.class, () -> drv.execute(op).join());
 			assertTrue(ex.getCause() instanceof UnsupportedOperationException);
 			assertTrue(ex.getCause().getMessage().contains("DataItem or PathItem"));
+		}
+
+		@SuppressWarnings("unchecked")
+		@Test
+		void smallObjectWrappingTheDataInputRingSendsTheWholeBody() throws Exception {
+			when(mockS3Client.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class)))
+							.thenReturn(CompletableFuture.completedFuture(PutObjectResponse.builder().build()));
+			final DataInput dataInput = DataInput.instance(
+							null, "7a42d9c483244167", new SizeInBytes("4MB"), 1, false);
+			final int ringSize = dataInput.getSize();
+			final int tailBytes = 1024;
+			final int size = 4096;
+			final DataItem item = new DataItemImpl("key", ringSize - tailBytes, size);
+			item.dataInput(dataInput);
+			final DataOperationImpl<DataItem> op = new DataOperationImpl<>(
+							0, OpType.CREATE, item, null, "/bucket", TEST_CRED, null, 0);
+
+			drv.execute((Operation<Item>) (Operation<?>) op).join();
+
+			final ArgumentCaptor<AsyncRequestBody> body = ArgumentCaptor.forClass(AsyncRequestBody.class);
+			verify(mockS3Client).putObject(any(PutObjectRequest.class), body.capture());
+			final java.io.ByteArrayOutputStream sent = new java.io.ByteArrayOutputStream();
+			body.getValue().subscribe(chunk -> {
+				final byte[] bytes = new byte[chunk.remaining()];
+				chunk.get(bytes);
+				sent.writeBytes(bytes);
+			}).join();
+			final ByteBuffer ring = dataInput.getLayer(0).asReadOnlyBuffer();
+			final byte[] expected = new byte[size];
+			ring.position(ringSize - tailBytes).get(expected, 0, tailBytes);
+			ring.position(0).get(expected, tailBytes, size - tailBytes);
+			assertArrayEquals(expected, sent.toByteArray());
+		}
+
+		@SuppressWarnings("unchecked")
+		@Test
+		void smallObjectReadThatStopsMakingProgressFailsWithoutSending() throws Exception {
+			final DataItem item = mock(DataItem.class);
+			when(item.name()).thenReturn("key");
+			when(item.size()).thenReturn(4096L);
+			when(item.read(any(ByteBuffer.class))).thenAnswer(invocation -> {
+				final ByteBuffer dst = invocation.getArgument(0);
+				dst.position(dst.position() + 1024);
+				return 1024;
+			}).thenReturn(0);
+			final Operation<Item> op = mock(Operation.class);
+			when(op.type()).thenReturn(OpType.CREATE);
+			when(op.dstPath()).thenReturn("/bucket");
+			when(op.item()).thenReturn((Item) item);
+
+			var ex = assertThrows(java.util.concurrent.CompletionException.class, () -> drv.execute(op).join());
+			assertTrue(ex.getCause() instanceof IOException);
+			assertEquals("Unexpected read size: 1024 of 4096 bytes", ex.getCause().getMessage());
+			verify(mockS3Client, never()).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
 		}
 	}
 

@@ -60,7 +60,7 @@ func loadSettings(path string) (dashboardSettings, error) {
 		path = os.Getenv("DASHBOARD_CONFIG")
 	}
 	if path != "" {
-		f, err := os.Open(path)
+		f, err := os.Open(path) // #nosec G304 -- path comes from operator-provided --config or DASHBOARD_CONFIG, not a request
 		if err != nil {
 			return dashboardSettings{}, fmt.Errorf("open dashboard settings: %w", err)
 		}

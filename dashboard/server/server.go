@@ -100,7 +100,7 @@ func newApp(opts Options) (*app, error) {
 	}
 	n, err := strconv.Atoi(port)
 	if err != nil || n < 0 || n > 65535 {
-		return nil, errors.New("DASHBOARD_PORT must be a number between 0 and 65535")
+		return nil, errors.New("dashboard port (--port or DASHBOARD_PORT) must be a number between 0 and 65535")
 	}
 	sptBin := opts.SPTBinary
 	if sptBin == "" {

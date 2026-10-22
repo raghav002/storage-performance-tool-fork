@@ -22,16 +22,34 @@ The frontend build writes the self-contained page to `dashboard/server/index.htm
 From the SPT CLI:
 
 ```sh
-spt --dashboard
+spt dashboard
 ```
 
 This starts the dashboard, prints its local URL, and opens a browser. Keep the terminal open while using the dashboard. Closing the browser leaves the server and any active run running. Ctrl+C stops the server and interrupts an active run or verification, waiting for the CLI to finish its cleanup.
 
-The flag belongs to the root command. `spt run write --dashboard` (or similar) is not supported. The dashboard still starts its own headless `write-verify` subprocess using the same SPT executable.
+The dashboard starts its own headless `write-verify` subprocess using the same SPT executable. Run `spt dashboard --help` for command options.
 
 CLI mode reads `.env` from the directory where you launch SPT and from your home directory, with environment variables taking precedence. State is stored under your user configuration directory in `spt/dashboard` (`~/.config/spt/dashboard` on Linux). Results remain in `~/results`.
 
-`DASHBOARD_PORT` selects the local port, default 8000. Set it to `0` to choose a free port automatically. If a browser cannot be opened, use the printed URL. Over SSH, forward that port to your local machine.
+The server listens only on localhost. `--port` overrides `DASHBOARD_PORT`; the default is 8000. Set the port to `0` to choose a free port automatically:
+
+```sh
+spt dashboard --port 9000
+```
+
+On a server without a desktop, skip opening the browser:
+
+```sh
+spt dashboard --no-browser
+```
+
+For SSH access, forward the dashboard port from your local machine:
+
+```sh
+ssh -L 8000:127.0.0.1:8000 user@server
+```
+
+Run `spt dashboard --no-browser` on the server, then open `http://localhost:8000` in your local browser. If you choose another dashboard port, update the forwarding command to match. If browser opening fails during a local run, use the printed URL.
 
 Run the server on a host where SPT is installed and configured:
 

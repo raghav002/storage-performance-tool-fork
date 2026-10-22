@@ -116,12 +116,7 @@ func newApp(opts Options) (*app, error) {
 	if err := os.MkdirAll(stateDir, 0700); err != nil {
 		return nil, err
 	}
-	dir, err := os.Open(filepath.Clean(stateDir))
-	if err != nil {
-		return nil, err
-	}
-	defer dir.Close()
-	if err := dir.Chmod(0700); err != nil {
+	if err := os.Chmod(stateDir, 0700); err != nil { // #nosec G302 -- This is a directory; 0700 grants access only to its owner.
 		return nil, err
 	}
 	a := &app{root: root, home: home, results: filepath.Join(home, "results"), stateDir: stateDir,

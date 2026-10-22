@@ -7,19 +7,16 @@ import (
 )
 
 func browserCommand(platform, url string) (*exec.Cmd, error) {
-	var cmd *exec.Cmd
 	switch platform {
 	case "linux":
-		cmd = exec.Command("xdg-open")
+		return exec.Command("xdg-open", url), nil // #nosec G204 -- URL is generated internally for localhost; no shell is used.
 	case "darwin":
-		cmd = exec.Command("open")
+		return exec.Command("open", url), nil // #nosec G204 -- URL is generated internally for localhost; no shell is used.
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler")
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url), nil // #nosec G204 -- URL is generated internally for localhost; no shell is used.
 	default:
 		return nil, fmt.Errorf("automatic browser opening is unavailable on %s", platform)
 	}
-	cmd.Args = append(cmd.Args, url)
-	return cmd, nil
 }
 
 func openBrowser(url string) error {

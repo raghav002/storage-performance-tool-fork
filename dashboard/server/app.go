@@ -843,6 +843,10 @@ func (a *app) watchProcess(runID string, cmd *exec.Cmd, lock *os.File, drained <
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.activeJob != nil && a.activeJob["run_id"] == runID {
+		if a.activeJob["stop_requested"] == true {
+			status = "stopped"
+			message = "Run stopped on request before it finished."
+		}
 		a.activeJob = cloneMap(a.activeJob)
 		a.activeJob["status"] = status
 		a.activeJob["returncode"] = code
@@ -890,7 +894,7 @@ func (a *app) writeState(state map[string]any) error {
 }
 
 func publicJob(state map[string]any) map[string]any {
-	keys := []string{"run_id", "status", "created_at", "started_at", "finished_at", "elapsed_seconds", "returncode", "message", "options", "prefix", "phase"}
+	keys := []string{"run_id", "status", "created_at", "started_at", "finished_at", "elapsed_seconds", "returncode", "message", "options", "prefix", "phase", "stop_requested"}
 	out := map[string]any{}
 	for _, k := range keys {
 		if v, ok := state[k]; ok {

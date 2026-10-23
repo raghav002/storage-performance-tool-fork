@@ -143,7 +143,7 @@ func (a *app) httpServer() *http.Server {
 	mux.HandleFunc("GET /api/runs/{runID}", a.handleSavedRun)
 	mux.HandleFunc("POST /api/runs", a.handleRun)
 	mux.HandleFunc("POST /api/storage/verify", a.handleVerify)
-	return &http.Server{Handler: securityHeaders(mux), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 * 1024}
+	return &http.Server{Handler: securityHeaders(a.apiGuard(mux)), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 * 1024}
 }
 
 func (a *app) stopProcesses() {

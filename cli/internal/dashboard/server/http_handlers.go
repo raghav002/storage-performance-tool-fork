@@ -21,6 +21,35 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+// msgLoopbackOnly is returned when a request does not name the dashboard's
+// own loopback address.
+const msgLoopbackOnly = "Open the dashboard through its SSH tunnel on 127.0.0.1."
+
+// loopbackHost reports whether the request names the dashboard's own loopback
+// address, which guards the API against DNS rebinding.
+func (a *app) loopbackHost(r *http.Request) bool {
+	host := strings.ToLower(r.Host)
+	return host == "127.0.0.1:"+a.port || host == "localhost:"+a.port
+}
+
+// apiGuard applies loopbackHost to every /api route, so a page served
+// from another origin (for example after DNS rebinding) cannot read run state,
+// history or saved results. A browser sends Origin on cross-origin reads and
+// on every state-changing request; when it is present it must name this dashboard.
+// The SSH tunnel case works because the browser's Host is 127.0.0.1:<port> or
+// localhost:<port>, the same port the dashboard listens on.
+func (a *app) apiGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") {
+			if !a.loopbackHost(r) || (r.Header.Get("Origin") != "" && !a.sameOrigin(r)) {
+				writeJSON(w, http.StatusForbidden, map[string]any{"error": msgLoopbackOnly})
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (a *app) handleRoot(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" && r.URL.Path != "/index.html" {
 		http.NotFound(w, r)

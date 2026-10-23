@@ -26,26 +26,26 @@ func (a *app) currentState() (map[string]any, error) {
 		state = a.readStateFile()
 		if state != nil {
 			a.activeJob = state
-			state["status"] = "running"
+			state[keyStatus] = jobRunning
 			if epoch, ok := num(state, "started_epoch"); ok {
-				state["elapsed_seconds"] = int(time.Now().Unix() - int64(epoch))
+				state[keyElapsedSeconds] = int(time.Now().Unix() - int64(epoch))
 			}
 		}
 	}
-	if state != nil && str(state["status"]) == jobRunning && a.activeCmd == nil && !a.lockBusy() {
+	if state != nil && str(state[keyStatus]) == jobRunning && a.activeCmd == nil && !a.lockBusy() {
 		state = a.markInterrupted(state)
 	}
-	if state != nil && str(state["status"]) == "running" {
+	if state != nil && str(state[keyStatus]) == jobRunning {
 		state = cloneMap(state)
 		if epoch, ok := num(state, "started_epoch"); ok {
-			state["elapsed_seconds"] = math.Max(0, float64(time.Now().Unix())-epoch)
+			state[keyElapsedSeconds] = math.Max(0, float64(time.Now().Unix())-epoch)
 		}
-		state["phase"] = a.phaseFromOutput(str(state["results_dir"]))
-		result := a.readRealRun(str(state["results_dir"]), str(state["run_id"]), true)
+		state[keyPhase] = a.phaseFromOutput(str(state["results_dir"]))
+		result := a.readRealRun(str(state["results_dir"]), str(state[keyRunID]), true)
 		live := a.liveMetrics(state)
 		if live != nil {
 			result = a.rememberLive(live)
-			phase := strings.ToLower(str(live["phase"]))
+			phase := strings.ToLower(str(live[keyPhase]))
 			label := "Create / write"
 			if strings.Contains(phase, "verify") || strings.Contains(phase, "read") {
 				label = "Verify"
@@ -53,39 +53,39 @@ func (a *app) currentState() (map[string]any, error) {
 			if strings.Contains(phase, "delete") || strings.Contains(phase, "cleanup") {
 				label = "Cleanup"
 			}
-			state["phase"] = label
-			ss := live["samples"].([]map[string]any)
+			state[keyPhase] = label
+			ss := live[keySamples].([]map[string]any)
 			if len(ss) > 0 {
 				sample := ss[0]
-				state["message"] = fmt.Sprintf("SPT live %s metrics: %.0f successful, %.0f failed operations.", strings.ToLower(label), numberValue(sample, "cumulative_ops"), numberValue(sample, "count_failed"))
+				state[keyMessage] = fmt.Sprintf("SPT live %s metrics: %.0f successful, %.0f failed operations.", strings.ToLower(label), numberValue(sample, keyCumulativeOps), numberValue(sample, keyCountFailed))
 			} else {
-				state["message"] = "SPT is in the " + strings.ToLower(label) + " phase; waiting for its first measured operation."
+				state[keyMessage] = "SPT is in the " + strings.ToLower(label) + " phase; waiting for its first measured operation."
 			}
 			_ = a.writeState(state)
 		} else {
-			retained := retainedLiveMetrics(str(state["run_id"]), a.liveRunID, a.liveSamples)
+			retained := retainedLiveMetrics(str(state[keyRunID]), a.liveRunID, a.liveSamples)
 			if result == nil {
 				if retained != nil {
 					result = retained
-					result["source_file"] = "Last SPT live metrics · waiting for next phase"
-					state["phase"] = "Finalizing results"
-					state["message"] = "SPT is moving between phases; the last recorded measurements remain visible."
+					result[keySourceFile] = "Last SPT live metrics · waiting for next phase"
+					state[keyPhase] = "Finalizing results"
+					state[keyMessage] = "SPT is moving between phases; the last recorded measurements remain visible."
 					_ = a.writeState(state)
 				} else {
-					result = map[string]any{"run_id": state["run_id"], "workload_type": "write-verify", "source_file": "Waiting for SPT live metrics", "updated_at": utcNow(), "is_active": true, "is_aggregate": false, "samples": []map[string]any{}, "chart_samples": []map[string]any{}}
+					result = map[string]any{keyRunID: state[keyRunID], keyWorkloadType: driverWriteVerify, keySourceFile: "Waiting for SPT live metrics", keyUpdatedAt: utcNow(), keyIsActive: true, keyIsAggregate: false, keySamples: []map[string]any{}, keyChartSamples: []map[string]any{}}
 				}
 			} else {
-				result["is_active"] = true
-				result["is_aggregate"] = false
-				chart, _ := result["chart_samples"].([]map[string]any)
+				result[keyIsActive] = true
+				result[keyIsAggregate] = false
+				chart, _ := result[keyChartSamples].([]map[string]any)
 				if len(chart) == 0 && retained != nil {
-					result["chart_samples"] = retained["chart_samples"]
-					if len(result["samples"].([]map[string]any)) == 0 {
-						result["samples"] = retained["samples"]
+					result[keyChartSamples] = retained[keyChartSamples]
+					if len(result[keySamples].([]map[string]any)) == 0 {
+						result[keySamples] = retained[keySamples]
 					}
-					result["source_file"] = "Last SPT live metrics · waiting for next phase"
-					state["phase"] = "Finalizing results"
-					state["message"] = "SPT is moving between phases; the last recorded measurements remain visible."
+					result[keySourceFile] = "Last SPT live metrics · waiting for next phase"
+					state[keyPhase] = "Finalizing results"
+					state[keyMessage] = "SPT is moving between phases; the last recorded measurements remain visible."
 					_ = a.writeState(state)
 				}
 			}
@@ -93,7 +93,7 @@ func (a *app) currentState() (map[string]any, error) {
 		a.activeJob = state
 		return a.stateResponse(publicJob(state), result), nil
 	}
-	if state != nil && str(state["status"]) == "running" && !a.lockBusy() {
+	if state != nil && str(state[keyStatus]) == jobRunning && !a.lockBusy() {
 		state = a.readStateFile()
 		if state == nil {
 			state = a.activeJob
@@ -103,14 +103,14 @@ func (a *app) currentState() (map[string]any, error) {
 		}
 	}
 	if state != nil {
-		return a.stateResponse(publicJob(state), a.readRealRun(str(state["results_dir"]), str(state["run_id"]), false)), nil
+		return a.stateResponse(publicJob(state), a.readRealRun(str(state["results_dir"]), str(state[keyRunID]), false)), nil
 	}
 	return a.stateResponse(nil, a.latestSavedRun()), nil
 }
 
 func (a *app) stateResponse(job, metrics map[string]any) map[string]any {
 	target := a.targetConfiguration()
-	return map[string]any{"job": job, "metrics": metrics, "target": target, "storage": a.storageState(target), "limits": a.limitsPayload(), "branding": a.effectiveSettings().Branding}
+	return map[string]any{keyJob: job, "metrics": metrics, "target": target, "storage": a.storageState(target), "limits": a.limitsPayload(), "branding": a.effectiveSettings().Branding}
 }
 
 func retainedLiveMetrics(runID, liveRunID string, samples []map[string]any) map[string]any {
@@ -119,9 +119,9 @@ func retainedLiveMetrics(runID, liveRunID string, samples []map[string]any) map[
 	}
 	kept := append([]map[string]any(nil), samples...)
 	return map[string]any{
-		"run_id": runID, "workload_type": "write-verify", "updated_at": kept[len(kept)-1]["timestamp"],
-		"is_active": true, "is_aggregate": false, "samples": latestSample(kept),
-		"chart_samples": kept,
+		keyRunID: runID, keyWorkloadType: driverWriteVerify, keyUpdatedAt: kept[len(kept)-1][keyTimestamp],
+		keyIsActive: true, keyIsAggregate: false, keySamples: latestSample(kept),
+		keyChartSamples: kept,
 	}
 }
 
@@ -146,7 +146,7 @@ func (a *app) latestSavedRun() map[string]any {
 	}
 	for _, dir := range dirs {
 		r := a.readRealRun(dir, filepath.Base(dir), false)
-		if r != nil && len(r["samples"].([]map[string]any)) > 0 {
+		if r != nil && len(r[keySamples].([]map[string]any)) > 0 {
 			return r
 		}
 	}
@@ -174,7 +174,7 @@ func (a *app) phaseFromOutput(runDir string) string {
 		return "Cleanup"
 	}
 	if strings.Contains(name, "verify") || strings.Contains(name, "read") {
-		return "Verify"
+		return phaseVerifyLabel
 	}
 	if strings.Contains(name, "create") || strings.Contains(name, "write") {
 		return "Create / write"

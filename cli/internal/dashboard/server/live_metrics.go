@@ -67,7 +67,7 @@ func (a *app) readRealRun(runDir, runID string, active bool) map[string]any {
 		if err != nil {
 			continue
 		}
-		result["run_id"] = runID
+		result[keyRunID] = runID
 		history := map[string][]map[string]any{}
 		files, _ := filepath.Glob(filepath.Join(folder, "*.metrics.csv"))
 		sort.Strings(files)
@@ -76,7 +76,7 @@ func (a *app) readRealRun(runDir, runID string, active bool) map[string]any {
 			if err != nil {
 				continue
 			}
-			for _, sample := range part["samples"].([]map[string]any) {
+			for _, sample := range part[keySamples].([]map[string]any) {
 				phase := strings.ToUpper(str(sample["op_type"]))
 				if validPhase(phase) {
 					history[phase] = append(history[phase], sample)
@@ -99,11 +99,11 @@ func (a *app) readRealRun(runDir, runID string, active bool) map[string]any {
 		for _, samples := range history {
 			chart = append(chart, samples...)
 		}
-		sort.Slice(chart, func(i, j int) bool { return str(chart[i]["timestamp"]) < str(chart[j]["timestamp"]) })
+		sort.Slice(chart, func(i, j int) bool { return str(chart[i][keyTimestamp]) < str(chart[j][keyTimestamp]) })
 		if len(chart) > maxSamples {
 			chart = chart[len(chart)-maxSamples:]
 		}
-		result["chart_samples"] = chart
+		result[keyChartSamples] = chart
 		if !active {
 			totals, _ := filepath.Glob(filepath.Join(folder, "*.metrics.total.csv"))
 			sort.Strings(totals)
@@ -111,7 +111,7 @@ func (a *app) readRealRun(runDir, runID string, active bool) map[string]any {
 			for _, p := range totals {
 				low := strings.ToLower(filepath.Base(p))
 				phase := "SPT"
-				for _, name := range [][2]string{{"create", "Create"}, {"verify", "Verify"}, {"delete", "Delete"}} {
+				for _, name := range [][2]string{{"create", "Create"}, {"verify", phaseVerifyLabel}, {"delete", "Delete"}} {
 					if strings.Contains(low, name[0]) {
 						phase = name[1]
 						break
@@ -121,13 +121,13 @@ func (a *app) readRealRun(runDir, runID string, active bool) map[string]any {
 				if err != nil {
 					continue
 				}
-				rows := data["samples"].([]map[string]any)
+				rows := data[keySamples].([]map[string]any)
 				if len(rows) == 0 {
 					continue
 				}
 				s := rows[len(rows)-1]
-				item := map[string]any{"phase": phase, "source_file": filepath.Base(p), "successful_ops": s["cumulative_ops"], "failed_ops": s["count_failed"], "iops": s["interval_iops"], "bandwidth_mib_s": s["bandwidth_mib_s"], "p50_latency_us": s["p50_latency_us"]}
-				for _, k := range []string{"timestamp", "duration_seconds", "bytes_processed", "concurrency", "concurrency_mean", "node_count", "corrupt_ops", "latency_mean_us", "latency_min_us", "latency_max_us", "latency_p99_us"} {
+				item := map[string]any{keyPhase: phase, keySourceFile: filepath.Base(p), "successful_ops": s[keyCumulativeOps], "failed_ops": s[keyCountFailed], "iops": s[keyIntervalIOPS], metricBandwidth: s[metricBandwidth], metricP50Latency: s[metricP50Latency]}
+				for _, k := range []string{keyTimestamp, "duration_seconds", "bytes_processed", "concurrency", "concurrency_mean", "node_count", "corrupt_ops", "latency_mean_us", "latency_min_us", "latency_max_us", "latency_p99_us"} {
 					item[k] = s[k]
 				}
 				summaries = append(summaries, item)
@@ -154,7 +154,9 @@ func (a *app) readRealRun(runDir, runID string, active bool) map[string]any {
 	return nil
 }
 
-func validPhase(p string) bool { return p == "CREATE" || p == "VERIFY" || p == "READ" || p == "DELETE" }
+func validPhase(p string) bool {
+	return p == phaseCreate || p == phaseVerify || p == "READ" || p == phaseDelete
+}
 
 func (a *app) savedLiveSamples(runID string) []map[string]any {
 	if !runPattern.MatchString(runID) {
@@ -178,7 +180,7 @@ func (a *app) savedLiveSamples(runID string) []map[string]any {
 	}
 	out := []map[string]any{}
 	for _, m := range list {
-		if _, ok := m["timestamp"].(string); ok {
+		if _, ok := m[keyTimestamp].(string); ok {
 			out = append(out, m)
 		}
 	}
@@ -186,15 +188,15 @@ func (a *app) savedLiveSamples(runID string) []map[string]any {
 }
 
 func (a *app) rememberLive(metrics map[string]any) map[string]any {
-	runID := str(metrics["run_id"])
+	runID := str(metrics[keyRunID])
 	if a.liveRunID != runID {
 		a.liveRunID = runID
 		a.liveSamples = a.savedLiveSamples(runID)
 		a.liveSignature = ""
 	}
 	changed := false
-	for _, raw := range metrics["samples"].([]map[string]any) {
-		keys := []string{"step_id", "cumulative_ops", "count_failed", "interval_iops", "bandwidth_mib_s", "p50_latency_us"}
+	for _, raw := range metrics[keySamples].([]map[string]any) {
+		keys := []string{"step_id", keyCumulativeOps, keyCountFailed, keyIntervalIOPS, metricBandwidth, metricP50Latency}
 		vals := make([]any, 0, len(keys))
 		for _, k := range keys {
 			vals = append(vals, raw[k])
@@ -220,8 +222,8 @@ func (a *app) rememberLive(metrics map[string]any) map[string]any {
 		}
 	}
 	out := cloneMap(metrics)
-	out["samples"] = latestSample(a.liveSamples)
-	out["chart_samples"] = append([]map[string]any(nil), a.liveSamples...)
+	out[keySamples] = latestSample(a.liveSamples)
+	out[keyChartSamples] = append([]map[string]any(nil), a.liveSamples...)
 	return out
 }
 
@@ -345,16 +347,16 @@ func (a *app) liveMetricsAt(state map[string]any, metricsURL string) map[string]
 	if iok {
 		iopsAny = iops
 	}
-	sample := map[string]any{"timestamp": ts.UTC().Format(time.RFC3339Nano), "elapsed_seconds": stepElapsed, "cumulative_ops": success, "count_failed": failed, "average_iops": any(nil), "interval_iops": iopsAny, "bandwidth_mib_s": bw, "bandwidth_unit": "MiB/s", "source_file": metricsContract, "p50_latency_us": p50, "step_id": str(entry["step_id"]), "op_type": str(entry["op_type"]), "completion_percent": optionalMetric(entry, "completion_percent")}
+	sample := map[string]any{keyTimestamp: ts.UTC().Format(time.RFC3339Nano), keyElapsedSeconds: stepElapsed, keyCumulativeOps: success, keyCountFailed: failed, "average_iops": any(nil), keyIntervalIOPS: iopsAny, metricBandwidth: bw, "bandwidth_unit": "MiB/s", keySourceFile: metricsContract, metricP50Latency: p50, "step_id": str(entry["step_id"]), "op_type": str(entry["op_type"]), "completion_percent": optionalMetric(entry, "completion_percent")}
 	if elapsed > 0 {
 		sample["average_iops"] = success / elapsed
 	}
 	has := success > 0 || failed > 0 || numberValue(latency, "count") > 0 || bytesTotal > 0
-	out := map[string]any{"run_id": str(state["run_id"]), "workload_type": "write-verify", "source_file": metricsContract, "updated_at": sample["timestamp"], "is_active": true, "is_aggregate": false, "phase": firstNonempty(str(sample["op_type"]), str(sample["step_id"])), "phase_id": str(sample["step_id"]), "progress_percent": sample["completion_percent"], "samples": []map[string]any{}}
+	out := map[string]any{keyRunID: str(state[keyRunID]), keyWorkloadType: driverWriteVerify, keySourceFile: metricsContract, keyUpdatedAt: sample[keyTimestamp], keyIsActive: true, keyIsAggregate: false, keyPhase: firstNonempty(str(sample["op_type"]), str(sample["step_id"])), "phase_id": str(sample["step_id"]), "progress_percent": sample["completion_percent"], keySamples: []map[string]any{}}
 	if !has {
 		return out
 	}
-	out["samples"] = []map[string]any{sample}
+	out[keySamples] = []map[string]any{sample}
 	return out
 }
 
@@ -380,7 +382,7 @@ func (a *app) collectLiveHistory(runID string) {
 	defer ticker.Stop()
 	for {
 		a.mu.Lock()
-		if a.activeJob == nil || a.activeJob["run_id"] != runID || a.activeJob["status"] != "running" {
+		if a.activeJob == nil || a.activeJob[keyRunID] != runID || a.activeJob[keyStatus] != jobRunning {
 			a.mu.Unlock()
 			return
 		}
@@ -388,7 +390,7 @@ func (a *app) collectLiveHistory(runID string) {
 		a.mu.Unlock()
 		if metrics := a.liveMetrics(state); metrics != nil {
 			a.mu.Lock()
-			if a.activeJob != nil && a.activeJob["run_id"] == runID {
+			if a.activeJob != nil && a.activeJob[keyRunID] == runID {
 				_ = a.rememberLive(metrics)
 			}
 			a.mu.Unlock()

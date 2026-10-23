@@ -232,8 +232,8 @@ func (a *app) loadStorage() {
 	if b, e := os.ReadFile(a.verifyFile); e == nil {
 		var saved verification
 		if json.Unmarshal(b, &saved) == nil {
-			if saved.Status == "running" {
-				saved.Status = "failed"
+			if saved.Status == verifyRunning {
+				saved.Status = verifyFailed
 				saved.Summary = "The dashboard restarted before verification finished."
 			}
 			a.verification = saved
@@ -261,7 +261,7 @@ func (a *app) currentVerification(target map[string]any) verification {
 }
 
 func (a *app) verified(target map[string]any) bool {
-	return a.currentVerification(target).Status == "passed"
+	return a.currentVerification(target).Status == verifyPassed
 }
 
 func (a *app) storageState(target map[string]any) map[string]any {
@@ -285,15 +285,15 @@ func (a *app) metricsEndpoint() string {
 
 func (a *app) handleVerify(w http.ResponseWriter, r *http.Request) {
 	if r.URL.RawQuery != "" {
-		writeJSON(w, 404, map[string]any{"error": "Endpoint not found."})
+		writeJSON(w, 404, map[string]any{keyError: msgEndpointNotFound})
 		return
 	}
 	if !a.sameOrigin(r) {
-		writeJSON(w, 403, map[string]any{"error": "Verification requests must come from this dashboard through its SSH tunnel."})
+		writeJSON(w, 403, map[string]any{keyError: "Verification requests must come from this dashboard through its SSH tunnel."})
 		return
 	}
 	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/json") {
-		writeJSON(w, 415, map[string]any{"error": "Send JSON storage settings."})
+		writeJSON(w, 415, map[string]any{keyError: "Send JSON storage settings."})
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBytes)
@@ -301,20 +301,20 @@ func (a *app) handleVerify(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	var requested storageConfig
 	if err := dec.Decode(&requested); err != nil {
-		writeJSON(w, 400, map[string]any{"error": "Send the client machines and an optional S3 endpoint."})
+		writeJSON(w, 400, map[string]any{keyError: "Send the client machines and an optional S3 endpoint."})
 		return
 	}
 	if err := ensureEOF(dec); err != nil {
-		writeJSON(w, 400, map[string]any{"error": "Send one JSON storage settings object."})
+		writeJSON(w, 400, map[string]any{keyError: "Send one JSON storage settings object."})
 		return
 	}
 	cfg, err := validateStorage(requested)
 	if err != nil {
-		writeJSON(w, 400, map[string]any{"error": err.Error()})
+		writeJSON(w, 400, map[string]any{keyError: err.Error()})
 		return
 	}
 	if !executable(a.sptBin) {
-		writeJSON(w, 503, map[string]any{"error": "SPT is not executable on this VM."})
+		writeJSON(w, 503, map[string]any{keyError: "SPT is not executable on this VM."})
 		return
 	}
 	// Verification starts SPT containers on the ports a run uses, so the two never overlap.
@@ -327,7 +327,7 @@ func (a *app) handleVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	if busy {
 		a.mu.Unlock()
-		writeJSON(w, 409, map[string]any{"error": "A run or verification is already in progress. Wait for it to finish first."})
+		writeJSON(w, 409, map[string]any{keyError: "A run or verification is already in progress. Wait for it to finish first."})
 		return
 	}
 	a.verifying = true
@@ -339,7 +339,7 @@ func (a *app) handleVerify(w http.ResponseWriter, r *http.Request) {
 		a.mu.Lock()
 		a.verifying = false
 		a.mu.Unlock()
-		writeJSON(w, 500, map[string]any{"error": "Could not save the storage configuration."})
+		writeJSON(w, 500, map[string]any{keyError: "Could not save the storage configuration."})
 		return
 	}
 	a.storageMu.Lock()
@@ -350,11 +350,11 @@ func (a *app) handleVerify(w http.ResponseWriter, r *http.Request) {
 	endpoint := str(target["endpoint"])
 	nodes := make([]verifyNode, len(cfg.Hosts))
 	for i, host := range cfg.Hosts {
-		nodes[i] = verifyNode{Host: host, Status: "pending", Checks: []verifyCheck{}}
+		nodes[i] = verifyNode{Host: host, Status: verifyPending, Checks: []verifyCheck{}}
 	}
 	a.updateVerification(func(v *verification) {
-		*v = verification{Status: "running", Signature: configSignature(cfg.Hosts, endpoint), StartedAt: utcNow(), Nodes: nodes,
-			Endpoint: verifyEndpoint{Label: str(target["endpoint_label"]), Status: "pending"}}
+		*v = verification{Status: verifyRunning, Signature: configSignature(cfg.Hosts, endpoint), StartedAt: utcNow(), Nodes: nodes,
+			Endpoint: verifyEndpoint{Label: str(target["endpoint_label"]), Status: verifyPending}}
 	})
 	go a.runVerification(cfg.Hosts, endpoint)
 	writeJSON(w, 202, map[string]any{"storage": a.storageState(target)})
@@ -371,7 +371,7 @@ func (a *app) runVerification(hosts []string, endpoint string) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		status, message := "failed", "No valid S3 endpoint is configured."
+		status, message := verifyFailed, "No valid S3 endpoint is configured."
 		if endpoint != "" {
 			status, message = checkEndpoint(a.endpointClient, endpoint)
 		}
@@ -384,23 +384,23 @@ func (a *app) runVerification(hosts []string, endpoint string) {
 	wg.Wait()
 
 	a.updateVerification(func(v *verification) {
-		passed := err == nil && v.Endpoint.Status == "passed"
+		passed := err == nil && v.Endpoint.Status == verifyPassed
 		for i := range v.Nodes {
-			if v.Nodes[i].Status == "pending" {
-				v.Nodes[i].Status = "failed"
+			if v.Nodes[i].Status == verifyPending {
+				v.Nodes[i].Status = verifyFailed
 				v.Nodes[i].Message = "SPT did not report a result for this machine."
 			}
-			if v.Nodes[i].Status != "passed" {
+			if v.Nodes[i].Status != verifyPassed {
 				passed = false
 			}
 		}
-		v.Status = "failed"
+		v.Status = verifyFailed
 		v.Summary = firstNonempty(summary, "Verification did not pass.")
 		if err != nil && summary == "" {
 			v.Summary = "SPT verification could not complete: " + err.Error()
 		}
 		if passed {
-			v.Status = "passed"
+			v.Status = verifyPassed
 			v.Summary = "All client machines passed SPT verification and the S3 endpoint is reachable."
 		}
 		v.FinishedAt = utcNow()
@@ -437,9 +437,9 @@ func (a *app) runVerificationAPI(hosts []string) (string, error) {
 		if !ok || i >= len(hosts) {
 			continue
 		}
-		node := verifyNode{Host: hosts[i], Status: "failed", Message: result.Overall.Message, Checks: []verifyCheck{}}
+		node := verifyNode{Host: hosts[i], Status: verifyFailed, Message: result.Overall.Message, Checks: []verifyCheck{}}
 		if result.Overall.Passed {
-			node.Status = "passed"
+			node.Status = verifyPassed
 		}
 		checks := []struct {
 			name  string
@@ -485,7 +485,7 @@ func checkEndpoint(client *http.Client, endpoint string) (status, message string
 	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
-		return "failed", "The S3 endpoint is not a valid URL."
+		return verifyFailed, "The S3 endpoint is not a valid URL."
 	}
 	resp, err := c.Do(req)
 	if err != nil {
@@ -493,14 +493,14 @@ func checkEndpoint(client *http.Client, endpoint string) (status, message string
 		// Lab storage commonly uses a self-signed or privately issued one.
 		var certErr *tls.CertificateVerificationError
 		if errors.As(err, &certErr) {
-			return "passed", "Reachable from the dashboard host. Its certificate is not from an authority this host trusts."
+			return verifyPassed, "Reachable from the dashboard host. Its certificate is not from an authority this host trusts."
 		}
 		var urlErr *url.Error
 		if errors.As(err, &urlErr) {
 			err = urlErr.Err
 		}
-		return "failed", "Not reachable from the dashboard host: " + err.Error()
+		return verifyFailed, "Not reachable from the dashboard host: " + err.Error()
 	}
 	_ = resp.Body.Close()
-	return "passed", fmt.Sprintf("Reachable from the dashboard host (HTTP %d).", resp.StatusCode)
+	return verifyPassed, fmt.Sprintf("Reachable from the dashboard host (HTTP %d).", resp.StatusCode)
 }

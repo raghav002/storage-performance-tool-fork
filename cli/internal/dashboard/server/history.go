@@ -22,12 +22,12 @@ import (
 
 func (a *app) handleRunHistory(w http.ResponseWriter, r *http.Request) {
 	if r.URL.RawQuery != "" {
-		writeJSON(w, 404, map[string]any{"error": "Endpoint not found."})
+		writeJSON(w, 404, map[string]any{keyError: msgEndpointNotFound})
 		return
 	}
 	entries, err := os.ReadDir(a.results)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		writeJSON(w, 500, map[string]any{"error": "Could not read saved SPT runs."})
+		writeJSON(w, 500, map[string]any{keyError: "Could not read saved SPT runs."})
 		return
 	}
 	latest := a.latestJob()
@@ -42,7 +42,7 @@ func (a *app) handleRunHistory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	sort.Slice(items, func(i, j int) bool {
-		return str(items[i]["started_at"]) > str(items[j]["started_at"])
+		return str(items[i][keyStartedAt]) > str(items[j][keyStartedAt])
 	})
 	if len(items) > 200 {
 		items = items[:200]
@@ -53,13 +53,13 @@ func (a *app) handleRunHistory(w http.ResponseWriter, r *http.Request) {
 func (a *app) handleSavedRun(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("runID")
 	if r.URL.RawQuery != "" || !runPattern.MatchString(runID) || filepath.Base(runID) != runID || !strings.HasPrefix(runID, "mt-dashboard-") {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Saved run not found."})
+		writeJSON(w, http.StatusNotFound, map[string]any{keyError: msgSavedRunNotFound})
 		return
 	}
 	latest := a.latestJob()
 	item, err := a.savedRun(runID, latest, true)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Saved run not found."})
+		writeJSON(w, http.StatusNotFound, map[string]any{keyError: msgSavedRunNotFound})
 		return
 	}
 	writeJSON(w, http.StatusOK, item)
@@ -69,18 +69,18 @@ func (a *app) handleRunCSV(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("runID")
 	query := r.URL.Query()
 	for key := range query {
-		if key != "kind" && key != "phase" && key != "start" && key != "end" {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Unsupported CSV export options."})
+		if key != "kind" && key != keyPhase && key != "start" && key != "end" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{keyError: "Unsupported CSV export options."})
 			return
 		}
 	}
 	if !runPattern.MatchString(runID) || filepath.Base(runID) != runID || !strings.HasPrefix(runID, "mt-dashboard-") {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Saved run not found."})
+		writeJSON(w, http.StatusNotFound, map[string]any{keyError: msgSavedRunNotFound})
 		return
 	}
 	item, err := a.savedRun(runID, nil, true)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Saved run not found."})
+		writeJSON(w, http.StatusNotFound, map[string]any{keyError: msgSavedRunNotFound})
 		return
 	}
 	metrics, _ := item["metrics"].(map[string]any)
@@ -89,32 +89,32 @@ func (a *app) handleRunCSV(w http.ResponseWriter, r *http.Request) {
 		kind = "summary"
 	}
 	rows := []map[string]any{}
-	phase := strings.ToUpper(query.Get("phase"))
+	phase := strings.ToUpper(query.Get(keyPhase))
 	switch kind {
 	case "summary":
 		rows = metricsSummaries(metrics)
 		if len(rows) == 0 && metrics != nil {
-			rows, _ = metrics["chart_samples"].([]map[string]any)
+			rows, _ = metrics[keyChartSamples].([]map[string]any)
 		}
-	case "samples":
+	case keySamples:
 		if metrics != nil {
-			rows, _ = metrics["chart_samples"].([]map[string]any)
+			rows, _ = metrics[keyChartSamples].([]map[string]any)
 		}
-	case "phase", "window":
-		if phase != "CREATE" && phase != "VERIFY" && phase != "READ" && phase != "DELETE" {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Choose a supported run phase."})
+	case keyPhase, kindWindow:
+		if phase != phaseCreate && phase != phaseVerify && phase != "READ" && phase != phaseDelete {
+			writeJSON(w, http.StatusBadRequest, map[string]any{keyError: "Choose a supported run phase."})
 			return
 		}
 		if metrics != nil {
-			all, _ := metrics["chart_samples"].([]map[string]any)
-			started, _ := time.Parse(time.RFC3339Nano, str(item["job"].(map[string]any)["started_at"]))
+			all, _ := metrics[keyChartSamples].([]map[string]any)
+			started, _ := time.Parse(time.RFC3339Nano, str(item[keyJob].(map[string]any)[keyStartedAt]))
 			var lo, hi float64
-			if kind == "window" {
+			if kind == kindWindow {
 				var e1, e2 error
 				lo, e1 = strconv.ParseFloat(query.Get("start"), 64)
 				hi, e2 = strconv.ParseFloat(query.Get("end"), 64)
 				if e1 != nil || e2 != nil || math.IsNaN(lo) || math.IsNaN(hi) || math.IsInf(lo, 0) || math.IsInf(hi, 0) || lo < 0 || hi < lo {
-					writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Choose a valid visible time window."})
+					writeJSON(w, http.StatusBadRequest, map[string]any{keyError: "Choose a valid visible time window."})
 					return
 				}
 			}
@@ -122,8 +122,8 @@ func (a *app) handleRunCSV(w http.ResponseWriter, r *http.Request) {
 				if phaseCodeForBackend(str(row["op_type"])) != phase {
 					continue
 				}
-				if kind == "window" {
-					t, e := time.Parse(time.RFC3339Nano, str(row["timestamp"]))
+				if kind == kindWindow {
+					t, e := time.Parse(time.RFC3339Nano, str(row[keyTimestamp]))
 					if e != nil || started.IsZero() {
 						continue
 					}
@@ -136,11 +136,11 @@ func (a *app) handleRunCSV(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	default:
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Choose summary, samples, phase, or window CSV."})
+		writeJSON(w, http.StatusBadRequest, map[string]any{keyError: "Choose summary, samples, phase, or window CSV."})
 		return
 	}
 	if len(rows) == 0 {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "No measurements are available for this CSV export."})
+		writeJSON(w, http.StatusNotFound, map[string]any{keyError: "No measurements are available for this CSV export."})
 		return
 	}
 	filename := "spt-" + runID + "-" + kind + ".csv"
@@ -181,12 +181,12 @@ func (a *app) handleRunCSV(w http.ResponseWriter, r *http.Request) {
 func phaseCodeForBackend(value string) string {
 	s := strings.ToUpper(value)
 	switch {
-	case strings.Contains(s, "CREATE"), strings.Contains(s, "WRITE"):
-		return "CREATE"
-	case strings.Contains(s, "VERIFY"), strings.Contains(s, "READ"):
-		return "VERIFY"
-	case strings.Contains(s, "DELETE"), strings.Contains(s, "CLEANUP"):
-		return "DELETE"
+	case strings.Contains(s, phaseCreate), strings.Contains(s, "WRITE"):
+		return phaseCreate
+	case strings.Contains(s, phaseVerify), strings.Contains(s, "READ"):
+		return phaseVerify
+	case strings.Contains(s, phaseDelete), strings.Contains(s, "CLEANUP"):
+		return phaseDelete
 	default:
 		return "SPT"
 	}
@@ -243,39 +243,39 @@ func (a *app) savedRun(runID string, latest map[string]any, includeMetrics bool)
 	}
 	scenario, _ := params["scenarioParams"].(map[string]any)
 	options := map[string]any{
-		"object_count":        scenario["ObjectCount"],
-		"object_size":         scenario["ObjectSize"],
-		"threads":             scenario["Threads"],
-		"max_runtime_seconds": params["autoTerminateSeconds"],
+		"object_count":       scenario["ObjectCount"],
+		"object_size":        scenario["ObjectSize"],
+		keyThreads:           scenario["Threads"],
+		keyMaxRuntimeSeconds: params["autoTerminateSeconds"],
 	}
 	status := savedRunStatus(dir, paramsDir, params, metricsSummaries(metrics))
-	job := map[string]any{"run_id": runID, "status": status, "started_at": startedAt, "options": options}
+	job := map[string]any{keyRunID: runID, keyStatus: status, keyStartedAt: startedAt, keyOptions: options}
 	if record := a.readRunRecord(runID); record != nil {
 		// The dashboard recorded how this run ended; that outranks the file heuristic.
-		status = str(record["status"])
+		status = str(record[keyStatus])
 		job = record
-		job["options"] = options
+		job[keyOptions] = options
 	}
-	if latest != nil && str(latest["run_id"]) == runID {
+	if latest != nil && str(latest[keyRunID]) == runID {
 		job = publicJob(latest)
-		if opts, ok := latest["options"].(map[string]any); ok {
+		if opts, ok := latest[keyOptions].(map[string]any); ok {
 			options = opts
 		}
-		job["options"] = options
+		job[keyOptions] = options
 	}
 	if metrics != nil {
-		metrics["run_id"] = runID
+		metrics[keyRunID] = runID
 	}
-	item := map[string]any{"job": job, "metrics": metrics}
+	item := map[string]any{keyJob: job, "metrics": metrics}
 	if includeMetrics {
 		item["target"] = a.targetConfiguration()
 	} else {
 		item = map[string]any{
-			"run_id": runID, "started_at": startedAt, "status": status,
-			"options": options, "phase_summaries": metricsSummaries(metrics),
+			keyRunID: runID, keyStartedAt: startedAt, keyStatus: status,
+			keyOptions: options, "phase_summaries": metricsSummaries(metrics),
 		}
-		if latest != nil && str(latest["run_id"]) == runID {
-			item["status"] = str(latest["status"])
+		if latest != nil && str(latest[keyRunID]) == runID {
+			item[keyStatus] = str(latest[keyStatus])
 		}
 	}
 	return item, nil

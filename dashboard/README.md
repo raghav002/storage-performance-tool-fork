@@ -45,6 +45,8 @@ It listens on `127.0.0.1:8000` by default. For remote access, use SSH port forwa
 
 The dashboard enforces bounded workload choices and allows one dashboard-managed run at a time. Run results are stored on the host in SPT's results directory.
 
+**Stop run** on the live dashboard ends a run early. It calls `POST /api/runs/stop`, which sends SPT one interrupt (SIGINT, or Ctrl+Break on Windows), the same signal the dashboard sends on Ctrl+C. SPT then stops the engine test, removes its containers and finalizes results, and the run is recorded as `stopped`. The dashboard never force-kills SPT. If the dashboard restarted during the run, it no longer holds the process and cannot stop it.
+
 ## Run modes
 
 The Guided/Expert switch in the top bar selects how the workload step is configured:

@@ -98,9 +98,9 @@ function useServer() {
 
 export default function App() {
   const { state, error, received, refresh } = useServer();
-  const [page, setPage] = useState<"dashboard" | "configure" | "history" | "connect">(
-    "configure",
-  );
+  const [page, setPage] = useState<
+    "dashboard" | "configure" | "history" | "connect"
+  >("configure");
   const landed = useRef(false);
   // Open on the live view only when a run is already in progress at first load.
   useEffect(() => {
@@ -173,7 +173,12 @@ export default function App() {
         <a className="brand" href="#dashboard" onClick={showDashboard}>
           <span>SPT</span>
           <div>
-            {state?.branding?.product_name ?? "Storage Performance Tool"}<small>{(state?.branding?.environment_label ?? "BENCHMARK CONSOLE").toUpperCase()}</small>
+            {state?.branding?.product_name ?? "Storage Performance Tool"}
+            <small>
+              {(
+                state?.branding?.environment_label ?? "BENCHMARK CONSOLE"
+              ).toUpperCase()}
+            </small>
           </div>
         </a>
         <div className="sidebar-label">WORKSPACE</div>
@@ -240,7 +245,13 @@ export default function App() {
           <span>Benchmark workspace</span>
           <div className="topbar-actions">
             <span className={`source-badge ${error ? "offline" : ""}`}>
-              {error ? "OFFLINE" : state?.connection?.mode === "attached" ? "ATTACHED · READ ONLY" : state ? "SPT API" : "CONNECTING"}
+              {error
+                ? "OFFLINE"
+                : state?.connection?.mode === "attached"
+                  ? "ATTACHED · READ ONLY"
+                  : state
+                    ? "SPT API"
+                    : "CONNECTING"}
             </span>
             <div className="mode-switch" role="group" aria-label="Display mode">
               {(["guided", "expert"] as const).map((m) => (

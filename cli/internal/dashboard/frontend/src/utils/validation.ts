@@ -122,7 +122,8 @@ export function endpointError(value: string): string | null {
   } catch {
     return "Enter a full URL such as https://s3.example.com.";
   }
-  if (url.protocol !== "https:" && url.protocol !== "http:") return "The endpoint must use http:// or https://.";
+  if (url.protocol !== "https:" && url.protocol !== "http:")
+    return "The endpoint must use http:// or https://.";
   if (url.username || url.password)
     return "Do not put credentials in the endpoint URL.";
   if (url.search || url.hash || value.includes("?") || value.includes("#"))

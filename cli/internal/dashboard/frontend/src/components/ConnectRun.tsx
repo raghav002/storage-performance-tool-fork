@@ -30,7 +30,10 @@ export function ConnectRun({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ host }),
       });
-      const body = await readJSON(response, "Could not connect to the SPT run.");
+      const body = await readJSON(
+        response,
+        "Could not connect to the SPT run.",
+      );
       if (!response.ok)
         throw new Error(body.error ?? "Could not connect to the SPT run.");
       await onConnected();
@@ -50,7 +53,10 @@ export function ConnectRun({
     setBusy(true);
     try {
       const response = await fetch("/api/attach", { method: "DELETE" });
-      const body = await readJSON(response, "Could not disconnect from the run.");
+      const body = await readJSON(
+        response,
+        "Could not disconnect from the run.",
+      );
       if (!response.ok)
         throw new Error(body.error ?? "Could not disconnect from the run.");
       await onConnected();

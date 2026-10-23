@@ -188,9 +188,10 @@ export function StorageConfiguration({
               </small>
             )}
             <small>
-              Use HTTP or HTTPS. Prefer HTTPS when the endpoint is outside a trusted private network.
-              Leave blank to use the endpoint configured on the host. The bucket
-              and access keys always come from the host.
+              Use HTTP or HTTPS. Prefer HTTPS when the endpoint is outside a
+              trusted private network. Leave blank to use the endpoint
+              configured on the host. The bucket and access keys always come
+              from the host.
             </small>
           </label>
         </fieldset>

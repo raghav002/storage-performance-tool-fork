@@ -69,11 +69,12 @@ func mapValue(v any) map[string]any {
 	return m
 }
 
-func numberValue(m map[string]any, key string, def float64) float64 {
+// numberValue returns m[key] as a number, or 0 when it is missing or not numeric.
+func numberValue(m map[string]any, key string) float64 {
 	if n, ok := num(m, key); ok {
 		return n
 	}
-	return def
+	return 0
 }
 
 func (a *app) metricsFiles(runDir string, active bool) (string, bool) {

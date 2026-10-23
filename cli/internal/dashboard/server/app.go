@@ -1,3 +1,5 @@
+// Package server is the local web dashboard behind "spt dashboard": it
+// serves the embedded browser UI and starts and stops SPT runs.
 package server
 
 import (

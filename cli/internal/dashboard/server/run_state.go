@@ -57,7 +57,7 @@ func (a *app) currentState() (map[string]any, error) {
 			ss := live["samples"].([]map[string]any)
 			if len(ss) > 0 {
 				sample := ss[0]
-				state["message"] = fmt.Sprintf("SPT live %s metrics: %.0f successful, %.0f failed operations.", strings.ToLower(label), numberValue(sample, "cumulative_ops", 0), numberValue(sample, "count_failed", 0))
+				state["message"] = fmt.Sprintf("SPT live %s metrics: %.0f successful, %.0f failed operations.", strings.ToLower(label), numberValue(sample, "cumulative_ops"), numberValue(sample, "count_failed"))
 			} else {
 				state["message"] = "SPT is in the " + strings.ToLower(label) + " phase; waiting for its first measured operation."
 			}
@@ -117,11 +117,11 @@ func retainedLiveMetrics(runID, liveRunID string, samples []map[string]any) map[
 	if runID == "" || runID != liveRunID || len(samples) == 0 {
 		return nil
 	}
-	copy := append([]map[string]any(nil), samples...)
+	kept := append([]map[string]any(nil), samples...)
 	return map[string]any{
-		"run_id": runID, "workload_type": "write-verify", "updated_at": copy[len(copy)-1]["timestamp"],
-		"is_active": true, "is_aggregate": false, "samples": latestSample(copy),
-		"chart_samples": copy,
+		"run_id": runID, "workload_type": "write-verify", "updated_at": kept[len(kept)-1]["timestamp"],
+		"is_active": true, "is_aggregate": false, "samples": latestSample(kept),
+		"chart_samples": kept,
 	}
 }
 

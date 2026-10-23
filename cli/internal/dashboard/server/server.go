@@ -14,6 +14,7 @@ import (
 	"time"
 )
 
+// Options configures a dashboard started by Run.
 type Options struct {
 	SPTBinary   string
 	WorkDir     string
@@ -24,6 +25,8 @@ type Options struct {
 	OpenBrowser bool
 }
 
+// Run serves the dashboard on 127.0.0.1 until ctx is cancelled, then stops
+// any SPT process it started.
 func Run(ctx context.Context, opts Options) error {
 	if ctx.Err() != nil {
 		return nil

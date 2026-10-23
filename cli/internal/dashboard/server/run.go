@@ -147,7 +147,7 @@ func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 	a.processes.Add(2)
 	a.mu.Unlock()
 	go a.watchProcess(runID, cmd, lock, drained)
-	go a.collectLiveHistory(runID, cmd)
+	go a.collectLiveHistory(runID)
 	writeJSON(w, 202, map[string]any{"job": publicJob(job), "message": "SPT run started on the VM."})
 }
 

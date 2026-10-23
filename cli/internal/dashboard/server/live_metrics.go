@@ -6,7 +6,6 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -112,9 +111,9 @@ func (a *app) readRealRun(runDir, runID string, active bool) map[string]any {
 			for _, p := range totals {
 				low := strings.ToLower(filepath.Base(p))
 				phase := "SPT"
-				for _, name := range []string{"create", "verify", "delete"} {
-					if strings.Contains(low, name) {
-						phase = strings.Title(name)
+				for _, name := range [][2]string{{"create", "Create"}, {"verify", "Verify"}, {"delete", "Delete"}} {
+					if strings.Contains(low, name[0]) {
+						phase = name[1]
 						break
 					}
 				}
@@ -280,7 +279,7 @@ func (a *app) liveMetricsAt(state map[string]any, metricsURL string) map[string]
 		if err != nil {
 			continue
 		}
-		stateN := numberValue(m, "test_state", 0)
+		stateN := numberValue(m, "test_state")
 		step := str(m["step_id"])
 		if float64(t.UnixNano())/1e9 < started || stateN != 1 || m["terminal"] == true || step == "" {
 			continue
@@ -313,10 +312,10 @@ func (a *app) liveMetricsAt(state map[string]any, metricsURL string) map[string]
 	bandwidth := mapValue(entry["bandwidth"])
 	timing := mapValue(entry["timing"])
 	latency := mapValue(timing["latency"])
-	success := numberValue(ops, "success_count", 0)
-	failed := numberValue(ops, "failed_count", 0)
-	elapsed := numberValue(entry, "elapsed_time_seconds", 0)
-	bytesTotal := numberValue(bandwidth, "bytes_total", 0)
+	success := numberValue(ops, "success_count")
+	failed := numberValue(ops, "failed_count")
+	elapsed := numberValue(entry, "elapsed_time_seconds")
+	bytesTotal := numberValue(bandwidth, "bytes_total")
 	iops, iok := num(ops, "success_rate_last")
 	if !iok && elapsed > 0 {
 		iops = success / elapsed
@@ -332,7 +331,7 @@ func (a *app) liveMetricsAt(state map[string]any, metricsURL string) map[string]
 		bw = byteRate / (1024 * 1024)
 	}
 	var p50 any
-	if numberValue(latency, "count", 0) > 0 {
+	if numberValue(latency, "count") > 0 {
 		if measuredP50, ok := num(latency, "p50_us"); ok {
 			p50 = measuredP50
 		}
@@ -350,7 +349,7 @@ func (a *app) liveMetricsAt(state map[string]any, metricsURL string) map[string]
 	if elapsed > 0 {
 		sample["average_iops"] = success / elapsed
 	}
-	has := success > 0 || failed > 0 || numberValue(latency, "count", 0) > 0 || bytesTotal > 0
+	has := success > 0 || failed > 0 || numberValue(latency, "count") > 0 || bytesTotal > 0
 	out := map[string]any{"run_id": str(state["run_id"]), "workload_type": "write-verify", "source_file": metricsContract, "updated_at": sample["timestamp"], "is_active": true, "is_aggregate": false, "phase": firstNonempty(str(sample["op_type"]), str(sample["step_id"])), "phase_id": str(sample["step_id"]), "progress_percent": sample["completion_percent"], "samples": []map[string]any{}}
 	if !has {
 		return out
@@ -375,7 +374,7 @@ func firstNonempty(v ...string) string {
 	return ""
 }
 
-func (a *app) collectLiveHistory(runID string, cmd *exec.Cmd) {
+func (a *app) collectLiveHistory(runID string) {
 	defer a.processes.Done()
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()

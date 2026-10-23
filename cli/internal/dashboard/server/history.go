@@ -108,12 +108,12 @@ func (a *app) handleRunCSV(w http.ResponseWriter, r *http.Request) {
 		if metrics != nil {
 			all, _ := metrics["chart_samples"].([]map[string]any)
 			started, _ := time.Parse(time.RFC3339Nano, str(item["job"].(map[string]any)["started_at"]))
-			var min, max float64
+			var lo, hi float64
 			if kind == "window" {
 				var e1, e2 error
-				min, e1 = strconv.ParseFloat(query.Get("start"), 64)
-				max, e2 = strconv.ParseFloat(query.Get("end"), 64)
-				if e1 != nil || e2 != nil || math.IsNaN(min) || math.IsNaN(max) || math.IsInf(min, 0) || math.IsInf(max, 0) || min < 0 || max < min {
+				lo, e1 = strconv.ParseFloat(query.Get("start"), 64)
+				hi, e2 = strconv.ParseFloat(query.Get("end"), 64)
+				if e1 != nil || e2 != nil || math.IsNaN(lo) || math.IsNaN(hi) || math.IsInf(lo, 0) || math.IsInf(hi, 0) || lo < 0 || hi < lo {
 					writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Choose a valid visible time window."})
 					return
 				}
@@ -128,7 +128,7 @@ func (a *app) handleRunCSV(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 					elapsed := t.Sub(started).Seconds()
-					if elapsed < min || elapsed > max {
+					if elapsed < lo || elapsed > hi {
 						continue
 					}
 				}

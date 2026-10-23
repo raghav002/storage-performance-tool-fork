@@ -123,7 +123,7 @@ func TestLiveHistoryPersistenceAndDeduplication(t *testing.T) {
 	a.liveSamples = nil
 	recovered := a.rememberLive(map[string]any{"run_id": "mt-isolated-test", "samples": []map[string]any{}})
 	rows := recovered["chart_samples"].([]map[string]any)
-	if len(rows) != 1 || rows[0]["step_id"] != "create" || numberValue(rows[0], "interval_iops", 0) != 8 {
+	if len(rows) != 1 || rows[0]["step_id"] != "create" || numberValue(rows[0], "interval_iops") != 8 {
 		t.Fatalf("saved sample was not recovered: %#v", recovered)
 	}
 	next := map[string]any{"timestamp": "2026-09-30T19:00:02Z", "step_id": "create", "cumulative_ops": 20, "count_failed": 0, "interval_iops": 9, "bandwidth_mib_s": 9, "p50_latency_us": 40, "op_type": "CREATE"}
@@ -181,7 +181,7 @@ func TestLiveMetricsRatesAndLatency(t *testing.T) {
 		t.Fatal("live metric was not accepted")
 	}
 	sample := metrics["samples"].([]map[string]any)[0]
-	if numberValue(sample, "interval_iops", -1) != 8 || numberValue(sample, "bandwidth_mib_s", -1) != 8 || numberValue(sample, "average_iops", -1) != 5 || numberValue(sample, "p50_latency_us", -1) != 42 {
+	if numOr(sample, "interval_iops", -1) != 8 || numOr(sample, "bandwidth_mib_s", -1) != 8 || numOr(sample, "average_iops", -1) != 5 || numOr(sample, "p50_latency_us", -1) != 42 {
 		t.Fatalf("wrong measured live values: %#v", sample)
 	}
 
@@ -192,7 +192,7 @@ func TestLiveMetricsRatesAndLatency(t *testing.T) {
 	zero["operations"] = map[string]any{"success_count": 10.0, "failed_count": 0.0, "success_rate_last": 0.0}
 	zero["bandwidth"] = map[string]any{"bytes_total": 10.0 * 1048576, "bytes_rate_last": 0.0}
 	zeroSample := read(zero)["samples"].([]map[string]any)[0]
-	if numberValue(zeroSample, "interval_iops", -1) != 0 || numberValue(zeroSample, "bandwidth_mib_s", -1) != 0 {
+	if numOr(zeroSample, "interval_iops", -1) != 0 || numOr(zeroSample, "bandwidth_mib_s", -1) != 0 {
 		t.Fatalf("real zero rate was replaced: %#v", zeroSample)
 	}
 
@@ -203,7 +203,7 @@ func TestLiveMetricsRatesAndLatency(t *testing.T) {
 	missing["operations"] = map[string]any{"success_count": 10.0, "failed_count": 0.0}
 	missing["bandwidth"] = map[string]any{"bytes_total": 10.0 * 1048576}
 	missingSample := read(missing)["samples"].([]map[string]any)[0]
-	if numberValue(missingSample, "interval_iops", -1) != 5 || numberValue(missingSample, "bandwidth_mib_s", -1) != 5 {
+	if numOr(missingSample, "interval_iops", -1) != 5 || numOr(missingSample, "bandwidth_mib_s", -1) != 5 {
 		t.Fatalf("missing rates were not derived from measurements: %#v", missingSample)
 	}
 
@@ -241,4 +241,13 @@ func TestLiveMetricsRatesAndLatency(t *testing.T) {
 	if !strings.Contains(str(sample["source_file"]), "live metrics") {
 		t.Fatalf("live source provenance missing: %#v", sample)
 	}
+}
+
+// numOr reads a number like numberValue but returns def when it is missing,
+// so a test can tell a real 0 from an absent value.
+func numOr(m map[string]any, key string, def float64) float64 {
+	if n, ok := num(m, key); ok {
+		return n
+	}
+	return def
 }

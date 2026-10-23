@@ -193,7 +193,7 @@ func fetchAttachedStatus(baseURL string) (attachedStatus, error) {
 	if err != nil {
 		return payload, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return payload, fmt.Errorf("SPT /status returned HTTP %d", resp.StatusCode)
 	}

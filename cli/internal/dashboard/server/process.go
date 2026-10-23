@@ -27,7 +27,8 @@ func drainOutput(src io.Reader, path string) {
 		_, _ = io.Copy(io.Discard, src)
 		return
 	}
-	defer f.Close()
+	// The run log is best-effort; a failed close cannot be reported to anyone.
+	defer func() { _ = f.Close() }()
 	_, _ = io.Copy(io.MultiWriter(&limitedWriter{w: f, left: maxLogBytes}, io.Discard), src)
 }
 
@@ -209,7 +210,7 @@ func (a *app) lockBusy() bool {
 	if e != nil {
 		return false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if lockFile(f) != nil {
 		return true
 	}

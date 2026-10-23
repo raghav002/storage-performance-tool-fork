@@ -64,7 +64,7 @@ func loadSettings(path string) (dashboardSettings, error) {
 		if err != nil {
 			return dashboardSettings{}, fmt.Errorf("open dashboard settings: %w", err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		dec := json.NewDecoder(f)
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&settings); err != nil {

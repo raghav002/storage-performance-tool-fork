@@ -37,7 +37,8 @@ func Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("start dashboard: %w", err)
 	}
-	defer listener.Close()
+	// server.Shutdown normally closes the listener first, so a second close error is expected.
+	defer func() { _ = listener.Close() }()
 	a.port = strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
 	server := a.httpServer()
 	done := make(chan struct{})
@@ -61,10 +62,10 @@ func Run(ctx context.Context, opts Options) error {
 		output = os.Stdout
 	}
 	url := "http://127.0.0.1:" + a.port
-	fmt.Fprintf(output, "Dashboard running at %s\nPress Ctrl+C to stop.\n", url)
+	_, _ = fmt.Fprintf(output, "Dashboard running at %s\nPress Ctrl+C to stop.\n", url)
 	if opts.OpenBrowser {
 		if err := openBrowser(url); err != nil {
-			fmt.Fprintf(output, "Could not open browser: %v. Open the URL above manually.\n", err)
+			_, _ = fmt.Fprintf(output, "Could not open browser: %v. Open the URL above manually.\n", err)
 		}
 	}
 	if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -115,7 +116,7 @@ func newApp(opts Options) (*app, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer dir.Close()
+	defer func() { _ = dir.Close() }()
 	if err := dir.Chmod(0700); err != nil {
 		return nil, err
 	}

@@ -345,7 +345,7 @@ func readDotenv(path string, existing map[string]string) map[string]string {
 	if err != nil {
 		return out
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	scan := bufio.NewScanner(io.LimitReader(f, 1_000_000))
 	scan.Buffer(make([]byte, 4096), 1_000_000)
 	for scan.Scan() {

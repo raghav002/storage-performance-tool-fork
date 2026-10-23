@@ -158,7 +158,7 @@ func (a *app) parseMetricsFile(path, runID, workload string, active, aggregate b
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	reader := csv.NewReader(io.LimitReader(f, maxCSVBytes+1))
 	reader.FieldsPerRecord = -1
 	headers, err := reader.Read()

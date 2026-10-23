@@ -255,7 +255,7 @@ func (a *app) liveMetricsAt(state map[string]any, metricsURL string) map[string]
 	if err != nil {
 		return nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxMetricsBytes+1))
 	if err != nil || len(body) > maxMetricsBytes || resp.StatusCode != 200 {
 		return nil

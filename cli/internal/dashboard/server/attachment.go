@@ -107,7 +107,7 @@ func (a *app) attachedState() (map[string]any, error) {
 	host := a.attachedHost
 	a.mu.Unlock()
 	if host == "" {
-		return nil, errors.New("No SPT run is selected. Choose a configured client machine and retry.")
+		return nil, userError("No SPT run is selected. Choose a configured client machine and retry.")
 	}
 	apiPort := constants.SptAPIPortInt
 	if a.sptAPIPort != "" {
@@ -118,10 +118,10 @@ func (a *app) attachedState() (map[string]any, error) {
 	baseURL := "http://" + net.JoinHostPort(host, strconv.Itoa(apiPort))
 	status, err := fetchAttachedStatus(baseURL)
 	if err != nil {
-		return nil, fmt.Errorf("Could not reach SPT on %s. Check that its API is running on port %d, then retry. Details: %v", host, apiPort, err)
+		return nil, userErrorf("Could not reach SPT on %s. Check that its API is running on port %d, then retry. Details: %v", host, apiPort, err)
 	}
 	if status.RunID == "" || !strings.EqualFold(status.State, "running") {
-		return nil, fmt.Errorf("SPT on %s is reachable, but it is not reporting an active run. Start or select an existing SPT run, then retry.", host)
+		return nil, userErrorf("SPT on %s is reachable, but it is not reporting an active run. Start or select an existing SPT run, then retry.", host)
 	}
 	if status.Progress < 0 || status.Progress > 100 {
 		status.Progress = 0

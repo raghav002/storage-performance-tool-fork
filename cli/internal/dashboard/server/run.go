@@ -169,23 +169,23 @@ func (a *app) validateOptions(o options) error {
 	case modeExpert:
 		return a.validateExpert(o)
 	default:
-		return errors.New("Choose the guided or expert run mode.")
+		return userError("Choose the guided or expert run mode.")
 	}
 }
 
 func (a *app) validateGuided(o options) error {
 	objects, sizes, threads, runtimes := a.guidedLimitSets()
 	if !objects[o.ObjectCount] {
-		return errors.New("Object count is outside the configured guided choices.")
+		return userError("Object count is outside the configured guided choices.")
 	}
 	if !sizes[o.ObjectSize] {
-		return errors.New("Object size is outside the configured guided choices.")
+		return userError("Object size is outside the configured guided choices.")
 	}
 	if !threads[o.Threads] {
-		return errors.New("Thread count is outside the configured guided choices.")
+		return userError("Thread count is outside the configured guided choices.")
 	}
 	if !runtimes[o.MaxRuntimeSeconds] {
-		return errors.New("Maximum runtime is outside the configured guided choices.")
+		return userError("Maximum runtime is outside the configured guided choices.")
 	}
 	return nil
 }
@@ -193,20 +193,20 @@ func (a *app) validateGuided(o options) error {
 func (a *app) validateExpert(o options) error {
 	e := a.effectiveSettings().Limits.Expert
 	if o.ObjectCount < e.ObjectCountMin || o.ObjectCount > e.ObjectCountMax {
-		return fmt.Errorf("Object count must be between %d and %d.", e.ObjectCountMin, e.ObjectCountMax)
+		return userErrorf("Object count must be between %d and %d.", e.ObjectCountMin, e.ObjectCountMax)
 	}
 	size, ok := parseSize(o.ObjectSize)
 	if !ok || size < e.ObjectSizeMin || size > e.ObjectSizeMax {
-		return fmt.Errorf("Object size must be between %d and %d bytes using a whole number of KiB, MiB, or GiB.", e.ObjectSizeMin, e.ObjectSizeMax)
+		return userErrorf("Object size must be between %d and %d bytes using a whole number of KiB, MiB, or GiB.", e.ObjectSizeMin, e.ObjectSizeMax)
 	}
 	if o.Threads < e.ThreadsMin || o.Threads > e.ThreadsMax {
-		return fmt.Errorf("Thread count must be between %d and %d.", e.ThreadsMin, e.ThreadsMax)
+		return userErrorf("Thread count must be between %d and %d.", e.ThreadsMin, e.ThreadsMax)
 	}
 	if o.MaxRuntimeSeconds < e.RuntimeMin || o.MaxRuntimeSeconds > e.RuntimeMax {
-		return fmt.Errorf("Maximum runtime must be between %d and %d seconds.", e.RuntimeMin, e.RuntimeMax)
+		return userErrorf("Maximum runtime must be between %d and %d seconds.", e.RuntimeMin, e.RuntimeMax)
 	}
 	if size > e.MaxTotalBytes/int64(o.ObjectCount) {
-		return fmt.Errorf("Total test data must not exceed %d GiB.", e.MaxTotalBytes>>30)
+		return userErrorf("Total test data must not exceed %d GiB.", e.MaxTotalBytes>>30)
 	}
 	return nil
 }

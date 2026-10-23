@@ -152,7 +152,7 @@ func (a *app) parseMetricsFile(path, runID, workload string, active, aggregate b
 		return nil, err
 	}
 	if info.Size() > maxCSVBytes {
-		return nil, errors.New("SPT metrics file exceeded the dashboard's 10 MB read limit.")
+		return nil, userError("SPT metrics file exceeded the dashboard's 10 MB read limit.")
 	}
 	f, err := os.Open(path) // #nosec G304 -- metrics file found by listing a run directory under the results directory
 	if err != nil {

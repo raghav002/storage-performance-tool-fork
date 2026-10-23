@@ -139,24 +139,24 @@ func validateStorage(c storageConfig) (storageConfig, error) {
 			continue
 		}
 		if len(out.Hosts) == maxHosts {
-			return out, fmt.Errorf("List at most %d client machines.", maxHosts)
+			return out, userErrorf("List at most %d client machines.", maxHosts)
 		}
 		if err := validateHostEntry(entry); err != nil {
-			return out, fmt.Errorf("Client machine %q cannot be used: %v. Enter a host or user@host.", entry, err)
+			return out, userErrorf("Client machine %q cannot be used: %v. Enter a host or user@host.", entry, err)
 		}
 		key := strings.ToLower(hostAddress(entry))
 		if seen[key] {
-			return out, fmt.Errorf("Client machine %q is listed more than once.", hostAddress(entry))
+			return out, userErrorf("Client machine %q is listed more than once.", hostAddress(entry))
 		}
 		seen[key] = true
 		out.Hosts = append(out.Hosts, entry)
 	}
 	if len(out.Hosts) == 0 {
-		return out, errors.New("Add at least one client machine.")
+		return out, userError("Add at least one client machine.")
 	}
 	if out.Endpoint != "" {
 		if _, _, ok := validateEndpoint(out.Endpoint); !ok {
-			return out, errors.New("The S3 endpoint must be a valid HTTP or HTTPS URL without embedded credentials.")
+			return out, userError("The S3 endpoint must be a valid HTTP or HTTPS URL without embedded credentials.")
 		}
 	}
 	return out, nil

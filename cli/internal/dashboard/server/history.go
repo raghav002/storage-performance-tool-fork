@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dell/storage-performance-tool/cli/internal/constants"
 	"github.com/dell/storage-performance-tool/cli/internal/results/summary"
 )
 
@@ -280,9 +281,19 @@ func (a *app) savedRun(runID string, latest map[string]any, includeMetrics bool)
 }
 
 // savedRunStatus classifies a saved run from its files when the dashboard holds no
-// record of how it ended (runs from older builds).
-func savedRunStatus(dir, _ string, _ map[string]any, phases []map[string]any) string {
-	if regularFile(filepath.Join(dir, "results_summary.txt")) || len(phases) >= 3 {
+// record of how it ended (runs from older builds). SPT writes
+// spt_<label>-<stamp>_results_summary.txt when a run finishes; a write-verify run
+// has create, verify and delete phases.
+func savedRunStatus(dir, paramsDir string, _ map[string]any, phases []map[string]any) string {
+	for _, d := range []string{dir, paramsDir} {
+		if regularFile(filepath.Join(d, "results_summary.txt")) {
+			return jobCompleted
+		}
+		if matches, _ := filepath.Glob(filepath.Join(d, constants.ResultsSummaryFilePrefix+"*"+constants.ResultsSummaryFileSuffix)); len(matches) > 0 {
+			return jobCompleted
+		}
+	}
+	if len(phases) >= 3 {
 		return jobCompleted
 	}
 	return jobPartial

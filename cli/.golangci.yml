@@ -30,6 +30,16 @@ linters:
     - thelper
     - misspell
     - unused
+  exclusions:
+    rules:
+      # Upstream SPT core: the docker argument builder names its loop variable
+      # "cap" (a Linux capability). Renaming it is behaviour-neutral, but this
+      # team does not edit engine/core files, so the one finding is excluded
+      # here, by path and message, instead of in the code.
+      - path: internal/docker/command/builder\.go
+        linters:
+          - predeclared
+        text: "cap: shadows predeclared identifier"
 
 issues:
   exclude-use-default: false

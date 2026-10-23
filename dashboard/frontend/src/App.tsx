@@ -126,6 +126,18 @@ const fields = [
     detail: "Settings, timestamps, prefix, and exit code",
   },
 ];
+const expertViewSelectionKey = "spt-expert-visible-sections-v1";
+const allSectionKeys = () => fields.map((field) => field.key);
+function loadVisibleSections(): string[] {
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(expertViewSelectionKey) ?? "null");
+    if (!Array.isArray(stored)) return allSectionKeys();
+    return allSectionKeys().filter((key) => stored.includes(key));
+  } catch {
+    return allSectionKeys();
+  }
+}
+
 const graphs = [
   {
     key: "throughput" as const,
@@ -224,8 +236,16 @@ export default function App() {
   }, [state]);
   const clients = state?.storage?.hosts.length ?? 1;
   const [mode, setMode] = useState<RunMode>("guided");
-  const [selection, setSelection] = useState(fields.map((f) => f.key)),
-    [choosing, setChoosing] = useState(false);
+  const [selection, setSelection] = useState<string[]>(loadVisibleSections);
+  const [customizing, setCustomizing] = useState(false);
+  // View preferences are browser-only. They do not affect the SPT run or API.
+  useEffect(() => {
+    try {
+      localStorage.setItem(expertViewSelectionKey, JSON.stringify(selection));
+    } catch {
+      // The dashboard still works if browser storage is unavailable.
+    }
+  }, [selection]);
   const [historyRuns, setHistoryRuns] = useState<HistoryRun[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
@@ -260,6 +280,7 @@ export default function App() {
       const detail = await response.json();
       if (!response.ok) throw new Error(detail.error ?? "Could not open saved run.");
       setHistoryState(detail as State);
+      setCustomizing(false);
       setPage("dashboard");
     } catch (reason) {
       setHistoryError(reason instanceof Error ? reason.message : "Could not open saved run.");
@@ -268,6 +289,7 @@ export default function App() {
 
   const showDashboard = () => {
     setHistoryState(null);
+    setCustomizing(false);
     setPage("dashboard");
   };
 
@@ -351,7 +373,7 @@ export default function App() {
                   aria-pressed={mode === m}
                   onClick={() => {
                     setMode(m);
-                    setChoosing(m === "expert");
+                    setCustomizing(false);
                     // On Configure, the mode switches the workload form in place.
                     if (page !== "configure") showDashboard();
                   }}
@@ -394,57 +416,12 @@ export default function App() {
                 showDashboard();
               }}
             />
-          ) : mode === "expert" && choosing ? (
-            <section className="panel expert-selection">
-              <span className="eyebrow">EXPERT VIEW</span>
-              <h1>Choose the data you need</h1>
-              <p>
-                Select the sections to include in your dashboard. Available
-                values come from SPT.
-              </p>
-              <div className="selection-actions">
-                <button onClick={() => setSelection(fields.map((f) => f.key))}>
-                  Select all
-                </button>
-                <button onClick={() => setSelection([])}>
-                  Clear selection
-                </button>
-              </div>
-              <div className="expert-check-grid">
-                {fields.map((f) => (
-                  <label className="check-label" key={f.key}>
-                    <input
-                      type="checkbox"
-                      checked={selection.includes(f.key)}
-                      onChange={(e) =>
-                        setSelection(
-                          e.target.checked
-                            ? [...selection, f.key]
-                            : selection.filter((k) => k !== f.key),
-                        )
-                      }
-                    />
-                    <div>
-                      <strong>{f.title}</strong>
-                      <p>{f.detail}</p>
-                    </div>
-                  </label>
-                ))}
-              </div>
-              <button
-                className="primary"
-                disabled={!selection.length}
-                onClick={() => setChoosing(false)}
-              >
-                Open expert dashboard
-              </button>
-            </section>
           ) : (
             <>
               {mode === "expert" && (
                 <div className="expert-edit">
-                  <button onClick={() => setChoosing(true)}>
-                    Change selected data
+                  <button type="button" onClick={() => setCustomizing(true)}>
+                    Customize view
                   </button>
                 </div>
               )}
@@ -458,6 +435,52 @@ export default function App() {
                 }
                 onConfigure={() => setPage("configure")}
               />
+              {mode === "expert" && customizing && (
+                <div className="expert-view-overlay" onKeyDown={(event) => {
+                  if (event.key === "Escape") setCustomizing(false);
+                }}>
+                  <button className="expert-view-backdrop" type="button"
+                    aria-label="Close dashboard customization"
+                    onClick={() => setCustomizing(false)} />
+                  <aside className="expert-view-drawer" role="dialog" aria-modal="true"
+                    aria-labelledby="expert-view-drawer-title">
+                    <div className="expert-view-drawer-heading">
+                      <div>
+                        <span className="eyebrow">EXPERT VIEW</span>
+                        <h2 id="expert-view-drawer-title">Customize dashboard</h2>
+                      </div>
+                      <button type="button" autoFocus aria-label="Close customization"
+                        onClick={() => setCustomizing(false)}>✕</button>
+                    </div>
+                    <p>Show or hide sections. This only changes your display, not the benchmark or its data.</p>
+                    <div className="expert-view-drawer-actions">
+                      <button type="button" onClick={() => setSelection(allSectionKeys())}>Show all</button>
+                      <button type="button" onClick={() => setSelection([])}>Hide all</button>
+                    </div>
+                    <div className="expert-view-drawer-list">
+                      {fields.map((field) => (
+                        <label className="check-label" key={field.key}>
+                          <input type="checkbox" checked={selection.includes(field.key)}
+                            onChange={(event) => setSelection((previous) =>
+                              event.target.checked
+                                ? [...previous, field.key]
+                                : previous.filter((key) => key !== field.key),
+                            )} />
+                          <span>
+                            <strong>{field.title}</strong>
+                            <small>{field.detail}</small>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="expert-view-drawer-footer">
+                      <span>{selection.length} of {fields.length} sections shown</span>
+                      <button className="primary" type="button"
+                        onClick={() => setCustomizing(false)}>Done</button>
+                    </div>
+                  </aside>
+                </div>
+              )}
             </>
           )}
         </main>
@@ -469,6 +492,276 @@ export default function App() {
           · Refreshes every 2 seconds
         </footer>
       </div>
+    </div>
+  );
+}
+
+type ExpertStart = "new" | "saved" | "previous" | "command";
+type SavedExpertProfile = { name: string; options: Options };
+const expertProfileStorageKey = "spt-dashboard-expert-profiles-v1";
+
+function readExpertProfiles(): SavedExpertProfile[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(expertProfileStorageKey) ?? "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is SavedExpertProfile =>
+      !!item && typeof item === "object" &&
+      typeof item.name === "string" && !!item.options &&
+      typeof item.options.object_count === "number" &&
+      typeof item.options.object_size === "string" &&
+      typeof item.options.threads === "number" &&
+      typeof item.options.max_runtime_seconds === "number",
+    ).slice(0, 12);
+  } catch {
+    return [];
+  }
+}
+
+// Only parse the four settings currently accepted by POST /api/runs.
+// Never execute user input or pass arbitrary CLI flags to the backend.
+function parseExpertCommand(text: string, base: Options, limits: NonNullable<State["limits"]>): Options {
+  const parts = text.replace(/\\\s*\r?\n/g, " ").trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 3 || !["spt", "./spt"].includes(parts[0]) ||
+    parts[1] !== "run" || parts[2] !== "write-verify") {
+    throw new Error("Start with: spt run write-verify");
+  }
+  const result: Options = { ...base, mode: "expert" };
+  const map = {
+    "--object-count": "object_count",
+    "--object-size": "object_size",
+    "--threads": "threads",
+    "--auto-terminate-seconds": "max_runtime_seconds",
+  } as const;
+  const seen = new Set<string>();
+  for (let i = 3; i < parts.length; i++) {
+    const [flag, inline] = parts[i].split("=", 2);
+    if (!(flag in map)) throw new Error(`Unsupported flag: ${flag}. Only the four dashboard run settings can be imported.`);
+    if (seen.has(flag)) throw new Error(`Duplicate flag: ${flag}`);
+    seen.add(flag);
+    const value = inline ?? parts[++i];
+    if (!value || value.startsWith("--")) throw new Error(`Missing value for ${flag}.`);
+    const key = map[flag as keyof typeof map];
+    if (key === "object_size") {
+      result.object_size = value;
+    } else {
+      if (!/^\d+$/.test(value)) throw new Error(`${flag} must be a whole number.`);
+      result[key] = Number(value);
+    }
+  }
+  if (seen.size === 0) throw new Error("Include at least one supported flag.");
+  const errors = validateOptions(result, limits);
+  const first = Object.values(errors).find(Boolean);
+  if (first) throw new Error(first);
+  return result;
+}
+
+function expertCommand(draft: ExpertDraft): string {
+  const opts = fromDraft(draft);
+  return `spt run write-verify --object-count ${opts.object_count} --object-size ${opts.object_size} --threads ${opts.threads} --auto-terminate-seconds ${opts.max_runtime_seconds}`;
+}
+
+function ExpertWorkspace({
+  draft, setDraft, errors, limits, verified, clients,
+}: {
+  draft: ExpertDraft;
+  setDraft: (d: ExpertDraft) => void;
+  errors: OptionErrors;
+  limits: NonNullable<State["limits"]>;
+  verified: boolean;
+  clients: number;
+}) {
+  const [start, setStart] = useState<ExpertStart>("new");
+  const [profiles, setProfiles] = useState(readExpertProfiles);
+  const [chosenProfile, setChosenProfile] = useState("");
+  const [profileName, setProfileName] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
+  const [previousRuns, setPreviousRuns] = useState<HistoryRun[]>([]);
+  const [previousID, setPreviousID] = useState("");
+  const [historyMessage, setHistoryMessage] = useState("");
+  const [commandText, setCommandText] = useState("");
+  const [commandMessage, setCommandMessage] = useState("");
+  const [importError, setImportError] = useState(false);
+  const options = fromDraft(draft);
+  const valid = Object.keys(errors).length === 0;
+  const changed = [
+    ["object_count", "Object count"],
+    ["object_size", "Object size"],
+    ["threads", "Threads"],
+    ["max_runtime_seconds", "Safety limit"],
+  ].filter(([key]) => options[key as keyof Options] !== defaults[key as keyof Options]);
+  const volume = (parseSize(options.object_size) ?? 0) * (Number.isFinite(options.object_count) ? options.object_count : 0);
+
+  useEffect(() => {
+    if (start !== "previous") return;
+    const controller = new AbortController();
+    setHistoryMessage("Loading saved runs…");
+    fetch("/api/runs", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => readJSON(response, "Could not load saved runs."))
+      .then((data: { runs?: HistoryRun[] }) => {
+        if (controller.signal.aborted) return;
+        const available = (Array.isArray(data.runs) ? data.runs : []).filter((r) =>
+          r.options && r.status === "completed" &&
+          typeof r.options.object_count === "number" &&
+          typeof r.options.object_size === "string" &&
+          typeof r.options.threads === "number" &&
+          typeof r.options.max_runtime_seconds === "number",
+        );
+        setPreviousRuns(available);
+        setPreviousID(available[0]?.run_id ?? "");
+        setHistoryMessage(available.length ? "" : "No completed runs with reusable settings found.");
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) setHistoryMessage(e instanceof Error ? e.message : "Unable to load run history.");
+      });
+    return () => controller.abort();
+  }, [start]);
+
+  function saveProfile() {
+    const name = profileName.trim().slice(0, 60);
+    if (!name || !valid) {
+      setSaveMessage(name ? "Correct invalid settings before saving." : "Enter a profile name first.");
+      return;
+    }
+    const next = [{ name, options: { ...options, mode: "expert" as const } }, ...profiles.filter((p) => p.name !== name)].slice(0, 12);
+    try {
+      localStorage.setItem(expertProfileStorageKey, JSON.stringify(next));
+      setProfiles(next);
+      setChosenProfile(name);
+      setProfileName("");
+      setSaveMessage("Saved in this browser. Storage credentials are not saved.");
+    } catch {
+      setSaveMessage("Browser storage is unavailable. Could not save this profile.");
+    }
+  }
+
+  function importCommand() {
+    try {
+      setDraft(toDraft(parseExpertCommand(commandText, options, limits)));
+      setCommandMessage("Supported settings imported. Review the fields and host limits below.");
+      setImportError(false);
+    } catch (e) {
+      setCommandMessage(e instanceof Error ? e.message : "Command could not be parsed.");
+      setImportError(true);
+    }
+  }
+
+  return (
+    <div className="expert-workspace">
+      <div className="expert-workspace-main">
+        <div className="expert-area-heading">
+          <strong>Start from</strong>
+          <span>Reuse a known configuration or start with the defaults.</span>
+        </div>
+        <div className="expert-start-grid" role="group" aria-label="Start expert configuration">
+          {([
+            ["new", "New configuration", "Use a simple starting point"],
+            ["saved", "Saved profile", "Reuse your browser profile"],
+            ["previous", "Previous run", "Duplicate completed run settings"],
+            ["command", "CLI command", "Import supported SPT flags"],
+          ] as const).map(([key, name, detail]) => (
+            <button type="button" key={key} className={`expert-start-option ${start === key ? "active" : ""}`}
+              aria-pressed={start === key} onClick={() => setStart(key)}>
+              <strong>{name}</strong><small>{detail}</small>
+            </button>
+          ))}
+        </div>
+        <div className="expert-starter">
+          {start === "new" && <div className="expert-inline">
+            <label>Starting preset
+              <select defaultValue="default" onChange={(e) => {
+                const preset = expertPresets.find((p) => p.label === e.target.value);
+                setDraft(toDraft(preset?.options ?? defaults));
+              }}>
+                <option value="default">Default · 100 objects, 64KiB</option>
+                {expertPresets.map((p) => <option key={p.label} value={p.label}>{p.label}</option>)}
+              </select>
+            </label>
+            <span className="expert-muted">Adjust any setting below before reviewing.</span>
+          </div>}
+          {start === "saved" && <div className="expert-inline">
+            <label>Saved configurations
+              <select value={chosenProfile} onChange={(e) => setChosenProfile(e.target.value)}>
+                <option value="">Choose a saved profile</option>
+                {profiles.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+              </select>
+            </label>
+            <button type="button" disabled={!chosenProfile} onClick={() => {
+              const p = profiles.find((item) => item.name === chosenProfile);
+              if (p) setDraft(toDraft(p.options));
+            }}>Load profile</button>
+            {!profiles.length && <span className="expert-muted">No saved profiles yet. Save one in the summary panel.</span>}
+          </div>}
+          {start === "previous" && <div className="expert-inline">
+            <label>Completed benchmark
+              <select value={previousID} onChange={(e) => setPreviousID(e.target.value)}>
+                {previousRuns.map((r) => <option key={r.run_id} value={r.run_id}>{r.run_id}</option>)}
+                {!previousRuns.length && <option value="">No runs available</option>}
+              </select>
+            </label>
+            <button type="button" disabled={!previousID} onClick={() => {
+              const selected = previousRuns.find((r) => r.run_id === previousID);
+              if (selected?.options) {
+                setDraft(toDraft(selected.options as Options));
+                setHistoryMessage("Previous run settings loaded. Review them before running.");
+              }
+            }}>Duplicate settings</button>
+            {historyMessage && <span role="status" className="expert-muted">{historyMessage}</span>}
+          </div>}
+          {start === "command" && <div className="expert-command-import">
+            <label htmlFor="expert-cli-input">Paste an SPT command</label>
+            <textarea id="expert-cli-input" value={commandText} rows={3} spellCheck={false}
+              placeholder="spt run write-verify --object-count 1000 --object-size 1MiB --threads 4 --auto-terminate-seconds 600"
+              onChange={(e) => setCommandText(e.target.value)} />
+            <div className="expert-inline"><button type="button" onClick={importCommand}>Import supported settings</button>
+              <span className="expert-muted">Import only; commands are never executed. Four flags supported.</span></div>
+            {commandMessage && <p className={importError ? "expert-feedback-error" : "expert-feedback-good"} role="status">{commandMessage}</p>}
+          </div>}
+        </div>
+
+        <div className="expert-area-heading expert-essentials-heading">
+          <strong>Write + verify · Essential settings</strong>
+          <span>The current dashboard API supports this workload and these four run settings.</span>
+        </div>
+        <ExpertFields draft={draft} setDraft={setDraft} errors={errors} limits={limits} showPresets={false} />
+        <details className="expert-limits">
+          <summary>Host limits &amp; advanced settings</summary>
+          <p>Other SPT CLI flags are not available through this version of the Dashboard API. Defaults are enforced by the Go server.</p>
+          <dl>
+            <div><dt>Maximum objects</dt><dd>{limits.expert.object_count.max.toLocaleString("en-US")}</dd></div>
+            <div><dt>Maximum threads / client</dt><dd>{limits.expert.threads.max}</dd></div>
+            <div><dt>Maximum object size</dt><dd>{formatBytes(limits.expert.object_size_bytes.max)}</dd></div>
+            <div><dt>Maximum runtime</dt><dd>{limits.expert.max_runtime_seconds.max}s</dd></div>
+            <div><dt>Maximum data</dt><dd>{formatBytes(limits.expert.max_total_bytes)}</dd></div>
+          </dl>
+        </details>
+      </div>
+      <aside className="expert-summary" aria-label="Expert configuration summary">
+        <span className="eyebrow">CONFIGURATION SUMMARY</span>
+        <h3>Write + verify</h3>
+        <span className="expert-summary-sub">{clients} client machine{clients === 1 ? "" : "s"} · {verified ? "Storage verified" : "Storage not verified"}</span>
+        <dl>
+          <div><dt>Maximum objects</dt><dd>{draft.object_count || "—"}</dd></div>
+          <div><dt>Object size</dt><dd>{draft.size_amount ? `${draft.size_amount} ${draft.size_unit}` : "—"}</dd></div>
+          <div><dt>Threads / client</dt><dd>{draft.threads || "—"}</dd></div>
+          <div><dt>Safety limit</dt><dd>{draft.max_runtime_seconds ? `${draft.max_runtime_seconds}s` : "—"}</dd></div>
+        </dl>
+        <div className="expert-data-footprint"><strong>Maximum test data</strong><span>{Number.isFinite(volume) ? formatBytes(volume) : "—"}</span></div>
+        <div className="expert-changes"><strong>Modified from defaults</strong>
+          <div className="expert-chips">{changed.length ? changed.map(([, label]) => <span key={label}>{label}</span>) : <span className="quiet">Using defaults</span>}</div>
+        </div>
+        <details className="expert-cli-preview">
+          <summary>Preview CLI settings</summary>
+          <pre>{valid ? expertCommand(draft) : "Correct the settings to generate a command preview."}</pre>
+          <small>The Go backend adds storage credentials, safe flags and the results directory.</small>
+        </details>
+        <div className="expert-save">
+          <label htmlFor="expert-profile-name">Save this configuration</label>
+          <input id="expert-profile-name" value={profileName} placeholder="Profile name" maxLength={60}
+            onChange={(e) => setProfileName(e.target.value)}/>
+          <button type="button" disabled={!valid} onClick={saveProfile}>Save profile</button>
+          {saveMessage && <small role="status">{saveMessage}</small>}
+        </div>
+      </aside>
     </div>
   );
 }
@@ -530,7 +823,7 @@ function Configure({
     }
   }
   return (
-    <div className="configure">
+    <div className={`configure ${mode === "expert" ? "configure--expert" : ""}`}>
       <span className="eyebrow">NEW BENCHMARK</span>
       <h1>Configure a run</h1>
       <p>
@@ -592,6 +885,13 @@ function Configure({
               Up to {fmt(totalBytes / 1048576, 2)} MiB of test data. A unique
               prefix isolates this run. Cleanup is best effort.
             </p>
+            {mode === "expert" && (
+              <div className="expert-reviewed-command">
+                <strong>CLI settings preview</strong>
+                <pre>{expertCommand(draft)}</pre>
+                <small>The server generates the complete command and validates all options.</small>
+              </div>
+            )}
           </div>
           <div className="actions">
             <button disabled={busy} onClick={() => setReview(false)}>
@@ -623,11 +923,13 @@ function Configure({
               : "Guided mode: choose from preset sizes for short, safe runs. Switch to Expert in the top bar for custom values."}
           </p>
           {mode === "expert" ? (
-            <ExpertFields
+            <ExpertWorkspace
               draft={draft}
               setDraft={setDraft}
               errors={errors}
               limits={limits}
+              verified={verified}
+              clients={clients}
             />
           ) : (
             <GuidedFields
@@ -769,11 +1071,13 @@ function ExpertFields({
   setDraft,
   errors,
   limits,
+  showPresets = true,
 }: {
   draft: ExpertDraft;
   setDraft: (d: ExpertDraft) => void;
   errors: OptionErrors;
   limits: NonNullable<State["limits"]>;
+  showPresets?: boolean;
 }) {
   const e = limits.expert;
   const number = (
@@ -800,7 +1104,7 @@ function ExpertFields({
   );
   return (
     <>
-      <div className="preset-chips" role="group" aria-label="Starting points">
+      {showPresets && <div className="preset-chips" role="group" aria-label="Starting points">
         {expertPresets.map((p) => (
           <button
             type="button"
@@ -814,7 +1118,7 @@ function ExpertFields({
             </small>
           </button>
         ))}
-      </div>
+      </div>}
       <div className="form-grid">
         {number(
           "object_count",

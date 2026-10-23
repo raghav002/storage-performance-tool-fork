@@ -46,7 +46,7 @@ func browserFromEnv(value, url string) *exec.Cmd {
 		if !substituted {
 			args = append(args, url)
 		}
-		return exec.Command(fields[0], args...) // #nosec G204 -- the user's own BROWSER setting, run without a shell
+		return exec.Command(fields[0], args...) // #nosec G204 G702 -- the user's own BROWSER setting, run without a shell
 	}
 	return nil
 }

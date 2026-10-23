@@ -17,9 +17,6 @@ import (
 var assets embed.FS
 
 const (
-	maxObjects      = 320
-	maxThreads      = 2
-	maxRuntime      = 600
 	maxRequestBytes = 4096
 	maxCSVBytes     = 10_000_000
 	maxLogBytes     = 2_000_000
@@ -45,10 +42,6 @@ const (
 )
 
 var (
-	objectCounts   = map[int]bool{10: true, 25: true, 50: true, 100: true, 250: true, 320: true}
-	objectSizes    = map[string]bool{"64KiB": true, "256KiB": true, "1MiB": true, "4MiB": true, "16MiB": true}
-	threadCounts   = map[int]bool{1: true, 2: true}
-	runtimes       = map[int]bool{60: true, 120: true, 300: true, 600: true}
 	sizePattern    = regexp.MustCompile(`^([1-9][0-9]{0,6})(KiB|MiB|GiB)$`)
 	namePattern    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{1,61}[A-Za-z0-9]$`)
 	runPattern     = regexp.MustCompile(`^mt-[A-Za-z0-9_.-]+$`)

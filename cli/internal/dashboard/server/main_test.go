@@ -13,6 +13,7 @@ import (
 )
 
 func TestValidateOptionsBounds(t *testing.T) {
+	a := &app{} // no settings file: the built-in default limits apply
 	for _, good := range []options{
 		{"", 100, "1MiB", 1, 60},
 		{"guided", 320, "16MiB", 2, 600},
@@ -21,7 +22,7 @@ func TestValidateOptionsBounds(t *testing.T) {
 		{"expert", 100_000, "1MiB", 64, 3600},
 		{"expert", 100, "1GiB", 1, 60},
 	} {
-		if err := validateOptions(good); err != nil {
+		if err := a.validateOptions(good); err != nil {
 			t.Errorf("rejected %+v: %v", good, err)
 		}
 	}
@@ -43,7 +44,7 @@ func TestValidateOptionsBounds(t *testing.T) {
 		{"expert", 100, "--help", 1, 60},
 	}
 	for _, got := range bad {
-		if validateOptions(got) == nil {
+		if a.validateOptions(got) == nil {
 			t.Errorf("accepted unsafe settings: %+v", got)
 		}
 	}
@@ -63,9 +64,11 @@ func TestParseSize(t *testing.T) {
 }
 
 func TestRunLimitsMatchValidation(t *testing.T) {
-	guided := runLimits()["guided"].(map[string]any)
+	a := &app{}
+	_, accepted, _, _ := a.guidedLimitSets()
+	guided := a.limitsPayload()["guided"].(map[string]any)
 	for _, size := range guided["object_sizes"].([]string) {
-		if !objectSizes[size] {
+		if !accepted[size] {
 			t.Errorf("published guided size %q is not accepted", size)
 		}
 	}

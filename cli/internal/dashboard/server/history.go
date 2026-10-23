@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"encoding/csv"
 	"encoding/json"
@@ -293,10 +294,43 @@ func savedRunStatus(dir, paramsDir string, _ map[string]any, phases []map[string
 			return jobCompleted
 		}
 	}
+	if ended := traceLogOutcome(paramsDir); ended != "" {
+		return ended
+	}
 	if len(phases) >= 3 {
 		return jobCompleted
 	}
 	return jobPartial
+}
+
+// traceLogOutcome reads how SPT's own trace log says a run ended, for runs the
+// dashboard holds no record of. SPT's headless runner (cli/tui/headless/runner.go)
+// logs "[SIGNAL] Received signal" when it is stopped and "[ERROR] Failed to start
+// test" when the start fails. A stop outranks the start failure it causes. The
+// files are only read.
+func traceLogOutcome(dir string) string {
+	logs, _ := filepath.Glob(filepath.Join(dir, "spt-*.trace.log"))
+	outcome := ""
+	for _, p := range logs {
+		f, err := os.Open(p) // #nosec G304 -- dir is the checked run directory or a child listed from it
+		if err != nil {
+			continue
+		}
+		scanner := bufio.NewScanner(f)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.Contains(line, "[SIGNAL] Received signal") {
+				_ = f.Close()
+				return jobInterrupted
+			}
+			if strings.Contains(line, "[ERROR] Failed to start test") {
+				outcome = jobFailed
+			}
+		}
+		_ = f.Close()
+	}
+	return outcome
 }
 
 func metricsSummaries(metrics map[string]any) []map[string]any {

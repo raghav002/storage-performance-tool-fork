@@ -42,7 +42,7 @@ func (a *app) apiGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") {
 			if !a.loopbackHost(r) || (r.Header.Get("Origin") != "" && !a.sameOrigin(r)) {
-				writeJSON(w, http.StatusForbidden, map[string]any{"error": msgLoopbackOnly})
+				writeJSON(w, http.StatusForbidden, map[string]any{keyError: msgLoopbackOnly})
 				return
 			}
 		}
@@ -79,7 +79,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func (a *app) handleState(w http.ResponseWriter, r *http.Request) {
 	if r.URL.RawQuery != "" {
-		writeJSON(w, 404, map[string]any{"error": "Endpoint not found."})
+		writeJSON(w, 404, map[string]any{keyError: msgEndpointNotFound})
 		return
 	}
 	a.mu.Lock()
@@ -88,7 +88,7 @@ func (a *app) handleState(w http.ResponseWriter, r *http.Request) {
 	if attached {
 		state, err := a.attachedState()
 		if err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+			writeJSON(w, http.StatusBadGateway, map[string]any{keyError: err.Error()})
 			return
 		}
 		writeJSON(w, http.StatusOK, state)
@@ -96,7 +96,7 @@ func (a *app) handleState(w http.ResponseWriter, r *http.Request) {
 	}
 	state, err := a.currentState()
 	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": "Could not read SPT state: " + err.Error()})
+		writeJSON(w, 500, map[string]any{keyError: "Could not read SPT state: " + err.Error()})
 		return
 	}
 	writeJSON(w, 200, state)

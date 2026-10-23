@@ -32,15 +32,15 @@ func (a *app) sameOrigin(r *http.Request) bool {
 
 func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/api/runs" || r.URL.RawQuery != "" {
-		writeJSON(w, 404, map[string]any{"error": "Endpoint not found."})
+		writeJSON(w, 404, map[string]any{keyError: msgEndpointNotFound})
 		return
 	}
 	if !a.sameOrigin(r) {
-		writeJSON(w, 403, map[string]any{"error": "Run requests must come from this dashboard through its SSH tunnel."})
+		writeJSON(w, 403, map[string]any{keyError: "Run requests must come from this dashboard through its SSH tunnel."})
 		return
 	}
 	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/json") {
-		writeJSON(w, 415, map[string]any{"error": "Send JSON dashboard settings."})
+		writeJSON(w, 415, map[string]any{keyError: "Send JSON dashboard settings."})
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBytes)
@@ -48,37 +48,37 @@ func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	var opts options
 	if err := dec.Decode(&opts); err != nil {
-		writeJSON(w, 400, map[string]any{"error": "Choose a supported object count, size, thread count, and maximum runtime."})
+		writeJSON(w, 400, map[string]any{keyError: "Choose a supported object count, size, thread count, and maximum runtime."})
 		return
 	}
 	if err := ensureEOF(dec); err != nil {
-		writeJSON(w, 400, map[string]any{"error": "Send one JSON dashboard settings object."})
+		writeJSON(w, 400, map[string]any{keyError: "Send one JSON dashboard settings object."})
 		return
 	}
 	if err := a.validateOptions(opts); err != nil {
-		writeJSON(w, 400, map[string]any{"error": err.Error()})
+		writeJSON(w, 400, map[string]any{keyError: err.Error()})
 		return
 	}
 	target := a.targetConfiguration()
 	if target["ready"] != true {
 		reasons, _ := target["reasons"].([]string)
-		writeJSON(w, 503, map[string]any{"error": "SPT is not ready: " + strings.Join(reasons, " ")})
+		writeJSON(w, 503, map[string]any{keyError: "SPT is not ready: " + strings.Join(reasons, " ")})
 		return
 	}
 	if !a.verified(target) {
-		writeJSON(w, 409, map[string]any{"error": "Verify the storage configuration before starting a run."})
+		writeJSON(w, 409, map[string]any{keyError: "Verify the storage configuration before starting a run."})
 		return
 	}
 	a.mu.Lock()
 	if a.stopping || a.verifying {
 		a.mu.Unlock()
-		writeJSON(w, 409, map[string]any{"error": "Storage verification is in progress. Wait for it to finish before starting a run."})
+		writeJSON(w, 409, map[string]any{keyError: "Storage verification is in progress. Wait for it to finish before starting a run."})
 		return
 	}
 	lock, err := a.lockRun()
 	if err != nil {
 		a.mu.Unlock()
-		writeJSON(w, 409, map[string]any{"error": "An SPT dashboard run is already in progress. Wait for it to finish before starting another."})
+		writeJSON(w, 409, map[string]any{keyError: "An SPT dashboard run is already in progress. Wait for it to finish before starting another."})
 		return
 	}
 	runID := "mt-dashboard-" + time.Now().UTC().Format("20060102T150405") + "-" + randomHex4()
@@ -86,7 +86,7 @@ func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 	if filepath.Dir(runDir) != a.results {
 		unlockClose(lock)
 		a.mu.Unlock()
-		writeJSON(w, 500, map[string]any{"error": "Could not allocate a unique SPT result directory."})
+		writeJSON(w, 500, map[string]any{keyError: "Could not allocate a unique SPT result directory."})
 		return
 	}
 	// SPT's results directory does not exist until the first run on a host.
@@ -97,7 +97,7 @@ func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		unlockClose(lock)
 		a.mu.Unlock()
-		writeJSON(w, 500, map[string]any{"error": "Could not create the SPT result directory: " + err.Error()})
+		writeJSON(w, 500, map[string]any{keyError: "Could not create the SPT result directory: " + err.Error()})
 		return
 	}
 	logPath := filepath.Join(a.stateDir, runID+".log")
@@ -111,7 +111,7 @@ func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 		_ = os.RemoveAll(runDir)
 		unlockClose(lock)
 		a.mu.Unlock()
-		writeJSON(w, 500, map[string]any{"error": "Could not start SPT on the VM: " + err.Error()})
+		writeJSON(w, 500, map[string]any{keyError: "Could not start SPT on the VM: " + err.Error()})
 		return
 	}
 	cmd.Stderr = cmd.Stdout
@@ -120,13 +120,13 @@ func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 		_ = os.RemoveAll(runDir)
 		unlockClose(lock)
 		a.mu.Unlock()
-		writeJSON(w, 500, map[string]any{"error": "Could not start SPT on the VM: " + err.Error()})
+		writeJSON(w, 500, map[string]any{keyError: "Could not start SPT on the VM: " + err.Error()})
 		return
 	}
 	drained := make(chan struct{})
 	go func() { defer close(drained); drainOutput(stdout, logPath) }()
 	started := time.Now().UTC()
-	job := map[string]any{"run_id": runID, "status": "running", "created_at": started.Format(time.RFC3339Nano), "started_at": started.Format(time.RFC3339Nano), "started_epoch": float64(started.UnixNano()) / 1e9, "pid": cmd.Process.Pid, "returncode": nil, "options": opts, "prefix": "dashboard/" + runID + "/", "results_dir": runDir, "log_file": logPath, "message": "SPT workload started on the configured environment.", "phase": "SPT setup"}
+	job := map[string]any{keyRunID: runID, keyStatus: jobRunning, "created_at": started.Format(time.RFC3339Nano), keyStartedAt: started.Format(time.RFC3339Nano), "started_epoch": float64(started.UnixNano()) / 1e9, "pid": cmd.Process.Pid, "returncode": nil, keyOptions: opts, "prefix": "dashboard/" + runID + "/", "results_dir": runDir, "log_file": logPath, keyMessage: "SPT workload started on the configured environment.", keyPhase: "SPT setup"}
 	a.activeJob = job
 	a.activeCmd = cmd
 	a.activeLock = lock
@@ -141,14 +141,14 @@ func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 		a.activeLock = nil
 		_ = os.RemoveAll(runDir)
 		a.mu.Unlock()
-		writeJSON(w, 500, map[string]any{"error": "Could not save dashboard run state."})
+		writeJSON(w, 500, map[string]any{keyError: "Could not save dashboard run state."})
 		return
 	}
 	a.processes.Add(2)
 	a.mu.Unlock()
 	go a.watchProcess(runID, cmd, lock, drained)
 	go a.collectLiveHistory(runID)
-	writeJSON(w, 202, map[string]any{"job": publicJob(job), "message": "SPT run started on the VM."})
+	writeJSON(w, 202, map[string]any{keyJob: publicJob(job), keyMessage: "SPT run started on the VM."})
 }
 
 func ensureEOF(dec *json.Decoder) error {
@@ -253,7 +253,7 @@ func unlockClose(f *os.File) {
 }
 
 func (a *app) buildArgv(runDir, runID string, o options, target map[string]any) []string {
-	return []string{a.sptBin, "run", "write-verify", "--headless", "--endpoints", fmt.Sprint(target["endpoint"]), "--bucket", fmt.Sprint(target["bucket"]), "--prefix", "dashboard/" + runID + "/", "--object-count", strconv.Itoa(o.ObjectCount), "--object-size", o.ObjectSize, "--threads", strconv.Itoa(o.Threads), "--test-hosts", targetHosts(target), "--service-threads", strconv.Itoa(o.Threads), "--auto-terminate-seconds", strconv.Itoa(o.MaxRuntimeSeconds), "--s3-driver", "default", "--auth-version", "4", "--object-data-compressibility", "0", "--object-data-dedupable=true", "--cleanup", "--label", "dashboard", "--results-dir", runDir}
+	return []string{a.sptBin, "run", driverWriteVerify, "--headless", "--endpoints", fmt.Sprint(target["endpoint"]), "--bucket", fmt.Sprint(target["bucket"]), "--prefix", "dashboard/" + runID + "/", "--object-count", strconv.Itoa(o.ObjectCount), "--object-size", o.ObjectSize, "--threads", strconv.Itoa(o.Threads), "--test-hosts", targetHosts(target), "--service-threads", strconv.Itoa(o.Threads), "--auto-terminate-seconds", strconv.Itoa(o.MaxRuntimeSeconds), "--s3-driver", "default", "--auth-version", "4", "--object-data-compressibility", "0", "--object-data-dedupable=true", "--cleanup", "--label", "dashboard", "--results-dir", runDir}
 }
 
 func (a *app) childEnvironment(o options, target map[string]any) []string {

@@ -28,15 +28,15 @@ type attachedStatus struct {
 
 func (a *app) handleAttach(w http.ResponseWriter, r *http.Request) {
 	if r.URL.RawQuery != "" {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Endpoint not found."})
+		writeJSON(w, http.StatusNotFound, map[string]any{keyError: msgEndpointNotFound})
 		return
 	}
 	if !a.sameOrigin(r) {
-		writeJSON(w, http.StatusForbidden, map[string]any{"error": "Connect requests must come from this dashboard through its SSH tunnel."})
+		writeJSON(w, http.StatusForbidden, map[string]any{keyError: "Connect requests must come from this dashboard through its SSH tunnel."})
 		return
 	}
 	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/json") {
-		writeJSON(w, http.StatusUnsupportedMediaType, map[string]any{"error": "Send the client machine to monitor."})
+		writeJSON(w, http.StatusUnsupportedMediaType, map[string]any{keyError: "Send the client machine to monitor."})
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1024)
@@ -44,16 +44,16 @@ func (a *app) handleAttach(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	var requested attachRequest
 	if err := dec.Decode(&requested); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Choose a configured client machine."})
+		writeJSON(w, http.StatusBadRequest, map[string]any{keyError: "Choose a configured client machine."})
 		return
 	}
 	if err := ensureEOF(dec); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Send one client machine."})
+		writeJSON(w, http.StatusBadRequest, map[string]any{keyError: "Send one client machine."})
 		return
 	}
 	host := strings.TrimSpace(requested.Host)
 	if err := validateHostEntry(host); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Choose a valid configured client machine."})
+		writeJSON(w, http.StatusBadRequest, map[string]any{keyError: "Choose a valid configured client machine."})
 		return
 	}
 	approved := false
@@ -64,7 +64,7 @@ func (a *app) handleAttach(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !approved {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Choose a client machine already listed in Storage configuration."})
+		writeJSON(w, http.StatusBadRequest, map[string]any{keyError: "Choose a client machine already listed in Storage configuration."})
 		return
 	}
 	a.mu.Lock()
@@ -79,7 +79,7 @@ func (a *app) handleAttach(w http.ResponseWriter, r *http.Request) {
 		a.attachedRunID = ""
 		a.attachedRows = nil
 		a.mu.Unlock()
-		writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]any{keyError: err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, state)
@@ -87,11 +87,11 @@ func (a *app) handleAttach(w http.ResponseWriter, r *http.Request) {
 
 func (a *app) handleDetach(w http.ResponseWriter, r *http.Request) {
 	if r.URL.RawQuery != "" {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Endpoint not found."})
+		writeJSON(w, http.StatusNotFound, map[string]any{keyError: msgEndpointNotFound})
 		return
 	}
 	if !a.sameOrigin(r) {
-		writeJSON(w, http.StatusForbidden, map[string]any{"error": "Disconnect requests must come from this dashboard through its SSH tunnel."})
+		writeJSON(w, http.StatusForbidden, map[string]any{keyError: "Disconnect requests must come from this dashboard through its SSH tunnel."})
 		return
 	}
 	a.mu.Lock()
@@ -99,7 +99,7 @@ func (a *app) handleDetach(w http.ResponseWriter, r *http.Request) {
 	a.attachedRunID = ""
 	a.attachedRows = nil
 	a.mu.Unlock()
-	writeJSON(w, http.StatusOK, map[string]any{"status": "disconnected"})
+	writeJSON(w, http.StatusOK, map[string]any{keyStatus: "disconnected"})
 }
 
 func (a *app) attachedState() (map[string]any, error) {
@@ -120,7 +120,7 @@ func (a *app) attachedState() (map[string]any, error) {
 	if err != nil {
 		return nil, userErrorf("Could not reach SPT on %s. Check that its API is running on port %d, then retry. Details: %v", host, apiPort, err)
 	}
-	if status.RunID == "" || !strings.EqualFold(status.State, "running") {
+	if status.RunID == "" || !strings.EqualFold(status.State, jobRunning) {
 		return nil, userErrorf("SPT on %s is reachable, but it is not reporting an active run. Start or select an existing SPT run, then retry.", host)
 	}
 	if status.Progress < 0 || status.Progress > 100 {
@@ -132,20 +132,20 @@ func (a *app) attachedState() (map[string]any, error) {
 		a.attachedRows = nil
 	}
 	a.mu.Unlock()
-	apiState := map[string]any{"run_id": status.RunID, "started_epoch": float64(0)}
+	apiState := map[string]any{keyRunID: status.RunID, "started_epoch": float64(0)}
 	metrics := a.liveMetricsAt(apiState, baseURL+"/metrics/json")
 	if metrics == nil {
-		metrics = map[string]any{"run_id": status.RunID, "workload_type": "live SPT run", "source_file": metricsContract, "is_active": true, "is_aggregate": false, "samples": []map[string]any{}, "chart_samples": []map[string]any{}}
+		metrics = map[string]any{keyRunID: status.RunID, keyWorkloadType: "live SPT run", keySourceFile: metricsContract, keyIsActive: true, keyIsAggregate: false, keySamples: []map[string]any{}, keyChartSamples: []map[string]any{}}
 	}
-	rows, _ := metrics["samples"].([]map[string]any)
+	rows, _ := metrics[keySamples].([]map[string]any)
 	a.mu.Lock()
 	if a.attachedRunID == status.RunID && len(rows) > 0 {
 		latest := rows[0]
 		lastTimestamp := ""
 		if count := len(a.attachedRows); count > 0 {
-			lastTimestamp = str(a.attachedRows[count-1]["timestamp"])
+			lastTimestamp = str(a.attachedRows[count-1][keyTimestamp])
 		}
-		if stamp := str(latest["timestamp"]); stamp != "" && stamp != lastTimestamp {
+		if stamp := str(latest[keyTimestamp]); stamp != "" && stamp != lastTimestamp {
 			a.attachedRows = append(a.attachedRows, cloneMap(latest))
 			if len(a.attachedRows) > maxSamples {
 				a.attachedRows = append([]map[string]any(nil), a.attachedRows[len(a.attachedRows)-maxSamples:]...)
@@ -155,12 +155,12 @@ func (a *app) attachedState() (map[string]any, error) {
 	chartRows := append([]map[string]any(nil), a.attachedRows...)
 	host = a.attachedHost
 	a.mu.Unlock()
-	metrics["chart_samples"] = chartRows
+	metrics[keyChartSamples] = chartRows
 	if len(rows) == 0 && len(chartRows) > 0 {
-		metrics["samples"] = []map[string]any{chartRows[len(chartRows)-1]}
+		metrics[keySamples] = []map[string]any{chartRows[len(chartRows)-1]}
 	}
 	if len(rows) > 0 {
-		metrics["samples"] = rows
+		metrics[keySamples] = rows
 	}
 	metrics["progress_percent"] = status.Progress
 	phase := "Waiting for first SPT measurement"
@@ -171,9 +171,9 @@ func (a *app) attachedState() (map[string]any, error) {
 	if message == "" {
 		message = "Monitoring the existing SPT run. This dashboard will not start or stop it."
 	}
-	job := map[string]any{"run_id": status.RunID, "status": "running", "phase": phase, "message": message, "progress_percent": status.Progress}
+	job := map[string]any{keyRunID: status.RunID, keyStatus: jobRunning, keyPhase: phase, keyMessage: message, "progress_percent": status.Progress}
 	state := a.stateResponse(job, metrics)
-	state["connection"] = map[string]any{"status": "connected", "mode": "attached", "host": host, "run_id": status.RunID, "read_only": true}
+	state["connection"] = map[string]any{keyStatus: "connected", "mode": "attached", "host": host, keyRunID: status.RunID, "read_only": true}
 	return state, nil
 }
 

@@ -48,12 +48,12 @@ func (a *app) watchProcess(runID string, cmd *exec.Cmd, lock *os.File, drained <
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	status, message := finalStatus(err, a.stopping)
-	if a.activeJob != nil && a.activeJob["run_id"] == runID {
+	if a.activeJob != nil && a.activeJob[keyRunID] == runID {
 		a.activeJob = cloneMap(a.activeJob)
-		a.activeJob["status"] = status
+		a.activeJob[keyStatus] = status
 		a.activeJob["returncode"] = code
 		a.activeJob["finished_at"] = utcNow()
-		a.activeJob["message"] = message
+		a.activeJob[keyMessage] = message
 		_ = a.writeState(a.activeJob)
 		_ = a.writeRunRecord(a.activeJob)
 		a.activeCmd = nil
@@ -85,7 +85,7 @@ func (a *app) runRecordPath(runID string) string {
 }
 
 func (a *app) writeRunRecord(job map[string]any) error {
-	runID := str(job["run_id"])
+	runID := str(job[keyRunID])
 	if !runPattern.MatchString(runID) || filepath.Base(runID) != runID {
 		return os.ErrInvalid
 	}
@@ -114,7 +114,7 @@ func (a *app) readRunRecord(runID string) map[string]any {
 		return nil
 	}
 	var m map[string]any
-	if json.Unmarshal(b, &m) != nil || str(m["run_id"]) != runID {
+	if json.Unmarshal(b, &m) != nil || str(m[keyRunID]) != runID {
 		return nil
 	}
 	return m
@@ -125,8 +125,8 @@ func (a *app) readRunRecord(runID string) map[string]any {
 // Callers hold a.mu.
 func (a *app) markInterrupted(state map[string]any) map[string]any {
 	state = cloneMap(state)
-	state["status"] = jobInterrupted
-	state["message"] = msgInterruptedRestart
+	state[keyStatus] = jobInterrupted
+	state[keyMessage] = msgInterruptedRestart
 	_ = a.writeState(state)
 	_ = a.writeRunRecord(state)
 	a.activeJob = state
@@ -146,7 +146,7 @@ func (a *app) latestJob() map[string]any {
 	if state == nil {
 		return nil
 	}
-	if str(state["status"]) == jobRunning && a.activeCmd == nil && !a.lockBusy() {
+	if str(state[keyStatus]) == jobRunning && a.activeCmd == nil && !a.lockBusy() {
 		state = a.markInterrupted(state)
 	}
 	return cloneMap(state)
@@ -195,7 +195,7 @@ func (a *app) writeState(state map[string]any) error {
 }
 
 func publicJob(state map[string]any) map[string]any {
-	keys := []string{"run_id", "status", "created_at", "started_at", "finished_at", "elapsed_seconds", "returncode", "message", "options", "prefix", "phase"}
+	keys := []string{keyRunID, keyStatus, "created_at", keyStartedAt, "finished_at", keyElapsedSeconds, "returncode", keyMessage, keyOptions, "prefix", keyPhase}
 	out := map[string]any{}
 	for _, k := range keys {
 		if v, ok := state[k]; ok {

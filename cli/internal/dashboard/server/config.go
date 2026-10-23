@@ -157,8 +157,8 @@ func (a *app) limitsPayload() map[string]any {
 	sizes := append([]string(nil), g.ObjectSizes...)
 	sort.Slice(sizes, func(i, j int) bool { x, _ := parseSize(sizes[i]); y, _ := parseSize(sizes[j]); return x < y })
 	return map[string]any{
-		"guided": map[string]any{"object_counts": g.ObjectCounts, "object_sizes": sizes, "threads": g.Threads, "max_runtime_seconds": g.Runtimes},
-		"expert": map[string]any{"object_count": map[string]int{"min": e.ObjectCountMin, "max": e.ObjectCountMax}, "object_size_bytes": map[string]int64{"min": e.ObjectSizeMin, "max": e.ObjectSizeMax}, "threads": map[string]int{"min": e.ThreadsMin, "max": e.ThreadsMax}, "max_runtime_seconds": map[string]int{"min": e.RuntimeMin, "max": e.RuntimeMax}, "max_total_bytes": e.MaxTotalBytes},
+		"guided": map[string]any{"object_counts": g.ObjectCounts, "object_sizes": sizes, keyThreads: g.Threads, keyMaxRuntimeSeconds: g.Runtimes},
+		"expert": map[string]any{"object_count": map[string]int{keyMin: e.ObjectCountMin, keyMax: e.ObjectCountMax}, "object_size_bytes": map[string]int64{keyMin: e.ObjectSizeMin, keyMax: e.ObjectSizeMax}, keyThreads: map[string]int{keyMin: e.ThreadsMin, keyMax: e.ThreadsMax}, keyMaxRuntimeSeconds: map[string]int{keyMin: e.RuntimeMin, keyMax: e.RuntimeMax}, "max_total_bytes": e.MaxTotalBytes},
 	}
 }
 

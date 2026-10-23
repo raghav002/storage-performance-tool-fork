@@ -120,6 +120,70 @@ func TestBrowserCommand(t *testing.T) {
 	}
 }
 
+func TestBrowserFromEnv(t *testing.T) {
+	url := "http://127.0.0.1:8000"
+	sep := string(os.PathListSeparator)
+	for value, want := range map[string][]string{
+		"true":                          {"true", url},
+		"firefox":                       {"firefox", url},
+		"firefox --new-tab":             {"firefox", "--new-tab", url},
+		"lynx -dump %s":                 {"lynx", "-dump", url},
+		"chromium" + sep + "firefox":    {"chromium", url},
+		sep + " " + sep + "w3m":         {"w3m", url},
+		"sh -c 'echo; rm -rf /tmp/x' x": {"sh", "-c", "'echo;", "rm", "-rf", "/tmp/x'", "x", url},
+	} {
+		command := browserFromEnv(value, url)
+		if command == nil || !reflect.DeepEqual(command.Args, want) {
+			t.Errorf("BROWSER=%q command = %v, want %v", value, command, want)
+		}
+	}
+	for _, value := range []string{"", " ", sep} {
+		if command := browserFromEnv(value, url); command != nil {
+			t.Errorf("BROWSER=%q should fall back to the platform opener, got %v", value, command.Args)
+		}
+	}
+}
+
+// BROWSER=true must not reach xdg-open: on a headless VM it is how the
+// dashboard is started without opening a browser.
+func TestOpenBrowserHonorsBrowserEnv(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture requires Unix")
+	}
+	bin := t.TempDir()
+	marker := filepath.Join(bin, "opened")
+	for _, name := range []string{"xdg-open", "open"} {
+		body := "#!/bin/sh\nprintf '%s' \"$1\" > " + marker + "\n"
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("BROWSER", "true")
+	if err := openBrowser("http://127.0.0.1:8000"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("BROWSER=true still ran the platform opener")
+	}
+	// Control: without BROWSER the platform opener does run.
+	t.Setenv("BROWSER", "")
+	if err := openBrowser("http://127.0.0.1:8000"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if data, err := os.ReadFile(marker); err == nil && string(data) == "http://127.0.0.1:8000" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("platform opener did not run without BROWSER")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 func TestStateDirectoryPermissions(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix directory permissions")

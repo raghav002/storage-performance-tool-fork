@@ -33,6 +33,8 @@ CLI mode reads `.env` from the SPT executable directory and your home directory,
 
 `DASHBOARD_PORT` selects the local port, default 8000. Set it to `0` to choose a free port automatically. If a browser cannot be opened, use the printed URL. Over SSH, forward that port to your local machine.
 
+To choose the browser, set `BROWSER` (the first entry of a colon-separated list is run directly, with the URL as its argument, or in place of `%s`). On a headless host, `BROWSER=true` opens nothing. A `--no-browser` flag for the same purpose is proposed in PR #12 (Alex); it is not on this branch, and `BROWSER` keeps working alongside it.
+
 The server listens on `127.0.0.1:8000` by default. For remote access, use SSH port forwarding and keep the server bound to loopback. SPT's storage target and credentials must be configured on the host; the dashboard does not accept credentials from the browser.
 
 The dashboard enforces bounded workload choices and allows one dashboard-managed run at a time. Run results are stored on the host in SPT's results directory.

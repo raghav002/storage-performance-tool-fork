@@ -442,17 +442,19 @@ function Dashboard({
   const outcome =
     job?.status === "failed"
       ? "Run failed"
-      : job?.status === "unknown"
-        ? "Run outcome needs review"
-        : failureCount !== null && failureCount > 0
-          ? "Failed operations reported"
-          : job?.status === "running"
-            ? "Benchmark in progress"
-            : job?.status === "completed"
-              ? "Run completed"
-              : m
-                ? "Recorded SPT results"
-                : "Ready for your first benchmark";
+      : job?.status === "interrupted"
+        ? "Run interrupted"
+        : job?.status === "unknown"
+          ? "Run outcome needs review"
+          : failureCount !== null && failureCount > 0
+            ? "Failed operations reported"
+            : job?.status === "running"
+              ? "Benchmark in progress"
+              : job?.status === "completed"
+                ? "Run completed"
+                : m
+                  ? "Recorded SPT results"
+                  : "Ready for your first benchmark";
   const has = (key: string) => selected.includes(key);
   return (
     <>

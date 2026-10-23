@@ -28,12 +28,7 @@ func (a *app) handleRunHistory(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]any{"error": "Could not read saved SPT runs."})
 		return
 	}
-	a.mu.Lock()
-	latest := cloneMap(a.activeJob)
-	a.mu.Unlock()
-	if latest == nil {
-		latest = a.readStateFile()
-	}
+	latest := a.latestJob()
 	items := []map[string]any{}
 	for _, entry := range entries {
 		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "mt-dashboard-") || !runPattern.MatchString(entry.Name()) {
@@ -59,12 +54,7 @@ func (a *app) handleSavedRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Saved run not found."})
 		return
 	}
-	a.mu.Lock()
-	latest := cloneMap(a.activeJob)
-	a.mu.Unlock()
-	if latest == nil {
-		latest = a.readStateFile()
-	}
+	latest := a.latestJob()
 	item, err := a.savedRun(runID, latest, true)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Saved run not found."})
@@ -256,11 +246,14 @@ func (a *app) savedRun(runID string, latest map[string]any, includeMetrics bool)
 		"threads":             scenario["Threads"],
 		"max_runtime_seconds": params["autoTerminateSeconds"],
 	}
-	status := "partial"
-	if regularFile(filepath.Join(dir, "results_summary.txt")) || len(metricsSummaries(metrics)) >= 3 {
-		status = "completed"
-	}
+	status := savedRunStatus(dir, paramsDir, params, metricsSummaries(metrics))
 	job := map[string]any{"run_id": runID, "status": status, "started_at": startedAt, "options": options}
+	if record := a.readRunRecord(runID); record != nil {
+		// The dashboard recorded how this run ended; that outranks the file heuristic.
+		status = str(record["status"])
+		job = record
+		job["options"] = options
+	}
 	if latest != nil && str(latest["run_id"]) == runID {
 		job = publicJob(latest)
 		if opts, ok := latest["options"].(map[string]any); ok {
@@ -284,6 +277,15 @@ func (a *app) savedRun(runID string, latest map[string]any, includeMetrics bool)
 		}
 	}
 	return item, nil
+}
+
+// savedRunStatus classifies a saved run from its files when the dashboard holds no
+// record of how it ended (runs from older builds).
+func savedRunStatus(dir, _ string, _ map[string]any, phases []map[string]any) string {
+	if regularFile(filepath.Join(dir, "results_summary.txt")) || len(phases) >= 3 {
+		return jobCompleted
+	}
+	return jobPartial
 }
 
 func metricsSummaries(metrics map[string]any) []map[string]any {

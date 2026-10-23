@@ -32,12 +32,8 @@ func (a *app) currentState() (map[string]any, error) {
 			}
 		}
 	}
-	if state != nil && str(state["status"]) == "running" && a.activeCmd == nil && !a.lockBusy() {
-		state = cloneMap(state)
-		state["status"] = "unknown"
-		state["message"] = "The dashboard restarted before it could record SPT's final exit status."
-		_ = a.writeState(state)
-		a.activeJob = state
+	if state != nil && str(state["status"]) == jobRunning && a.activeCmd == nil && !a.lockBusy() {
+		state = a.markInterrupted(state)
 	}
 	if state != nil && str(state["status"]) == "running" {
 		state = cloneMap(state)
@@ -103,10 +99,7 @@ func (a *app) currentState() (map[string]any, error) {
 			state = a.activeJob
 		}
 		if state != nil {
-			state["status"] = "unknown"
-			state["message"] = "The dashboard restarted before it could record SPT's final exit status."
-			_ = a.writeState(state)
-			a.activeJob = state
+			state = a.markInterrupted(state)
 		}
 	}
 	if state != nil {

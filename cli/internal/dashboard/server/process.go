@@ -62,14 +62,16 @@ func (a *app) watchProcess(runID string, cmd *exec.Cmd, lock *os.File, drained <
 }
 
 // finalStatus names how SPT ended. When the dashboard itself is shutting down it
-// interrupts SPT, and SPT then exits non-zero; that is an interrupted run, not a
-// failed one.
+// interrupts SPT. SPT then exits 1, or exits 0 after a graceful shutdown; either
+// way the run was interrupted, not completed or failed.
 func finalStatus(err error, stopping bool) (string, string) {
 	switch {
+	case stopping:
+		// The dashboard interrupted SPT. SPT may still exit 0 after a graceful
+		// shutdown, so the exit code alone cannot say whether the run finished.
+		return jobInterrupted, msgInterruptedShutdown
 	case err == nil:
 		return jobCompleted, "SPT finished successfully."
-	case stopping:
-		return jobInterrupted, msgInterruptedShutdown
 	default:
 		return jobFailed, "SPT exited with an error. See VM-side SPT logs for details."
 	}

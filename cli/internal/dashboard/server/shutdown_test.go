@@ -76,7 +76,7 @@ func TestShutdownInterruptsRun(t *testing.T) {
 	status := a.activeJob["status"]
 	active := a.activeCmd != nil
 	a.mu.Unlock()
-	if active || status != "completed" || a.lockBusy() {
+	if active || status != jobInterrupted || a.lockBusy() { // the dashboard stopped SPT, so the run is interrupted even though the child exited 0
 		t.Fatalf("child did not finish and release its lock: active=%v status=%v", active, status)
 	}
 }

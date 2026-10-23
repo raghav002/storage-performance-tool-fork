@@ -198,7 +198,7 @@ func TestFinalStatus(t *testing.T) {
 		want     string
 	}{
 		{nil, false, jobCompleted},
-		{nil, true, jobCompleted},
+		{nil, true, jobInterrupted}, // SPT shut down gracefully on the interrupt and exited 0
 		{exitErr, false, jobFailed},
 		{exitErr, true, jobInterrupted},
 	}

@@ -51,8 +51,14 @@ const (
 	msgEndpointNotFound = "Endpoint not found."
 	msgSavedRunNotFound = "Saved run not found."
 
-	// Live and saved-run metric keys used by the mock driver and the
-	// per-machine live metrics.
+	// Keys and labels used by the mock driver, per-machine live metrics, the
+	// results catalog and run comparison.
+	keyRuns            = "runs"
+	keyRun             = "run"
+	keyTruncated       = "truncated"
+	keyObjectCount     = "object_count"
+	keyResultsDir      = "results_dir"
+	keyReturnCode      = "returncode"
 	keyOpType          = "op_type"
 	keyStepID          = "step_id"
 	keySampleTS        = "sample_ts"
@@ -71,4 +77,10 @@ const (
 	sptP99Latency = "latency_p99_us"
 	// sourceDashboard is the --label of every dashboard run.
 	sourceDashboard = "dashboard"
+
+	flagRegressed = "regressed"
+	flagWithin    = "within"
+
+	integrityPassed = "passed"
+	integrityFailed = "failed"
 )

@@ -1,5 +1,6 @@
 // Package server is the local web dashboard behind "spt dashboard": it
-// serves the embedded browser UI and starts and stops SPT runs.
+// serves the embedded browser UI, starts and stops SPT runs, and reads the
+// results catalog.
 package server
 
 import (
@@ -81,7 +82,10 @@ type app struct {
 	metricsURL string
 	// nodeMetricsURL overrides each client machine's /metrics/json address (tests only).
 	nodeMetricsURL func(host string) string
-	settings       dashboardSettings
+	// catalogRoot is the read-only results tree the catalog scans (dashboard and CLI runs).
+	catalogRoot string
+	catalog     catalogCache
+	settings    dashboardSettings
 
 	storageFile    string
 	verifyFile     string

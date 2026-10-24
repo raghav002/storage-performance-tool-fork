@@ -58,7 +58,15 @@ type options struct {
 	ObjectSize        string `json:"object_size"`
 	Threads           int    `json:"threads"`
 	MaxRuntimeSeconds int    `json:"max_runtime_seconds"`
+	// Driver is "s3" (default, write + verify against the configured bucket) or
+	// "mock" (SPT's dummy-mock storage driver; no S3 endpoint or credentials).
+	Driver string `json:"driver,omitempty"`
 }
+
+const (
+	driverS3   = "s3"
+	driverMock = "mock"
+)
 
 type app struct {
 	root       string
@@ -71,7 +79,9 @@ type app struct {
 	sptAPIPort string
 	sptBin     string
 	metricsURL string
-	settings   dashboardSettings
+	// nodeMetricsURL overrides each client machine's /metrics/json address (tests only).
+	nodeMetricsURL func(host string) string
+	settings       dashboardSettings
 
 	storageFile    string
 	verifyFile     string

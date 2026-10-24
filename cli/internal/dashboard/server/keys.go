@@ -50,4 +50,25 @@ const (
 
 	msgEndpointNotFound = "Endpoint not found."
 	msgSavedRunNotFound = "Saved run not found."
+
+	// Live and saved-run metric keys used by the mock driver and the
+	// per-machine live metrics.
+	keyOpType          = "op_type"
+	keyStepID          = "step_id"
+	keySampleTS        = "sample_ts"
+	keyStartedEpoch    = "started_epoch"
+	keyProgressPercent = "progress_percent"
+	keySuccessfulOps   = "successful_ops"
+	keyPhaseSummaries  = "phase_summaries"
+	keyFailed          = "failed"
+	keyHost            = "host"
+	phaseRead          = "READ"
+	metricIOPS         = "iops"
+	metricFailed       = "failed_ops"
+	metricCorrupt      = "corrupt_ops"
+	metricP99Latency   = "p99_latency_us"
+	// sptP99Latency is the name SPT itself uses in its metrics files.
+	sptP99Latency = "latency_p99_us"
+	// sourceDashboard is the --label of every dashboard run.
+	sourceDashboard = "dashboard"
 )

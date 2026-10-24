@@ -52,7 +52,7 @@ const (
 	msgSavedRunNotFound = "Saved run not found."
 
 	// Keys and labels used by the mock driver, per-machine live metrics, the
-	// results catalog and run comparison.
+	// results catalog, run comparison and run log views.
 	keyRuns            = "runs"
 	keyRun             = "run"
 	keyTruncated       = "truncated"
@@ -83,4 +83,11 @@ const (
 
 	integrityPassed = "passed"
 	integrityFailed = "failed"
+
+	kindPhase        = "phase"
+	logSourceConsole = "console"
+
+	levelInfo  = "info"
+	levelWarn  = "warn"
+	levelError = "error"
 )

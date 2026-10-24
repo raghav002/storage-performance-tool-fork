@@ -43,7 +43,7 @@ ssh <vm>
 cd ~ && BROWSER=true ./spt-branch dashboard --port 8000      # or <branch-dir>/cli/spt
 ```
 
-`BROWSER=true` makes the dashboard run `true` instead of `xdg-open`, so nothing tries to open a browser on the VM. Alex's PR #12 adds a `--no-browser` flag for this; it is not on this branch, and `BROWSER` keeps working alongside it. Keep this terminal open.
+`BROWSER=true` makes the dashboard run `true` instead of `xdg-open`, so nothing tries to open a browser on the VM. `--no-browser` (from Alex's PR #12) does the same; either works. Keep this terminal open.
 
 - [ ] The log prints `http://127.0.0.1:8000`.
 - [ ] In a second VM shell, `ss -ltnp | grep 8000` shows only `127.0.0.1:8000`, not `0.0.0.0` or `*`.

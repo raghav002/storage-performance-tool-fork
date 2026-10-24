@@ -50,6 +50,20 @@ const fields = [
     detail: "Settings, timestamps, prefix, and exit code",
   },
 ];
+const expertViewSelectionKey = "spt-expert-visible-sections-v1";
+const allSectionKeys = () => fields.map((field) => field.key);
+function loadVisibleSections(): string[] {
+  try {
+    const stored: unknown = JSON.parse(
+      localStorage.getItem(expertViewSelectionKey) ?? "null",
+    );
+    if (!Array.isArray(stored)) return allSectionKeys();
+    return allSectionKeys().filter((key) => stored.includes(key));
+  } catch {
+    return allSectionKeys();
+  }
+}
+
 function useServer() {
   const [state, setState] = useState<State | null>(null),
     [error, setError] = useState(""),
@@ -110,8 +124,16 @@ export default function App() {
   }, [state]);
   const clients = state?.storage?.hosts.length ?? 1;
   const [mode, setMode] = useState<RunMode>("guided");
-  const [selection, setSelection] = useState(fields.map((f) => f.key)),
-    [choosing, setChoosing] = useState(false);
+  const [selection, setSelection] = useState<string[]>(loadVisibleSections);
+  const [customizing, setCustomizing] = useState(false);
+  // View preferences are browser-only. They do not affect the SPT run or API.
+  useEffect(() => {
+    try {
+      localStorage.setItem(expertViewSelectionKey, JSON.stringify(selection));
+    } catch {
+      // The dashboard still works if browser storage is unavailable.
+    }
+  }, [selection]);
   const [historyRuns, setHistoryRuns] = useState<HistoryRun[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
@@ -154,6 +176,7 @@ export default function App() {
       if (!response.ok)
         throw new Error(detail.error ?? "Could not open saved run.");
       setHistoryState(detail as State);
+      setCustomizing(false);
       setPage("dashboard");
     } catch (reason) {
       setHistoryError(
@@ -164,6 +187,7 @@ export default function App() {
 
   const showDashboard = () => {
     setHistoryState(null);
+    setCustomizing(false);
     setPage("dashboard");
   };
 
@@ -261,7 +285,7 @@ export default function App() {
                   aria-pressed={mode === m}
                   onClick={() => {
                     setMode(m);
-                    setChoosing(m === "expert");
+                    setCustomizing(false);
                     // On Configure, the mode switches the workload form in place.
                     if (page !== "configure") showDashboard();
                   }}
@@ -313,57 +337,12 @@ export default function App() {
                 showDashboard();
               }}
             />
-          ) : mode === "expert" && choosing ? (
-            <section className="panel expert-selection">
-              <span className="eyebrow">EXPERT VIEW</span>
-              <h1>Choose the data you need</h1>
-              <p>
-                Select the sections to include in your dashboard. Available
-                values come from SPT.
-              </p>
-              <div className="selection-actions">
-                <button onClick={() => setSelection(fields.map((f) => f.key))}>
-                  Select all
-                </button>
-                <button onClick={() => setSelection([])}>
-                  Clear selection
-                </button>
-              </div>
-              <div className="expert-check-grid">
-                {fields.map((f) => (
-                  <label className="check-label" key={f.key}>
-                    <input
-                      type="checkbox"
-                      checked={selection.includes(f.key)}
-                      onChange={(e) =>
-                        setSelection(
-                          e.target.checked
-                            ? [...selection, f.key]
-                            : selection.filter((k) => k !== f.key),
-                        )
-                      }
-                    />
-                    <div>
-                      <strong>{f.title}</strong>
-                      <p>{f.detail}</p>
-                    </div>
-                  </label>
-                ))}
-              </div>
-              <button
-                className="primary"
-                disabled={!selection.length}
-                onClick={() => setChoosing(false)}
-              >
-                Open expert dashboard
-              </button>
-            </section>
           ) : (
             <>
               {mode === "expert" && (
                 <div className="expert-edit">
-                  <button onClick={() => setChoosing(true)}>
-                    Change selected data
+                  <button type="button" onClick={() => setCustomizing(true)}>
+                    Customize view
                   </button>
                 </div>
               )}
@@ -382,6 +361,92 @@ export default function App() {
                 }
                 onConfigure={() => setPage("configure")}
               />
+              {mode === "expert" && customizing && (
+                <div
+                  className="expert-view-overlay"
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") setCustomizing(false);
+                  }}
+                >
+                  <button
+                    className="expert-view-backdrop"
+                    type="button"
+                    aria-label="Close dashboard customization"
+                    onClick={() => setCustomizing(false)}
+                  />
+                  <aside
+                    className="expert-view-drawer"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="expert-view-drawer-title"
+                  >
+                    <div className="expert-view-drawer-heading">
+                      <div>
+                        <span className="eyebrow">EXPERT VIEW</span>
+                        <h2 id="expert-view-drawer-title">
+                          Customize dashboard
+                        </h2>
+                      </div>
+                      <button
+                        type="button"
+                        autoFocus
+                        aria-label="Close customization"
+                        onClick={() => setCustomizing(false)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <p>
+                      Show or hide sections. This only changes your display, not
+                      the benchmark or its data.
+                    </p>
+                    <div className="expert-view-drawer-actions">
+                      <button
+                        type="button"
+                        onClick={() => setSelection(allSectionKeys())}
+                      >
+                        Show all
+                      </button>
+                      <button type="button" onClick={() => setSelection([])}>
+                        Hide all
+                      </button>
+                    </div>
+                    <div className="expert-view-drawer-list">
+                      {fields.map((field) => (
+                        <label className="check-label" key={field.key}>
+                          <input
+                            type="checkbox"
+                            checked={selection.includes(field.key)}
+                            onChange={(event) =>
+                              setSelection((previous) =>
+                                event.target.checked
+                                  ? [...previous, field.key]
+                                  : previous.filter((key) => key !== field.key),
+                              )
+                            }
+                          />
+                          <span>
+                            <strong>{field.title}</strong>
+                            <small>{field.detail}</small>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="expert-view-drawer-footer">
+                      <span>
+                        {selection.length} of {fields.length} sections shown
+                      </span>
+                      <button
+                        className="primary"
+                        type="button"
+                        onClick={() => setCustomizing(false)}
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </aside>
+                </div>
+              )}
             </>
           )}
         </main>

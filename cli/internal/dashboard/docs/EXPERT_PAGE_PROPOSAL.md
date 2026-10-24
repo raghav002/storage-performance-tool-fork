@@ -1,6 +1,6 @@
 # Expert page: analysis and proposal
 
-*Spec only. Expert mode belongs to Yine (PR #15, Expert view redesign); nothing here is implemented on this branch. IDs (H-, P-) refer to the requirements traceability list kept with the branch artifacts.*
+*Spec only. Expert mode belongs to Yine (PR #15, Expert view redesign). Her redesign reaches this branch through #16, but the workloads and flag groups proposed here are not implemented. IDs (H-, P-) refer to the requirements traceability list kept with the branch artifacts.*
 
 Source: `spt run --help` (SPT 5.16.1-dev), the 10/14 punch list (P-10), Mike 10-21 [00:23:06]–[00:23:40] (H-42) and 10/5 (P-15).
 

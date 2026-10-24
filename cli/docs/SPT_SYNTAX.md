@@ -6,7 +6,7 @@ The command structure follows the `docker` CLI pattern (`command subcommand [opt
 
 ## Main Commands
 
-- `spt dashboard [--port PORT] [--config PATH]`: Start the embedded browser dashboard to configure and launch runs. The legacy root flag `spt --dashboard` remains supported.
+- `spt dashboard [--port PORT] [--config PATH] [--no-browser]`: Start the browser dashboard on localhost to configure and launch runs.
 - `spt run <workload>`: Execute a benchmark test.
 - `spt replay`: Replay archived SPT or legacy Mongoose workload artifacts against a current S3 target.
 - `spt verify`: Validate nodes for distributed testing infrastructure readiness.

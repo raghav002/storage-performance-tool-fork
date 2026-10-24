@@ -160,8 +160,11 @@ Open the dashboard in your browser:
 ./spt dashboard
 ```
 
-Set up and start tests in the dashboard. Keep the terminal open, press Ctrl+C
-to stop the dashboard and any active test. See the [dashboard guide](cli/internal/dashboard/README.md) for port and configuration options.
+Set up and start tests in the dashboard. Keep the terminal open; press Ctrl+C
+to stop the dashboard and any active test. Use `--port 9000` to choose a port,
+or `--no-browser` on servers without a desktop. Run `./spt dashboard --help`
+for options. See the [dashboard guide](cli/internal/dashboard/README.md) for port,
+configuration and SSH options.
 
 ## Core Capabilities
 

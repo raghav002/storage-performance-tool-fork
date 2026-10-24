@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-func TestRunServesEmbeddedDashboard(t *testing.T) {
+func TestDashboardServesEmbeddedPage(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("HOME", root)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -79,11 +79,11 @@ func TestRunServesEmbeddedDashboard(t *testing.T) {
 	}
 }
 
-func TestRunStartupErrors(t *testing.T) {
+func TestDashboardStartupErrors(t *testing.T) {
 	root := t.TempDir()
 	for _, port := range []string{"-1", "65536", "invalid"} {
-		if err := Run(context.Background(), Options{WorkDir: root, StateDir: root, Port: port, Output: io.Discard}); err == nil {
-			t.Errorf("accepted invalid port %q", port)
+		if err := Run(context.Background(), Options{WorkDir: root, StateDir: root, Port: port, Output: io.Discard}); err == nil || !strings.Contains(err.Error(), "--port or DASHBOARD_PORT") {
+			t.Errorf("invalid port %q: %v", port, err)
 		}
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -104,7 +104,7 @@ func TestRunStartupErrors(t *testing.T) {
 	}
 }
 
-func TestBrowserCommand(t *testing.T) {
+func TestDashboardBrowserCommand(t *testing.T) {
 	url := "http://127.0.0.1:8000"
 	for platform, args := range map[string][]string{
 		"linux":   {"xdg-open", url},
@@ -185,7 +185,7 @@ func TestOpenBrowserHonorsBrowserEnv(t *testing.T) {
 	}
 }
 
-func TestStateDirectoryPermissions(t *testing.T) {
+func TestDashboardStateDirectoryPermissions(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix directory permissions")
 	}
@@ -225,5 +225,38 @@ func TestAnnounce(t *testing.T) {
 	if !strings.Contains(failed.String(), "Could not open browser: ") ||
 		!strings.HasSuffix(failed.String(), "Open the URL above manually.\n") {
 		t.Fatalf("announce with an unstartable BROWSER wrote %q", failed.String())
+	}
+}
+
+func TestDashboardPortPrecedence(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", root)
+	for _, test := range []struct {
+		name string
+		env  string
+		port string
+		want string
+	}{
+		{"default", "", "", "8000"},
+		{"environment", "9000", "", "9000"},
+		{"explicit", "9000", "9001", "9001"},
+		{"free port", "9000", "0", "0"},
+		{"explicit default", "9000", "8000", "8000"},
+		{"override invalid environment", "invalid", "9001", "9001"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("DASHBOARD_PORT", test.env)
+			a, err := newApp(Options{WorkDir: root, StateDir: root, Port: test.port})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if a.port != test.want {
+				t.Fatalf("port = %q, want %q", a.port, test.want)
+			}
+		})
+	}
+	t.Setenv("DASHBOARD_PORT", "invalid")
+	if _, err := newApp(Options{WorkDir: root, StateDir: root}); err == nil {
+		t.Fatal("invalid environment port was accepted")
 	}
 }

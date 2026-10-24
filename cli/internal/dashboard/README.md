@@ -27,13 +27,31 @@ spt dashboard
 
 This starts the dashboard, prints its local URL, and opens a browser. Keep the terminal open while using the dashboard. Closing the browser leaves the server and any active run running. Ctrl+C stops the server and interrupts an active benchmark.
 
-The dashboard runs the same SPT executable that launched it. `spt dashboard --port 8000` sets the local port; `--config path/to/dashboard.json` selects deployment branding and workload limits. `DASHBOARD_PORT` and `DASHBOARD_CONFIG` provide environment-variable defaults. The older root flag `spt --dashboard` remains available for compatibility.
+The dashboard starts its own headless `write-verify` subprocess using the same SPT executable that launched it. Run `spt dashboard --help` for command options. `--config path/to/dashboard.json` selects deployment branding and workload limits; `DASHBOARD_CONFIG` provides the default.
 
 CLI mode reads `.env` from the SPT executable directory and your home directory, with environment variables taking precedence. State is stored under your user configuration directory in `spt/dashboard` (`~/.config/spt/dashboard` on Linux). Results remain in `~/results`.
 
-`DASHBOARD_PORT` selects the local port, default 8000. Set it to `0` to choose a free port automatically. If a browser cannot be opened, use the printed URL. Over SSH, forward that port to your local machine.
+The server listens only on localhost. `--port` overrides `DASHBOARD_PORT`; the default is 8000. Set the port to `0` to choose a free port automatically:
 
-To choose the browser, set `BROWSER` (the first entry of a colon-separated list is run directly, with the URL as its argument, or in place of `%s`). On a headless host, `BROWSER=true` opens nothing. A `--no-browser` flag for the same purpose is proposed in PR #12 (Alex); it is not on this branch, and `BROWSER` keeps working alongside it.
+```sh
+spt dashboard --port 9000
+```
+
+On a server without a desktop, skip opening the browser:
+
+```sh
+spt dashboard --no-browser
+```
+
+For SSH access, forward the dashboard port from your local machine:
+
+```sh
+ssh -L 8000:127.0.0.1:8000 user@server
+```
+
+Run `spt dashboard --no-browser` on the server, then open `http://localhost:8000` in your local browser. If you choose another dashboard port, update the forwarding command to match. If browser opening fails during a local run, use the printed URL.
+
+To choose the browser, set `BROWSER` (the first entry of a colon-separated list is run directly, with the URL as its argument, or in place of `%s`). `--no-browser` takes precedence; without it, `BROWSER=true` also opens nothing.
 
 The server listens on `127.0.0.1:8000` by default. For remote access, use SSH port forwarding and keep the server bound to loopback. SPT's storage target and credentials must be configured on the host; the dashboard does not accept credentials from the browser.
 

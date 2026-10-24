@@ -49,7 +49,7 @@ func waitForChild(t *testing.T, root string) {
 	t.Fatal("child process did not start")
 }
 
-func TestShutdownInterruptsRun(t *testing.T) {
+func TestDashboardShutdownInterruptsRun(t *testing.T) {
 	a, marker, argsPath := prepareShutdownTest(t)
 	request := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(validRunRequest))
 	request.Host = "localhost:8000"
@@ -65,7 +65,7 @@ func TestShutdownInterruptsRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(string(args), "run\nwrite-verify\n--headless\n") || strings.Contains(string(args), "--dashboard") {
+	if !strings.HasPrefix(string(args), "run\nwrite-verify\n--headless\n") {
 		t.Fatalf("unexpected child arguments: %s", args)
 	}
 	a.stopProcesses()

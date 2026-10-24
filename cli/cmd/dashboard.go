@@ -61,12 +61,16 @@ func startDashboard(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	workDir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return err
 	}
 	return runDashboard(cmd.Context(), server.Options{
-		SPTBinary: executable, WorkDir: filepath.Dir(executable),
+		SPTBinary: executable, WorkDir: workDir,
 		StateDir: filepath.Join(configDir, "spt", "dashboard"),
 		Port:     port, ConfigFile: configFile,
 		Output: cmd.OutOrStdout(), OpenBrowser: !noBrowser,

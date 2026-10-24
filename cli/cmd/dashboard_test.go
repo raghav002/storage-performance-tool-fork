@@ -65,11 +65,15 @@ func TestDashboardLauncher(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			workDir, err := os.Getwd()
+			if err != nil {
+				t.Fatal(err)
+			}
 			configDir, err := os.UserConfigDir()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.SPTBinary != executable || got.WorkDir != filepath.Dir(executable) || got.StateDir != filepath.Join(configDir, "spt", "dashboard") {
+			if got.SPTBinary != executable || got.WorkDir != workDir || got.StateDir != filepath.Join(configDir, "spt", "dashboard") {
 				t.Fatalf("unexpected dashboard paths: %+v", got)
 			}
 			if got.Port != test.port || got.ConfigFile != test.configFile || got.OpenBrowser != test.openBrowser || got.Output != output {

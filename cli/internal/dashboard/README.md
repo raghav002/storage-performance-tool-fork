@@ -29,7 +29,7 @@ This starts the dashboard, prints its local URL, and opens a browser. Keep the t
 
 The dashboard starts its own headless `write-verify` subprocess using the same SPT executable that launched it. Run `spt dashboard --help` for command options. `--config path/to/dashboard.json` selects deployment branding and workload limits; `DASHBOARD_CONFIG` provides the default.
 
-CLI mode reads `.env` from the SPT executable directory and your home directory, with environment variables taking precedence. State is stored under your user configuration directory in `spt/dashboard` (`~/.config/spt/dashboard` on Linux). Results remain in `~/results`.
+CLI mode reads `.env` from the directory where you launch SPT and from your home directory, with environment variables taking precedence. State is stored under your user configuration directory in `spt/dashboard` (`~/.config/spt/dashboard` on Linux). Results remain in `~/results`.
 
 The server listens only on localhost. `--port` overrides `DASHBOARD_PORT`; the default is 8000. Set the port to `0` to choose a free port automatically:
 

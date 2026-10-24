@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -206,5 +207,23 @@ func TestStateDirectoryPermissions(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0700 {
 		t.Fatalf("state directory permissions = %o, want 700", info.Mode().Perm())
+	}
+}
+
+// announce must print the URL, open nothing unless asked, and report a
+// browser that fails to start without stopping the dashboard.
+func TestAnnounce(t *testing.T) {
+	url := "http://127.0.0.1:8000"
+	t.Setenv("BROWSER", filepath.Join(t.TempDir(), "missing-browser"))
+	var quiet bytes.Buffer
+	announce(&quiet, url, false)
+	if want := "Dashboard running at " + url + "\nPress Ctrl+C to stop.\n"; quiet.String() != want {
+		t.Fatalf("announce without browser wrote %q, want %q", quiet.String(), want)
+	}
+	var failed bytes.Buffer
+	announce(&failed, url, true)
+	if !strings.Contains(failed.String(), "Could not open browser: ") ||
+		!strings.HasSuffix(failed.String(), "Open the URL above manually.\n") {
+		t.Fatalf("announce with an unstartable BROWSER wrote %q", failed.String())
 	}
 }

@@ -60,21 +60,27 @@ func Run(ctx context.Context, opts Options) error {
 		case <-done:
 		}
 	}()
-	output := opts.Output
-	if output == nil {
-		output = os.Stdout
-	}
-	url := "http://127.0.0.1:" + a.port
-	_, _ = fmt.Fprintf(output, "Dashboard running at %s\nPress Ctrl+C to stop.\n", url)
-	if opts.OpenBrowser {
-		if err := openBrowser(url); err != nil {
-			_, _ = fmt.Fprintf(output, "Could not open browser: %v. Open the URL above manually.\n", err)
-		}
-	}
+	announce(opts.Output, "http://127.0.0.1:"+a.port, opts.OpenBrowser)
 	if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil
+}
+
+// announce prints the dashboard URL to output (stdout when nil) and, when
+// openInBrowser is set, opens it as openBrowser does. A browser that cannot
+// be opened is reported, not returned: the dashboard keeps serving.
+func announce(output io.Writer, url string, openInBrowser bool) {
+	if output == nil {
+		output = os.Stdout
+	}
+	_, _ = fmt.Fprintf(output, "Dashboard running at %s\nPress Ctrl+C to stop.\n", url)
+	if !openInBrowser {
+		return
+	}
+	if err := openBrowser(url); err != nil {
+		_, _ = fmt.Fprintf(output, "Could not open browser: %v. Open the URL above manually.\n", err)
+	}
 }
 
 func newApp(opts Options) (*app, error) {

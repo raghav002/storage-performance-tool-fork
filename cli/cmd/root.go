@@ -64,13 +64,6 @@ It provides a user-friendly interface to execute various benchmark tests (e.g., 
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dashboard, _ := cmd.Flags().GetBool("dashboard")
-		if dashboard {
-			if err := cobra.NoArgs(cmd, args); err != nil {
-				return err
-			}
-			return startDashboard(cmd)
-		}
 		if !isTesting && len(args) == 0 && cmd.Flags().ArgsLenAtDash() == -1 {
 			return tui.StartTUI()
 		}
@@ -202,7 +195,6 @@ func init() {
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-	rootCmd.Flags().Bool("dashboard", false, "Open the web dashboard")
 
 	rootCmd.Version = buildinfo.Version
 	rootCmd.SetVersionTemplate(fmt.Sprintf("spt version: %s\ncommit: %s\nbuilt: %s\n", buildinfo.Version, buildinfo.Commit, buildinfo.BuildDate))

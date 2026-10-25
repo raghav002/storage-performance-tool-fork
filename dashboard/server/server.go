@@ -100,7 +100,7 @@ func newApp(opts Options) (*app, error) {
 	}
 	n, err := strconv.Atoi(port)
 	if err != nil || n < 0 || n > 65535 {
-		return nil, errors.New("DASHBOARD_PORT must be a number between 0 and 65535")
+		return nil, errors.New("dashboard port (--port or DASHBOARD_PORT) must be a number between 0 and 65535")
 	}
 	sptBin := opts.SPTBinary
 	if sptBin == "" {
@@ -116,12 +116,7 @@ func newApp(opts Options) (*app, error) {
 	if err := os.MkdirAll(stateDir, 0700); err != nil {
 		return nil, err
 	}
-	dir, err := os.Open(filepath.Clean(stateDir))
-	if err != nil {
-		return nil, err
-	}
-	defer dir.Close()
-	if err := dir.Chmod(0700); err != nil {
+	if err := os.Chmod(stateDir, 0700); err != nil { // #nosec G302 -- This is a directory; 0700 grants access only to its owner.
 		return nil, err
 	}
 	a := &app{root: root, home: home, results: filepath.Join(home, "results"), stateDir: stateDir,

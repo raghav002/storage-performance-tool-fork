@@ -491,12 +491,15 @@ Starts the embedded web dashboard and opens its URL in your browser. Each run us
 spt dashboard
 spt dashboard --port 9000
 spt dashboard --no-browser
+spt dashboard --config dashboard.json
 ```
 
 The server listens only on localhost. `--port` overrides `DASHBOARD_PORT`; the
 default is 8000. Use port `0` to choose a free port. `--no-browser` skips opening
-a browser and still prints the URL. Run `spt dashboard --help` for options.
-See the [dashboard guide](../dashboard/README.md) for state paths and SSH access.
+a browser and still prints the URL. `--config` loads optional deployment
+branding and workload limits. Run `spt dashboard --help` for options.
+See the [dashboard guide](internal/dashboard/README.md) for state paths, SSH
+access, and the settings format.
 
 #### Global Flags
 

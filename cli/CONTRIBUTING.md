@@ -51,6 +51,10 @@ This script:
   - `LOCAL_CI_RUN_TESTS=1` to run tests
   - `LOCAL_CI_INCLUDE_INTEGRATION=1` to try full test suite (may be slow)
 
+## GitHub checks
+
+The GitHub Actions workflow runs on pushes to `main`, release branches, and `feature/**` branches, and on pull requests to every target branch. A push starts the checks after the branch is pushed; GitHub does not run them before accepting a push. The `main` branch should require **CI / All checks passed** before merge. This summary job fails if any dashboard, YAML, Go quality, engine, or CLI job fails or is cancelled. An administrator must select this check in the fork's branch protection or ruleset settings. Keep the required check aligned with `.github/workflows/ci.yml` when the workflow changes.
+
 ## Pull Requests
 - Keep PRs focused and reviewable; one logical theme per PR.
 - Ensure `go build ./...` and tests pass locally.

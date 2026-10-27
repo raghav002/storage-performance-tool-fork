@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/dell/storage-performance-tool/dashboard/server"
+	"github.com/dell/storage-performance-tool/cli/internal/dashboard/server"
 	"github.com/spf13/cobra"
 )
 
@@ -20,16 +20,19 @@ Keep the terminal open. Press Ctrl+C to stop the dashboard and any active run.
 For SSH access, forward the dashboard port to your local machine.
 
 The port defaults to DASHBOARD_PORT or 8000. Use --port to override it.
-Use --no-browser on servers without a desktop.`,
+Use --no-browser on servers without a desktop. Use --config to load
+deployment branding and workload limits (default DASHBOARD_CONFIG).`,
 		Example: `  spt dashboard
   spt dashboard --port 9000
-  spt dashboard --no-browser`,
+  spt dashboard --no-browser
+  spt dashboard --config dashboard.json`,
 		Args:              cobra.NoArgs,
 		PersistentPreRunE: rootCmd.PersistentPreRunE,
 		RunE:              startDashboard,
 	}
 	cmd.Flags().Int("port", 8000, "Local port (overrides DASHBOARD_PORT; 0 selects a free port)")
 	cmd.Flags().Bool("no-browser", false, "Do not open a browser")
+	cmd.Flags().String("config", "", "Path to dashboard settings JSON (overrides DASHBOARD_CONFIG)")
 	return cmd
 }
 
@@ -50,6 +53,10 @@ func startDashboard(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	configFile, err := cmd.Flags().GetString("config")
+	if err != nil {
+		return err
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		return err
@@ -65,6 +72,7 @@ func startDashboard(cmd *cobra.Command, _ []string) error {
 	return runDashboard(cmd.Context(), server.Options{
 		SPTBinary: executable, WorkDir: workDir,
 		StateDir: filepath.Join(configDir, "spt", "dashboard"),
-		Port:     port, Output: cmd.OutOrStdout(), OpenBrowser: !noBrowser,
+		Port:     port, ConfigFile: configFile,
+		Output: cmd.OutOrStdout(), OpenBrowser: !noBrowser,
 	})
 }

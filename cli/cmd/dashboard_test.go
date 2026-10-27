@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dell/storage-performance-tool/dashboard/server"
+	"github.com/dell/storage-performance-tool/cli/internal/dashboard/server"
 	"github.com/spf13/cobra"
 )
 
@@ -32,11 +32,13 @@ func TestDashboardLauncher(t *testing.T) {
 		args        []string
 		port        string
 		openBrowser bool
+		configFile  string
 	}{
-		{"defaults", []string{"dashboard"}, "", true},
-		{"headless", []string{"dashboard", "--port", "9000", "--no-browser"}, "9000", false},
-		{"free port", []string{"dashboard", "--port", "0"}, "0", true},
-		{"explicit default port", []string{"dashboard", "--port", "8000"}, "8000", true},
+		{"defaults", []string{"dashboard"}, "", true, ""},
+		{"headless", []string{"dashboard", "--port", "9000", "--no-browser"}, "9000", false, ""},
+		{"free port", []string{"dashboard", "--port", "0"}, "0", true, ""},
+		{"explicit default port", []string{"dashboard", "--port", "8000"}, "8000", true, ""},
+		{"settings file", []string{"dashboard", "--config", "dashboard.json"}, "", true, "dashboard.json"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
@@ -74,7 +76,7 @@ func TestDashboardLauncher(t *testing.T) {
 			if got.SPTBinary != executable || got.WorkDir != workDir || got.StateDir != filepath.Join(configDir, "spt", "dashboard") {
 				t.Fatalf("unexpected dashboard paths: %+v", got)
 			}
-			if got.Port != test.port || got.OpenBrowser != test.openBrowser || got.Output != output {
+			if got.Port != test.port || got.ConfigFile != test.configFile || got.OpenBrowser != test.openBrowser || got.Output != output {
 				t.Fatalf("unexpected dashboard options: %+v", got)
 			}
 		})
@@ -86,7 +88,7 @@ func TestDashboardCommandRegistration(t *testing.T) {
 	if err != nil || command.Name() != "dashboard" {
 		t.Fatalf("dashboard command not registered: %v", err)
 	}
-	for _, flag := range []string{"dashboard", "port", "no-browser"} {
+	for _, flag := range []string{"dashboard", "port", "no-browser", "config"} {
 		if rootCmd.Flags().Lookup(flag) != nil || rootCmd.PersistentFlags().Lookup(flag) != nil {
 			t.Fatalf("dashboard flag %q leaked onto root command", flag)
 		}
@@ -104,6 +106,7 @@ func TestDashboardInvalidArguments(t *testing.T) {
 		{"--dashboard"},
 		{"--port", "9000"},
 		{"--no-browser"},
+		{"--config", "dashboard.json"},
 		{"dashboard", "extra"},
 		{"dashboard", "--port", "invalid"},
 		{"dashboard", "--port="},
@@ -133,7 +136,7 @@ func TestDashboardHelp(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	for _, text := range []string{"spt dashboard", "--port", "--no-browser", "localhost", "DASHBOARD_PORT", "8000"} {
+	for _, text := range []string{"spt dashboard", "--port", "--no-browser", "--config", "localhost", "DASHBOARD_PORT", "8000"} {
 		if !strings.Contains(output.String(), text) {
 			t.Errorf("dashboard help does not mention %q", text)
 		}

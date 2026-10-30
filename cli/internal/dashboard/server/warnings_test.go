@@ -1,0 +1,140 @@
+package server
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestBuildRunWarningsFleetPartialAndNodeGap(t *testing.T) {
+	now := time.Date(2026, 10, 30, 22, 0, 0, 0, time.UTC)
+	metrics := map[string]any{
+		keyRunID:        "mt-dashboard-20261030T120000-abcd",
+		keyIsActive:     true,
+		"fleet_partial": true,
+		keyNodesCount:   3.0,
+		keyNodesPresent: []string{"worker-a:1099"},
+		keyContributors: []string{"local", "worker-a:1099"},
+		keySamples: []map[string]any{
+			{keyCountFailed: 2.0, keyTimestamp: now.Add(-30 * time.Second).Format(time.RFC3339)},
+		},
+		keyUpdatedAt: now.Add(-30 * time.Second).Format(time.RFC3339),
+		"nodes": []map[string]any{
+			{keyHost: "node-a", keyStatus: "reporting", keySampleTS: now.Add(-1 * time.Second).Format(time.RFC3339), metricFailed: 0.0},
+			{keyHost: "node-b", keyStatus: "unavailable"},
+			{keyHost: "node-c", keyStatus: "reporting", keySampleTS: now.Add(-45 * time.Second).Format(time.RFC3339), metricFailed: 4.0},
+		},
+	}
+	list := buildRunWarnings(metrics, now)
+	codes := map[string]int{}
+	for _, w := range list {
+		codes[w.Code]++
+		if w.Observed == "" {
+			t.Fatalf("empty observed text: %#v", w)
+		}
+		// AC4: must not invent a root cause phrase.
+		low := w.Observed
+		for _, bad := range []string{"because", "network failed", "crashed", "disk full"} {
+			if strings.Contains(strings.ToLower(low), bad) {
+				t.Errorf("warning claims a cause (%q): %s", bad, w.Observed)
+			}
+		}
+	}
+	if codes[warnFleetPartial] != 1 || codes[warnNodeNoData] != 1 || codes[warnSampleDelayed] < 1 || codes[warnFailedOps] < 2 {
+		t.Fatalf("unexpected warning codes: %#v from %#v", codes, list)
+	}
+	if metrics[keyDataStatus] != dataDelayed {
+		t.Fatalf("fleet data_status=%v, want delayed", metrics[keyDataStatus])
+	}
+	nodes := metrics["nodes"].([]map[string]any)
+	if nodes[1][keyDataStatus] != dataNoData || nodes[2][keyDataStatus] != dataDelayed || nodes[0][keyDataStatus] != dataPresent {
+		t.Fatalf("node data_status: %#v", nodes)
+	}
+}
+
+func TestBuildRunWarningsEmptySamplesIsGapNotZero(t *testing.T) {
+	now := time.Now().UTC()
+	metrics := map[string]any{
+		keyIsActive: true,
+		keySamples:  []map[string]any{},
+	}
+	list := buildRunWarnings(metrics, now)
+	if len(list) != 1 || list[0].Code != warnMetricsGap {
+		t.Fatalf("want metrics_gap only, got %#v", list)
+	}
+	if metrics[keyDataStatus] != dataNoData {
+		t.Fatalf("data_status=%v", metrics[keyDataStatus])
+	}
+	if !strings.Contains(strings.ToLower(list[0].Observed), "not a measured value of zero") {
+		t.Fatalf("gap text should distinguish zero: %s", list[0].Observed)
+	}
+}
+
+func TestLiveMetricsPassesFleetCompletenessAndWarnings(t *testing.T) {
+	stamp := time.Now().UTC().Truncate(time.Second)
+	entry := map[string]any{
+		"sample_ts": stamp.Format(time.RFC3339), "test_state": 1, "step_id": "s", "scope": "fleet", "role": "aggregate",
+		"op_type": "CREATE", "elapsed_time_seconds": 2.0, "partial": true, "nodes_count": 2.0,
+		"nodes_present": []any{"worker-a:1099"}, "contributors_present": []any{"local"},
+		"operations": map[string]any{"success_count": 10.0, "failed_count": 1.0, "success_rate_last": 5.0},
+		"bandwidth":  map[string]any{"bytes_total": 10.0 * 1048576, "bytes_rate_last": 5.0 * 1048576},
+		"timing":     map[string]any{"latency": map[string]any{"count": 10.0, "p50_us": 40.0}},
+	}
+	body, _ := json.Marshal([]map[string]any{entry})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(body) }))
+	defer srv.Close()
+	a := &app{metricsURL: srv.URL, stateDir: t.TempDir()}
+	got := a.liveMetrics(map[string]any{"started_epoch": float64(stamp.Add(-time.Minute).Unix()), keyRunID: "mt-dashboard-20261030T120000-warn"})
+	if got == nil || got["fleet_partial"] != true {
+		t.Fatalf("fleet_partial missing: %#v", got)
+	}
+	if got[keyNodesCount] != 2.0 {
+		t.Fatalf("nodes_count=%v", got[keyNodesCount])
+	}
+	warns, _ := got[keyWarnings].([]map[string]any)
+	if len(warns) == 0 {
+		t.Fatalf("expected warnings on partial fleet: %#v", got)
+	}
+	foundPartial := false
+	for _, w := range warns {
+		if str(w[keyCode]) == warnFleetPartial {
+			foundPartial = true
+		}
+	}
+	if !foundPartial {
+		t.Fatalf("fleet_partial warning missing: %#v", warns)
+	}
+	path := filepath.Join(a.stateDir, "mt-dashboard-20261030T120000-warn.warnings.json")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("warnings not persisted: %v", err)
+	}
+}
+
+func TestZeroRateStillPresentNotNoData(t *testing.T) {
+	now := time.Now().UTC()
+	metrics := map[string]any{
+		keyIsActive:  true,
+		keyUpdatedAt: now.Format(time.RFC3339),
+		keySamples:   []map[string]any{{keyCountFailed: 0.0, keyIntervalIOPS: 0.0, keyTimestamp: now.Format(time.RFC3339)}},
+		"nodes": []map[string]any{
+			{keyHost: "node-a", keyStatus: "reporting", keySampleTS: now.Format(time.RFC3339), metricIOPS: 0.0, metricFailed: 0.0},
+		},
+	}
+	list := buildRunWarnings(metrics, now)
+	for _, w := range list {
+		if w.Code == warnMetricsGap || w.Code == warnNodeNoData {
+			t.Fatalf("measured zeros must not become gap/no_data: %#v", list)
+		}
+	}
+	if metrics[keyDataStatus] != dataPresent {
+		t.Fatalf("data_status=%v", metrics[keyDataStatus])
+	}
+	if metrics["nodes"].([]map[string]any)[0][keyDataStatus] != dataPresent {
+		t.Fatalf("node data_status for measured zero: %#v", metrics["nodes"])
+	}
+}

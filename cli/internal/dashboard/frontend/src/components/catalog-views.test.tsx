@@ -130,6 +130,63 @@ const compareResult: CompareResult = {
 };
 
 describe("Catalog", () => {
+  it("lists typed artifact downloads and an empty state", async () => {
+    stubFetch((url) => {
+      if (url.startsWith("/api/catalog/artifacts")) {
+        if (url.includes("id=empty")) return { run_id: "empty", artifacts: [] };
+        return {
+          run_id: "a",
+          artifacts: [
+            {
+              name: "create.metrics.total.csv",
+              kind: "csv",
+              type: "Metrics totals (CSV)",
+              size: 120,
+            },
+            {
+              name: "create.result.xml",
+              kind: "xml",
+              type: "Engine results (XML)",
+              size: 40,
+            },
+            {
+              name: "create.messages.log",
+              kind: "log",
+              type: "Messages log",
+              size: 80,
+            },
+          ],
+        };
+      }
+      if (url.startsWith("/api/catalog/log")) {
+        return {
+          run_id: "a",
+          source: "results",
+          level: "all",
+          interim: false,
+          truncated: false,
+          lines: [],
+        };
+      }
+      return {
+        root: "/results",
+        runs: [run("a"), run("empty", { status: "partial", phases: [] })],
+        total: 2,
+        truncated: false,
+        read_only: true,
+      };
+    });
+    render(<Catalog onCompare={() => {}} />);
+    await screen.findByText("a");
+    fireEvent.click(screen.getAllByRole("button", { name: "Details" })[0]);
+    expect(await screen.findByText("Download Metrics totals (CSV)")).toBeTruthy();
+    expect(screen.getByText("Download Engine results (XML)")).toBeTruthy();
+    expect(screen.getByText("Download Messages log")).toBeTruthy();
+    expect(screen.getByText("CSV")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Details" })[1]);
+    expect(await screen.findByText("No downloadable artifacts")).toBeTruthy();
+  });
   it("filters through the API and hands the selection to compare", async () => {
     const calls = stubFetch(() => ({
       root: "/results",

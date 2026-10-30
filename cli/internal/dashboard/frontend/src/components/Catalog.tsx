@@ -11,6 +11,22 @@ import {
   type CatalogFilters,
 } from "../utils/catalog";
 
+
+/** Prefer the next older complete run with the same shape; else the next older complete run. */
+function previousRun(runs: CatalogRun[], id: string): CatalogRun | null {
+  const idx = runs.findIndex((r) => r.id === id);
+  if (idx < 0) return null;
+  const cur = runs[idx];
+  const older = runs.slice(idx + 1).filter((r) => r.status === "complete");
+  const shaped = older.find(
+    (r) =>
+      r.workload === cur.workload &&
+      r.object_size === cur.object_size &&
+      r.threads === cur.threads,
+  );
+  return shaped ?? older[0] ?? null;
+}
+
 const integrityText: Record<CatalogRun["integrity"], string> = {
   passed: "Integrity passed",
   failed: "Integrity failed",
@@ -139,7 +155,9 @@ export function Catalog({
         </label>
         <p className="form-help">
           Select 2–{maxCompare} runs to compare; the baseline is the run the
-          others are checked against.
+          others are checked against. "Compare with previous" picks this run
+          and the next older complete match (same workload, size, and threads
+          when possible) so you can check version N against N−1.
         </p>
       </section>
       {error && (
@@ -179,11 +197,15 @@ export function Catalog({
                     full={selected.length >= maxCompare}
                     isBaseline={effectiveBaseline === run.id}
                     open={open === run.id}
+                    previous={previousRun(runs, run.id)}
                     onToggle={() =>
                       setSelected((s) => toggleSelection(s, run.id))
                     }
                     onBaseline={() => setBaseline(run.id)}
                     onOpen={() => setOpen(open === run.id ? "" : run.id)}
+                    onComparePrevious={(prevId) =>
+                      onCompare([run.id, prevId], prevId)
+                    }
                   />
                 ))}
               </tbody>
@@ -214,18 +236,22 @@ function CatalogRow({
   full,
   isBaseline,
   open,
+  previous,
   onToggle,
   onBaseline,
   onOpen,
+  onComparePrevious,
 }: {
   run: CatalogRun;
   checked: boolean;
   full: boolean;
   isBaseline: boolean;
   open: boolean;
+  previous: CatalogRun | null;
   onToggle: () => void;
   onBaseline: () => void;
   onOpen: () => void;
+  onComparePrevious: (prevId: string) => void;
 }) {
   return (
     <>
@@ -280,10 +306,19 @@ function CatalogRow({
             <span className="subtle">No phase totals</span>
           )}
         </td>
-        <td>
+        <td className="catalog-row-actions">
           <button aria-expanded={open} onClick={onOpen}>
             {open ? "Hide" : "Details"}
           </button>
+          {run.status === "complete" && previous && (
+            <button
+              type="button"
+              title={`Compare with ${previous.name || previous.id}`}
+              onClick={() => onComparePrevious(previous.id)}
+            >
+              Compare with previous
+            </button>
+          )}
         </td>
       </tr>
       {open && (

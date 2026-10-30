@@ -241,21 +241,25 @@ func latestSample(samples []map[string]any) []map[string]any {
 }
 
 func (a *app) liveMetrics(state map[string]any) map[string]any {
-	if a.metricsURL != "" {
-		return a.liveMetricsAt(state, a.metricsURL)
-	}
-	hosts := a.storageSnapshot().Hosts
 	var out map[string]any
-	if len(hosts) > 1 {
-		// With several client machines the entry's /metrics/json is only its own slice;
-		// /metrics/cluster/json is SPT's merged fleet view (see METRICS.md).
-		out = a.liveMetricsAt(state, a.clusterMetricsEndpoint())
+	if a.metricsURL != "" {
+		out = a.liveMetricsAt(state, a.metricsURL)
+	} else {
+		hosts := a.storageSnapshot().Hosts
+		if len(hosts) > 1 {
+			// With several client machines the entry's /metrics/json is only its own slice;
+			// /metrics/cluster/json is SPT's merged fleet view (see METRICS.md).
+			out = a.liveMetricsAt(state, a.clusterMetricsEndpoint())
+		}
+		if out == nil {
+			out = a.liveMetricsAt(state, a.metricsEndpoint())
+		}
+		if out != nil && len(hosts) > 1 {
+			out["nodes"] = a.liveNodes(state, hosts)
+		}
 	}
-	if out == nil {
-		out = a.liveMetricsAt(state, a.metricsEndpoint())
-	}
-	if out != nil && len(hosts) > 1 {
-		out["nodes"] = a.liveNodes(state, hosts)
+	if out != nil {
+		out = a.attachWarnings(out, time.Now())
 	}
 	return out
 }
@@ -391,6 +395,16 @@ func (a *app) liveMetricsAt(state map[string]any, metricsURL string) map[string]
 	if partial, ok := entry["partial"].(bool); ok {
 		out["fleet_partial"] = partial
 	}
+	// Completeness fields from METRICS.md — used for SCRUM-21 warnings, not summed.
+	if n, ok := num(entry, keyNodesCount); ok {
+		out[keyNodesCount] = n
+	}
+	if present := stringList(entry[keyNodesPresent]); len(present) > 0 {
+		out[keyNodesPresent] = present
+	}
+	if contrib := stringList(entry[keyContributors]); len(contrib) > 0 {
+		out[keyContributors] = contrib
+	}
 	if !has {
 		return out
 	}
@@ -432,6 +446,7 @@ func (a *app) liveNodes(state map[string]any, hosts []string) []map[string]any {
 					break
 				}
 			}
+			annotateNodeDataStatus(row, time.Now())
 			rows[i] = row
 		}(i, host)
 	}

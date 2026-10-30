@@ -346,9 +346,7 @@ describe("RunWarnings", () => {
     expect(screen.getByText("Incomplete fleet aggregate")).toBeTruthy();
     expect(screen.getByText("Client metrics unavailable")).toBeTruthy();
     expect(screen.getByText("node-b")).toBeTruthy();
-    expect(
-      screen.getByText(/partial=true/, { exact: false }),
-    ).toBeTruthy();
+    expect(screen.getByText(/partial=true/, { exact: false })).toBeTruthy();
   });
   it("renders nothing without warnings", () => {
     const { container } = render(<RunWarnings warnings={[]} />);

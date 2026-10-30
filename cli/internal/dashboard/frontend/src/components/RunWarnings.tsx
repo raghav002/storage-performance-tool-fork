@@ -4,7 +4,10 @@ import type { RunWarning } from "../types";
 export function RunWarnings({ warnings }: { warnings?: RunWarning[] }) {
   if (!warnings?.length) return null;
   return (
-    <section className="panel notice-warn run-warnings" aria-label="Run warnings">
+    <section
+      className="panel notice-warn run-warnings"
+      aria-label="Run warnings"
+    >
       <div className="section-heading">
         <div>
           <h2>Run warnings</h2>

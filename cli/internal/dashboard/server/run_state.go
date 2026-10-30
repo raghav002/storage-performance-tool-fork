@@ -90,9 +90,7 @@ func (a *app) currentState() (map[string]any, error) {
 				}
 			}
 			// Live poll returned nothing: still surface gap/delayed warnings from retained state.
-			if result != nil {
-				result = a.attachWarnings(result, time.Now())
-			}
+			result = a.attachWarnings(result, time.Now())
 		}
 		a.activeJob = state
 		return a.stateResponse(publicJob(state), result), nil

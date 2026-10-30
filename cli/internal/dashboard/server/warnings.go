@@ -75,7 +75,7 @@ func sampleAge(ts string, now time.Time) (time.Duration, bool) {
 }
 
 func annotateNodeDataStatus(row map[string]any, now time.Time) {
-	if str(row[keyStatus]) != "reporting" {
+	if str(row[keyStatus]) != nodeStatusReporting {
 		row[keyDataStatus] = dataNoData
 		return
 	}
@@ -91,92 +91,115 @@ func annotateNodeDataStatus(row map[string]any, now time.Time) {
 	row[keyDataStatus] = dataPresent
 }
 
-// buildRunWarnings turns SPT/live fields the dashboard already has into
-// observed warnings. It never invents a network or client failure cause.
-func buildRunWarnings(metrics map[string]any, now time.Time) []runWarning {
-	if metrics == nil {
-		return nil
-	}
-	out := []runWarning{}
-	seen := map[string]bool{}
-	add := func(w runWarning) {
-		key := w.Code + "|" + w.Host + "|" + w.Metric + "|" + w.Observed
-		if seen[key] {
-			return
-		}
-		seen[key] = true
-		if w.Severity == "" {
-			w.Severity = levelWarn
-		}
-		out = append(out, w)
-	}
+type warningSink struct {
+	out  []runWarning
+	seen map[string]bool
+}
 
-	if metrics["fleet_partial"] == true {
-		parts := []string{"SPT fleet metrics report partial=true (aggregate incomplete or contributor evidence inconsistent)."}
-		if n, ok := num(metrics, keyNodesCount); ok {
-			parts = append(parts, "nodes_count="+str(n))
-		}
-		if present := stringList(metrics[keyNodesPresent]); len(present) > 0 {
-			parts = append(parts, "nodes_present=["+strings.Join(present, ", ")+"]")
-		}
-		if contrib := stringList(metrics[keyContributors]); len(contrib) > 0 {
-			parts = append(parts, "contributors_present=["+strings.Join(contrib, ", ")+"]")
-		}
-		add(runWarning{
-			Code:     warnFleetPartial,
-			Observed: strings.Join(parts, " "),
-			Source:   "fleet_metrics",
-			Metric:   "fleet_aggregate",
-		})
+func (s *warningSink) add(w runWarning) {
+	key := w.Code + "|" + w.Host + "|" + w.Metric + "|" + w.Observed
+	if s.seen[key] {
+		return
 	}
-
-	active, _ := metrics[keyIsActive].(bool)
-	samples, _ := metrics[keySamples].([]map[string]any)
-	if active && len(samples) == 0 {
-		add(runWarning{
-			Code:     warnMetricsGap,
-			Observed: "No live metric sample is available in this poll (empty samples while the run is active). This is a telemetry gap, not a measured value of zero.",
-			Source:   "live_metrics",
-			Metric:   "samples",
-		})
+	s.seen[key] = true
+	if w.Severity == "" {
+		w.Severity = levelWarn
 	}
+	s.out = append(s.out, w)
+}
 
+func appendFleetPartialWarning(metrics map[string]any, add func(runWarning)) {
+	if metrics["fleet_partial"] != true {
+		return
+	}
+	parts := []string{"SPT fleet metrics report partial=true (aggregate incomplete or contributor evidence inconsistent)."}
+	if n, ok := num(metrics, keyNodesCount); ok {
+		parts = append(parts, "nodes_count="+str(n))
+	}
+	if present := stringList(metrics[keyNodesPresent]); len(present) > 0 {
+		parts = append(parts, "nodes_present=["+strings.Join(present, ", ")+"]")
+	}
+	if contrib := stringList(metrics[keyContributors]); len(contrib) > 0 {
+		parts = append(parts, "contributors_present=["+strings.Join(contrib, ", ")+"]")
+	}
+	add(runWarning{
+		Code:     warnFleetPartial,
+		Observed: strings.Join(parts, " "),
+		Source:   sourceFleetMetrics,
+		Metric:   "fleet_aggregate",
+	})
+}
+
+func warnMetricsGapIfEmpty(active bool, samples []map[string]any, add func(runWarning)) {
+	if !active || len(samples) > 0 {
+		return
+	}
+	add(runWarning{
+		Code:     warnMetricsGap,
+		Observed: "No live metric sample is available in this poll (empty samples while the run is active). This is a telemetry gap, not a measured value of zero.",
+		Source:   sourceLiveMetrics,
+		Metric:   "samples",
+	})
+}
+
+func warnSampleDelay(metrics map[string]any, samples []map[string]any, active bool, now time.Time, add func(runWarning)) {
 	updated := str(metrics[keyUpdatedAt])
 	if updated == "" && len(samples) > 0 {
 		updated = str(samples[0][keyTimestamp])
 	}
-	if active && updated != "" {
-		if age, ok := sampleAge(updated, now); ok && age > sampleStaleAfter {
-			add(runWarning{
-				Code:     warnSampleDelayed,
-				Observed: "Latest live metrics timestamp is " + updated + " (" + age.Truncate(time.Second).String() + " ago). Showing delayed data, not a fresh zero.",
-				Source:   "live_metrics",
-				Metric:   "updated_at",
-			})
-			metrics[keyDataStatus] = dataDelayed
-		}
+	if !active || updated == "" {
+		return
 	}
-	if _, ok := metrics[keyDataStatus]; !ok {
-		if active && len(samples) == 0 {
-			metrics[keyDataStatus] = dataNoData
-		} else if len(samples) > 0 {
-			metrics[keyDataStatus] = dataPresent
-		}
+	age, ok := sampleAge(updated, now)
+	if !ok || age <= sampleStaleAfter {
+		return
 	}
+	add(runWarning{
+		Code:     warnSampleDelayed,
+		Observed: "Latest live metrics timestamp is " + updated + " (" + age.Truncate(time.Second).String() + " ago). Showing delayed data, not a fresh zero.",
+		Source:   sourceLiveMetrics,
+		Metric:   "updated_at",
+	})
+	metrics[keyDataStatus] = dataDelayed
+}
 
+func setDefaultDataStatus(metrics map[string]any, samples []map[string]any, active bool) {
+	if _, ok := metrics[keyDataStatus]; ok {
+		return
+	}
+	if active && len(samples) == 0 {
+		metrics[keyDataStatus] = dataNoData
+		return
+	}
 	if len(samples) > 0 {
-		failed, hasFailed := num(samples[0], keyCountFailed)
-		if hasFailed && failed > 0 {
-			add(runWarning{
-				Code:     warnFailedOps,
-				Observed: "Live metrics report " + str(failed) + " failed operation(s) in the current sample.",
-				Source:   "operations.failed_count",
-				Metric:   metricFailed,
-			})
-		}
+		metrics[keyDataStatus] = dataPresent
 	}
+}
 
-	nodes, _ := metrics["nodes"].([]map[string]any)
+func warnFailedOpsInSample(samples []map[string]any, add func(runWarning)) {
+	if len(samples) == 0 {
+		return
+	}
+	failed, hasFailed := num(samples[0], keyCountFailed)
+	if !hasFailed || failed <= 0 {
+		return
+	}
+	add(runWarning{
+		Code:     warnFailedOps,
+		Observed: "Live metrics report " + str(failed) + " failed operation(s) in the current sample.",
+		Source:   "operations.failed_count",
+		Metric:   metricFailed,
+	})
+}
+
+func warnActiveTelemetry(metrics map[string]any, samples []map[string]any, active bool, now time.Time, add func(runWarning)) {
+	warnMetricsGapIfEmpty(active, samples, add)
+	warnSampleDelay(metrics, samples, active, now, add)
+	setDefaultDataStatus(metrics, samples, active)
+	warnFailedOpsInSample(samples, add)
+}
+
+func warnNodeRows(nodes []map[string]any, now time.Time, add func(runWarning)) {
 	for _, row := range nodes {
 		annotateNodeDataStatus(row, now)
 		host := str(row[keyHost])
@@ -186,7 +209,7 @@ func buildRunWarnings(metrics map[string]any, now time.Time) []runWarning {
 				Code:     warnNodeNoData,
 				Observed: "Client machine " + host + ": SPT /metrics/json did not return a usable live sample in this poll. Metric cells show no data (not zero).",
 				Host:     host,
-				Source:   "node_metrics",
+				Source:   sourceNodeMetrics,
 				Metric:   "node_sample",
 			})
 		case dataDelayed:
@@ -194,30 +217,48 @@ func buildRunWarnings(metrics map[string]any, now time.Time) []runWarning {
 				Code:     warnSampleDelayed,
 				Observed: "Client machine " + host + ": latest sample_ts is " + str(row[keySampleTS]) + ". Treating per-node metrics as delayed.",
 				Host:     host,
-				Source:   "node_metrics",
+				Source:   sourceNodeMetrics,
 				Metric:   "sample_ts",
 			})
 		}
-		if str(row[keyStatus]) == "reporting" {
-			if failed, ok := num(row, metricFailed); ok && failed > 0 {
-				add(runWarning{
-					Code:     warnFailedOps,
-					Observed: "Client machine " + host + ": live metrics report " + str(failed) + " failed operation(s).",
-					Host:     host,
-					Source:   "node_metrics",
-					Metric:   metricFailed,
-				})
-			}
+		if str(row[keyStatus]) != nodeStatusReporting {
+			continue
 		}
+		failed, ok := num(row, metricFailed)
+		if !ok || failed <= 0 {
+			continue
+		}
+		add(runWarning{
+			Code:     warnFailedOps,
+			Observed: "Client machine " + host + ": live metrics report " + str(failed) + " failed operation(s).",
+			Host:     host,
+			Source:   sourceNodeMetrics,
+			Metric:   metricFailed,
+		})
 	}
+}
 
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Code != out[j].Code {
-			return out[i].Code < out[j].Code
+// buildRunWarnings turns SPT/live fields the dashboard already has into
+// observed warnings. It never invents a network or client failure cause.
+func buildRunWarnings(metrics map[string]any, now time.Time) []runWarning {
+	if metrics == nil {
+		return nil
+	}
+	sink := &warningSink{seen: map[string]bool{}}
+	add := sink.add
+	appendFleetPartialWarning(metrics, add)
+	active, _ := metrics[keyIsActive].(bool)
+	samples, _ := metrics[keySamples].([]map[string]any)
+	warnActiveTelemetry(metrics, samples, active, now, add)
+	nodes, _ := metrics["nodes"].([]map[string]any)
+	warnNodeRows(nodes, now, add)
+	sort.SliceStable(sink.out, func(i, j int) bool {
+		if sink.out[i].Code != sink.out[j].Code {
+			return sink.out[i].Code < sink.out[j].Code
 		}
-		return out[i].Host < out[j].Host
+		return sink.out[i].Host < sink.out[j].Host
 	})
-	return out
+	return sink.out
 }
 
 func warningsAsMaps(list []runWarning) []map[string]any {

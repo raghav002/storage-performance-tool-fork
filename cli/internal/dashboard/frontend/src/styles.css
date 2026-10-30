@@ -2351,3 +2351,13 @@ details.run-log[open] > summary {
   font-size: 12px;
   color: #64738a;
 }
+
+.catalog-row-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: stretch;
+}
+.catalog-row-actions button {
+  white-space: nowrap;
+}

@@ -6,26 +6,11 @@ import { formatNumber as fmt } from "../utils/metrics";
 import {
   catalogQuery,
   maxCompare,
+  previousRun,
   runSettings,
   toggleSelection,
   type CatalogFilters,
 } from "../utils/catalog";
-
-
-/** Prefer the next older complete run with the same shape; else the next older complete run. */
-function previousRun(runs: CatalogRun[], id: string): CatalogRun | null {
-  const idx = runs.findIndex((r) => r.id === id);
-  if (idx < 0) return null;
-  const cur = runs[idx];
-  const older = runs.slice(idx + 1).filter((r) => r.status === "complete");
-  const shaped = older.find(
-    (r) =>
-      r.workload === cur.workload &&
-      r.object_size === cur.object_size &&
-      r.threads === cur.threads,
-  );
-  return shaped ?? older[0] ?? null;
-}
 
 const integrityText: Record<CatalogRun["integrity"], string> = {
   passed: "Integrity passed",
@@ -45,6 +30,7 @@ export function Catalog({
     status: "",
   });
   const [data, setData] = useState<CatalogList | null>(null);
+  const [allRuns, setAllRuns] = useState<CatalogRun[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
@@ -80,6 +66,25 @@ export function Catalog({
       clearTimeout(timer);
     };
   }, [filters, version]);
+  // Unfiltered snapshot for "Compare with previous" so a status/source filter
+  // cannot hide the next older complete match.
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(catalogQuery({ q: "", source: "", status: "" }), {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (r) => {
+        const body = await r.json();
+        if (!r.ok) throw new Error(body.error ?? "Could not read results.");
+        if (controller.signal.aborted) return;
+        setAllRuns((body as CatalogList).runs ?? []);
+      })
+      .catch(() => {
+        /* filtered list still works; previous-run just falls back below */
+      });
+    return () => controller.abort();
+  }, [version]);
   const effectiveBaseline = selected.includes(baseline)
     ? baseline
     : (selected[0] ?? "");
@@ -155,9 +160,11 @@ export function Catalog({
         </label>
         <p className="form-help">
           Select 2–{maxCompare} runs to compare; the baseline is the run the
-          others are checked against. "Compare with previous" picks this run
-          and the next older complete match (same workload, size, and threads
-          when possible) so you can check version N against N−1.
+          others are checked against. "Compare with previous" pairs this run
+          with the next older complete run that shares the same workload, object
+          size, threads, and (when recorded) object count, host count, and S3
+          driver — not an SPT product version. Falls back to the next older
+          complete run when no shape match exists.
         </p>
       </section>
       {error && (
@@ -197,7 +204,10 @@ export function Catalog({
                     full={selected.length >= maxCompare}
                     isBaseline={effectiveBaseline === run.id}
                     open={open === run.id}
-                    previous={previousRun(runs, run.id)}
+                    previous={previousRun(
+                      allRuns.length ? allRuns : runs,
+                      run.id,
+                    )}
                     onToggle={() =>
                       setSelected((s) => toggleSelection(s, run.id))
                     }

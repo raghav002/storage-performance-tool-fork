@@ -8,7 +8,7 @@ a second compare stack.
 ## Goal
 
 Let a performance engineer open two or more archived SPT runs and see whether
-version N is worse than version N−1 (or any chosen baseline), without digging
+a newer run is worse than the prior comparable run (or any chosen baseline), without digging
 through `~/results` by hand.
 
 ## What PR2 already implements
@@ -30,13 +30,13 @@ Mike's stretch and a first overlay:
 4. **Data source.** Read-only scan of `~/results` (dashboard and CLI folders).
    No database.
 
-That is enough for a first demo of "compare N vs N−1". The remaining work is
-interaction polish and clearer N vs N−1 shortcuts, not a rewrite.
+That is enough for a first demo of "compare with the previous matching run". The remaining work is
+interaction polish and clearer previous-run shortcuts, not a rewrite.
 
 ## Mike's 10/21 ask (stretch)
 
-Store past runs, add a history tab, and overlay graphs to compare version N vs
-N−1. He called comparison "a pretty big project." PR2 answers the storage and
+Store past runs, add a history tab, and overlay graphs to compare a run with
+its previous match. He called comparison "a pretty big project." PR2 answers the storage and
 overlay parts; SCRUM-45 is the UI chart for how that project should grow.
 
 ## Proposed layout (current + next)
@@ -56,7 +56,7 @@ Results catalog
 
 | Item | Why | Notes |
 |---|---|---|
-| **Compare with previous** | One-click N vs N−1 | From a catalog row, pick this run and the next older complete run with the same workload + object size + threads when possible, else the next older complete run. Baseline = older run. |
+| **Compare with previous** | One-click prior match | From a catalog row, pick this run and the next older complete run with the same workload + object size + threads (and object count / host count / S3 driver when both sides record them), else the next older complete run. Matching uses the unfiltered catalog so UI filters cannot hide the prior run. Baseline = older run. This is a shape/time match, not an SPT product-version N vs N−1. |
 | **Legend + colour lock** | Readability | Keep the palette order tied to selection order so the baseline colour is stable when the radio changes. |
 | **Empty / sparse overlays** | Honesty | Keep the existing "No interval samples for these runs" empty state; do not invent points. |
 | **Export** | Share | Optional later: download the delta table as CSV. Not required for SCRUM-45. |
@@ -74,7 +74,7 @@ Results catalog
   same UI.
 - "Compare with previous" is implemented as a catalog action that opens Compare
   with exactly two runs (older = baseline).
-- Overlay graphs remain the primary visual for N vs N−1; the totals table stays
+- Overlay graphs remain the primary visual for previous-run comparison; the totals table stays
   the regression checklist.
 
 ## Risks

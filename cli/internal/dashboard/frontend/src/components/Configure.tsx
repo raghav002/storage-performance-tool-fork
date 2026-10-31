@@ -280,13 +280,16 @@ function ExpertWorkspace({
   }
 
   return (
-    <div className="expert-workspace">
-      <div className="expert-workspace-main">
-        <div className="expert-area-heading">
-          <strong>Start from</strong>
-          <span>Reuse a known configuration or start with the defaults.</span>
+    <div data-spt-legacy="" className="expert-workspace">
+      <div data-spt-legacy="" className="expert-workspace-main">
+        <div data-spt-legacy="" className="expert-area-heading">
+          <strong data-spt-legacy="">Start from</strong>
+          <span data-spt-legacy="">
+            Reuse a known configuration or start with the defaults.
+          </span>
         </div>
         <div
+          data-spt-legacy=""
           className="expert-start-grid"
           role="group"
           aria-label="Start expert configuration"
@@ -300,6 +303,7 @@ function ExpertWorkspace({
             ] as const
           ).map(([key, name, detail]) => (
             <button
+              data-spt-legacy=""
               type="button"
               key={key}
               className={`expert-start-option ${start === key ? "active" : ""}`}
@@ -311,17 +315,18 @@ function ExpertWorkspace({
                 setStart(key);
               }}
             >
-              <strong>{name}</strong>
-              <small>{detail}</small>
+              <strong data-spt-legacy="">{name}</strong>
+              <small data-spt-legacy="">{detail}</small>
             </button>
           ))}
         </div>
-        <div className="expert-starter">
+        <div data-spt-legacy="" className="expert-starter">
           {start === "new" && (
-            <div className="expert-inline">
-              <label>
+            <div data-spt-legacy="" className="expert-inline">
+              <label data-spt-legacy="">
                 Starting preset
                 <select
+                  data-spt-legacy=""
                   defaultValue="default"
                   onChange={(e) => {
                     const preset = expertPresets.find(
@@ -330,36 +335,42 @@ function ExpertWorkspace({
                     setDraft(toDraft(preset?.options ?? defaults));
                   }}
                 >
-                  <option value="default">Default · 100 objects, 64KiB</option>
+                  <option data-spt-legacy="" value="default">
+                    Default · 100 objects, 64KiB
+                  </option>
                   {expertPresets.map((p) => (
-                    <option key={p.label} value={p.label}>
+                    <option data-spt-legacy="" key={p.label} value={p.label}>
                       {p.label}
                     </option>
                   ))}
                 </select>
               </label>
-              <span className="expert-muted">
+              <span data-spt-legacy="" className="expert-muted">
                 Adjust any setting below before reviewing.
               </span>
             </div>
           )}
           {start === "saved" && (
-            <div className="expert-inline">
-              <label>
+            <div data-spt-legacy="" className="expert-inline">
+              <label data-spt-legacy="">
                 Saved configurations
                 <select
+                  data-spt-legacy=""
                   value={chosenProfile}
                   onChange={(e) => setChosenProfile(e.target.value)}
                 >
-                  <option value="">Choose a saved profile</option>
+                  <option data-spt-legacy="" value="">
+                    Choose a saved profile
+                  </option>
                   {profiles.map((p) => (
-                    <option key={p.name} value={p.name}>
+                    <option data-spt-legacy="" key={p.name} value={p.name}>
                       {p.name}
                     </option>
                   ))}
                 </select>
               </label>
               <button
+                data-spt-legacy=""
                 type="button"
                 disabled={!chosenProfile}
                 onClick={() => {
@@ -372,31 +383,35 @@ function ExpertWorkspace({
                 Load profile
               </button>
               {!profiles.length && (
-                <span className="expert-muted">
+                <span data-spt-legacy="" className="expert-muted">
                   No saved profiles yet. Save one in the summary panel.
                 </span>
               )}
             </div>
           )}
           {start === "previous" && (
-            <div className="expert-inline">
-              <label>
+            <div data-spt-legacy="" className="expert-inline">
+              <label data-spt-legacy="">
                 Completed benchmark
                 <select
+                  data-spt-legacy=""
                   value={previousID}
                   onChange={(e) => setPreviousID(e.target.value)}
                 >
                   {previousRuns.map((r) => (
-                    <option key={r.run_id} value={r.run_id}>
+                    <option data-spt-legacy="" key={r.run_id} value={r.run_id}>
                       {r.run_id}
                     </option>
                   ))}
                   {!previousRuns.length && (
-                    <option value="">No runs available</option>
+                    <option data-spt-legacy="" value="">
+                      No runs available
+                    </option>
                   )}
                 </select>
               </label>
               <button
+                data-spt-legacy=""
                 type="button"
                 disabled={!previousID}
                 onClick={() => {
@@ -414,16 +429,19 @@ function ExpertWorkspace({
                 Duplicate settings
               </button>
               {historyMessage && (
-                <span role="status" className="expert-muted">
+                <span data-spt-legacy="" role="status" className="expert-muted">
                   {historyMessage}
                 </span>
               )}
             </div>
           )}
           {start === "command" && (
-            <div className="expert-command-import">
-              <label htmlFor="expert-cli-input">Paste an SPT command</label>
+            <div data-spt-legacy="" className="expert-command-import">
+              <label data-spt-legacy="" htmlFor="expert-cli-input">
+                Paste an SPT command
+              </label>
               <textarea
+                data-spt-legacy=""
                 id="expert-cli-input"
                 value={commandText}
                 rows={3}
@@ -431,17 +449,22 @@ function ExpertWorkspace({
                 placeholder="spt run write-verify --object-count 1000 --object-size 1MiB --threads 4 --auto-terminate-seconds 600"
                 onChange={(e) => setCommandText(e.target.value)}
               />
-              <div className="expert-inline">
-                <button type="button" onClick={importCommand}>
+              <div data-spt-legacy="" className="expert-inline">
+                <button
+                  data-spt-legacy=""
+                  type="button"
+                  onClick={importCommand}
+                >
                   Import supported settings
                 </button>
-                <span className="expert-muted">
+                <span data-spt-legacy="" className="expert-muted">
                   Import only; commands are never executed. Four flags
                   supported.
                 </span>
               </div>
               {commandMessage && (
                 <p
+                  data-spt-legacy=""
                   className={
                     importError
                       ? "expert-feedback-error"
@@ -456,9 +479,14 @@ function ExpertWorkspace({
           )}
         </div>
 
-        <div className="expert-area-heading expert-essentials-heading">
-          <strong>Write + verify · Essential settings</strong>
-          <span>
+        <div
+          data-spt-legacy=""
+          className="expert-area-heading expert-essentials-heading"
+        >
+          <strong data-spt-legacy="">
+            Write + verify · Essential settings
+          </strong>
+          <span data-spt-legacy="">
             The current dashboard API supports this workload and these four run
             settings.
           </span>
@@ -470,111 +498,144 @@ function ExpertWorkspace({
           limits={limits}
           showPresets={false}
         />
-        <details className="expert-limits">
-          <summary>Host limits &amp; advanced settings</summary>
-          <p>
+        <details data-spt-legacy="" className="expert-limits">
+          <summary data-spt-legacy="">
+            Host limits &amp; advanced settings
+          </summary>
+          <p data-spt-legacy="">
             Other SPT CLI flags are not available through this version of the
             Dashboard API. Defaults are enforced by the Go server.
           </p>
-          <dl>
-            <div>
-              <dt>Maximum objects</dt>
-              <dd>{limits.expert.object_count.max.toLocaleString("en-US")}</dd>
+          <dl data-spt-legacy="">
+            <div data-spt-legacy="">
+              <dt data-spt-legacy="">Maximum objects</dt>
+              <dd data-spt-legacy="">
+                {limits.expert.object_count.max.toLocaleString("en-US")}
+              </dd>
             </div>
-            <div>
-              <dt>Maximum threads / client</dt>
-              <dd>{limits.expert.threads.max}</dd>
+            <div data-spt-legacy="">
+              <dt data-spt-legacy="">Maximum threads / client</dt>
+              <dd data-spt-legacy="">{limits.expert.threads.max}</dd>
             </div>
-            <div>
-              <dt>Maximum object size</dt>
-              <dd>{formatBytes(limits.expert.object_size_bytes.max)}</dd>
+            <div data-spt-legacy="">
+              <dt data-spt-legacy="">Maximum object size</dt>
+              <dd data-spt-legacy="">
+                {formatBytes(limits.expert.object_size_bytes.max)}
+              </dd>
             </div>
-            <div>
-              <dt>Maximum runtime</dt>
-              <dd>{limits.expert.max_runtime_seconds.max}s</dd>
+            <div data-spt-legacy="">
+              <dt data-spt-legacy="">Maximum runtime</dt>
+              <dd data-spt-legacy="">
+                {limits.expert.max_runtime_seconds.max}s
+              </dd>
             </div>
-            <div>
-              <dt>Maximum data</dt>
-              <dd>{formatBytes(limits.expert.max_total_bytes)}</dd>
+            <div data-spt-legacy="">
+              <dt data-spt-legacy="">Maximum data</dt>
+              <dd data-spt-legacy="">
+                {formatBytes(limits.expert.max_total_bytes)}
+              </dd>
             </div>
           </dl>
         </details>
       </div>
       <aside
+        data-spt-legacy=""
         className="expert-summary"
         aria-label="Expert configuration summary"
       >
-        <span className="eyebrow">CONFIGURATION SUMMARY</span>
-        <h3>Write + verify</h3>
-        <span className="expert-summary-sub">
+        <span data-spt-legacy="" className="eyebrow">
+          CONFIGURATION SUMMARY
+        </span>
+        <h3 data-spt-legacy="">Write + verify</h3>
+        <span data-spt-legacy="" className="expert-summary-sub">
           {clients} client machine{clients === 1 ? "" : "s"} ·{" "}
           {verified ? "Storage verified" : "Storage not verified"}
         </span>
-        <dl>
-          <div>
-            <dt>Maximum objects</dt>
-            <dd>{draft.object_count || "—"}</dd>
+        <dl data-spt-legacy="">
+          <div data-spt-legacy="">
+            <dt data-spt-legacy="">Maximum objects</dt>
+            <dd data-spt-legacy="">{draft.object_count || "—"}</dd>
           </div>
-          <div>
-            <dt>Object size</dt>
-            <dd>
+          <div data-spt-legacy="">
+            <dt data-spt-legacy="">Object size</dt>
+            <dd data-spt-legacy="">
               {draft.size_amount
                 ? `${draft.size_amount} ${draft.size_unit}`
                 : "—"}
             </dd>
           </div>
-          <div>
-            <dt>Threads / client</dt>
-            <dd>{draft.threads || "—"}</dd>
+          <div data-spt-legacy="">
+            <dt data-spt-legacy="">Threads / client</dt>
+            <dd data-spt-legacy="">{draft.threads || "—"}</dd>
           </div>
-          <div>
-            <dt>Safety limit</dt>
-            <dd>
+          <div data-spt-legacy="">
+            <dt data-spt-legacy="">Safety limit</dt>
+            <dd data-spt-legacy="">
               {draft.max_runtime_seconds
                 ? `${draft.max_runtime_seconds}s`
                 : "—"}
             </dd>
           </div>
         </dl>
-        <div className="expert-data-footprint">
-          <strong>Maximum test data</strong>
-          <span>{Number.isFinite(volume) ? formatBytes(volume) : "—"}</span>
+        <div data-spt-legacy="" className="expert-data-footprint">
+          <strong data-spt-legacy="">Maximum test data</strong>
+          <span data-spt-legacy="">
+            {Number.isFinite(volume) ? formatBytes(volume) : "—"}
+          </span>
         </div>
-        <div className="expert-changes">
-          <strong>Modified from defaults</strong>
-          <div className="expert-chips">
+        <div data-spt-legacy="" className="expert-changes">
+          <strong data-spt-legacy="">Modified from defaults</strong>
+          <div data-spt-legacy="" className="expert-chips">
             {changed.length ? (
-              changed.map(([, label]) => <span key={label}>{label}</span>)
+              changed.map(([, label]) => (
+                <span data-spt-legacy="" key={label}>
+                  {label}
+                </span>
+              ))
             ) : (
-              <span className="quiet">Using defaults</span>
+              <span data-spt-legacy="" className="quiet">
+                Using defaults
+              </span>
             )}
           </div>
         </div>
-        <details className="expert-cli-preview">
-          <summary>Preview CLI settings</summary>
-          <pre>
+        <details data-spt-legacy="" className="expert-cli-preview">
+          <summary data-spt-legacy="">Preview CLI settings</summary>
+          <pre data-spt-legacy="">
             {valid
               ? expertCommand(draft)
               : "Correct the settings to generate a command preview."}
           </pre>
-          <small>
+          <small data-spt-legacy="">
             The Go backend adds storage credentials, safe flags and the results
             directory.
           </small>
         </details>
-        <div className="expert-save">
-          <label htmlFor="expert-profile-name">Save this configuration</label>
+        <div data-spt-legacy="" className="expert-save">
+          <label data-spt-legacy="" htmlFor="expert-profile-name">
+            Save this configuration
+          </label>
           <input
+            data-spt-legacy=""
             id="expert-profile-name"
             value={profileName}
             placeholder="Profile name"
             maxLength={60}
             onChange={(e) => setProfileName(e.target.value)}
           />
-          <button type="button" disabled={!valid} onClick={saveProfile}>
+          <button
+            data-spt-legacy=""
+            type="button"
+            disabled={!valid}
+            onClick={saveProfile}
+          >
             Save profile
           </button>
-          {saveMessage && <small role="status">{saveMessage}</small>}
+          {saveMessage && (
+            <small data-spt-legacy="" role="status">
+              {saveMessage}
+            </small>
+          )}
         </div>
       </aside>
     </div>
@@ -643,23 +704,28 @@ export function Configure({
   }
   return (
     <div
+      data-spt-legacy=""
       className={`configure ${mode === "expert" ? "configure--expert" : ""}`}
     >
-      <span className="eyebrow">NEW BENCHMARK</span>
-      <h1>Configure a run</h1>
-      <p>
+      <span data-spt-legacy="" className="eyebrow">
+        NEW BENCHMARK
+      </span>
+      <h1 data-spt-legacy="">Configure a run</h1>
+      <p data-spt-legacy="">
         Write test objects, read them back to verify integrity, then clean up
         the run’s objects.
       </p>
       {state?.job?.status === "running" && (
-        <div className="notice">
+        <div data-spt-legacy="" className="notice">
           A run is already in progress. Its results are available in Live
           dashboard.
         </div>
       )}
-      <section className="panel">
-        <span className="eyebrow">STEP 1</span>
-        <h2>Storage configuration</h2>
+      <section data-spt-legacy="" className="panel">
+        <span data-spt-legacy="" className="eyebrow">
+          STEP 1
+        </span>
+        <h2 data-spt-legacy="">Storage configuration</h2>
         <StorageConfiguration
           state={state}
           offline={offline}
@@ -667,61 +733,74 @@ export function Configure({
           onRefresh={onRefresh}
         />
       </section>
-      <section className="panel">
-        <span className="eyebrow">STEP 2</span>
-        <h2>{review ? "Review your run" : "Workload configuration"}</h2>
+      <section data-spt-legacy="" className="panel">
+        <span data-spt-legacy="" className="eyebrow">
+          STEP 2
+        </span>
+        <h2 data-spt-legacy="">
+          {review ? "Review your run" : "Workload configuration"}
+        </h2>
         {!verified && (
-          <div className="notice">
+          <div data-spt-legacy="" className="notice">
             Verify the storage configuration to unlock workload settings.
           </div>
         )}
-        <fieldset className="plain-fieldset" disabled={!verified}>
+        <fieldset
+          data-spt-legacy=""
+          className="plain-fieldset"
+          disabled={!verified}
+        >
           {review ? (
             <>
-              <div className="review">
-                <h2>
+              <div data-spt-legacy="" className="review">
+                <h2 data-spt-legacy="">
                   Write + verify · {mode === "expert" ? "Expert" : "Guided"} ·{" "}
                   {clients} client machine
                   {clients === 1 ? "" : "s"}
                 </h2>
-                <dl className="review-grid">
-                  <div>
-                    <dt>Maximum objects</dt>
-                    <dd>{config.object_count}</dd>
+                <dl data-spt-legacy="" className="review-grid">
+                  <div data-spt-legacy="">
+                    <dt data-spt-legacy="">Maximum objects</dt>
+                    <dd data-spt-legacy="">{config.object_count}</dd>
                   </div>
-                  <div>
-                    <dt>Object size</dt>
-                    <dd>{config.object_size}</dd>
+                  <div data-spt-legacy="">
+                    <dt data-spt-legacy="">Object size</dt>
+                    <dd data-spt-legacy="">{config.object_size}</dd>
                   </div>
-                  <div>
-                    <dt>Parallel threads</dt>
-                    <dd>{config.threads}</dd>
+                  <div data-spt-legacy="">
+                    <dt data-spt-legacy="">Parallel threads</dt>
+                    <dd data-spt-legacy="">{config.threads}</dd>
                   </div>
-                  <div>
-                    <dt>Safety time limit</dt>
-                    <dd>{config.max_runtime_seconds}s</dd>
+                  <div data-spt-legacy="">
+                    <dt data-spt-legacy="">Safety time limit</dt>
+                    <dd data-spt-legacy="">{config.max_runtime_seconds}s</dd>
                   </div>
                 </dl>
-                <p>
+                <p data-spt-legacy="">
                   Up to {fmt(totalBytes / 1048576, 2)} MiB of test data. A
                   unique prefix isolates this run. Cleanup is best effort.
                 </p>
                 {mode === "expert" && (
-                  <div className="expert-reviewed-command">
-                    <strong>CLI settings preview</strong>
-                    <pre>{expertCommand(draft)}</pre>
-                    <small>
+                  <div data-spt-legacy="" className="expert-reviewed-command">
+                    <strong data-spt-legacy="">CLI settings preview</strong>
+                    <pre data-spt-legacy="">{expertCommand(draft)}</pre>
+                    <small data-spt-legacy="">
                       The server generates the complete command and validates
                       all options.
                     </small>
                   </div>
                 )}
               </div>
-              <div className="actions">
-                <button disabled={busy} onClick={() => setReview(false)}>
+              <div data-spt-legacy="" className="actions">
+                <button
+                  data-spt-legacy=""
+                  disabled={busy}
+                  onClick={() => setReview(false)}
+                >
                   Edit settings
                 </button>
                 <button
+                  data-spt-legacy=""
                   className="primary"
                   disabled={busy || !ready}
                   onClick={() => void start()}
@@ -729,19 +808,20 @@ export function Configure({
                   {busy ? "Starting…" : "Start run"}
                 </button>
               </div>
-              <p className="form-help">
+              <p data-spt-legacy="" className="form-help">
                 Starting runs a real benchmark on the configured storage target.
               </p>
             </>
           ) : (
             <form
+              data-spt-legacy=""
               noValidate
               onSubmit={(e) => {
                 e.preventDefault();
                 if (valid) setReview(true);
               }}
             >
-              <p className="form-help">
+              <p data-spt-legacy="" className="form-help">
                 {mode === "expert"
                   ? "Expert mode: enter any values within the server's limits."
                   : "Guided mode: choose from preset sizes for short, safe runs. Switch to Expert in the top bar for custom values."}
@@ -764,22 +844,30 @@ export function Configure({
                 />
               )}
               <div
+                data-spt-legacy=""
                 className={`notice ${totalBytes > limits.expert.max_total_bytes * 0.8 ? "notice-warn" : ""}`}
               >
                 Maximum test data:{" "}
-                <strong>{fmt(totalBytes / 1048576, 2)} MiB</strong>
+                <strong data-spt-legacy="">
+                  {fmt(totalBytes / 1048576, 2)} MiB
+                </strong>
                 {mode === "expert" &&
                   ` of ${formatBytes(limits.expert.max_total_bytes)} allowed`}{" "}
                 · Unique prefix · Best effort cleanup
               </div>
-              <button className="primary" type="submit" disabled={!valid}>
+              <button
+                data-spt-legacy=""
+                className="primary"
+                type="submit"
+                disabled={!valid}
+              >
                 Review run
               </button>
             </form>
           )}
         </fieldset>
         {error && (
-          <div className="error run-error" role="alert">
+          <div data-spt-legacy="" className="error run-error" role="alert">
             {error}
           </div>
         )}
@@ -798,11 +886,13 @@ function FieldHint({
   hint: string;
 }) {
   return error ? (
-    <small id={id} className="field-error" role="alert">
+    <small data-spt-legacy="" id={id} className="field-error" role="alert">
       {error}
     </small>
   ) : (
-    <small id={id}>{hint}</small>
+    <small data-spt-legacy="" id={id}>
+      {hint}
+    </small>
   );
 }
 
@@ -825,9 +915,10 @@ function GuidedFields({
     hint: string,
     suffix = "",
   ) => (
-    <label>
+    <label data-spt-legacy="">
       {label}
       <select
+        data-spt-legacy=""
         value={config[key]}
         aria-invalid={!!errors[key]}
         aria-describedby={`guided-${key}-hint`}
@@ -836,7 +927,7 @@ function GuidedFields({
         }
       >
         {values.map((v) => (
-          <option key={v} value={v}>
+          <option data-spt-legacy="" key={v} value={v}>
             {v}
             {suffix}
           </option>
@@ -846,16 +937,17 @@ function GuidedFields({
     </label>
   );
   return (
-    <div className="form-grid">
+    <div data-spt-legacy="" className="form-grid">
       {select(
         "object_count",
         "Maximum objects",
         g.object_counts,
         "Stop after this many objects.",
       )}
-      <label>
+      <label data-spt-legacy="">
         Object size
         <select
+          data-spt-legacy=""
           value={config.object_size}
           aria-invalid={!!errors.object_size}
           aria-describedby="guided-object_size-hint"
@@ -864,7 +956,9 @@ function GuidedFields({
           }
         >
           {g.object_sizes.map((v) => (
-            <option key={v}>{v}</option>
+            <option data-spt-legacy="" key={v}>
+              {v}
+            </option>
           ))}
         </select>
         <FieldHint
@@ -910,9 +1004,10 @@ function ExpertFields({
     range: { min: number; max: number },
     hint: string,
   ) => (
-    <label>
+    <label data-spt-legacy="">
       {label}
       <input
+        data-spt-legacy=""
         type="number"
         inputMode="numeric"
         min={range.min}
@@ -929,15 +1024,21 @@ function ExpertFields({
   return (
     <>
       {showPresets && (
-        <div className="preset-chips" role="group" aria-label="Starting points">
+        <div
+          data-spt-legacy=""
+          className="preset-chips"
+          role="group"
+          aria-label="Starting points"
+        >
           {expertPresets.map((p) => (
             <button
+              data-spt-legacy=""
               type="button"
               key={p.label}
               onClick={() => setDraft(toDraft(p.options))}
             >
               {p.label}
-              <small>
+              <small data-spt-legacy="">
                 {p.options.object_count.toLocaleString("en-US")} ×{" "}
                 {p.options.object_size} · {p.options.threads} threads
               </small>
@@ -945,17 +1046,18 @@ function ExpertFields({
           ))}
         </div>
       )}
-      <div className="form-grid">
+      <div data-spt-legacy="" className="form-grid">
         {number(
           "object_count",
           "Maximum objects",
           e.object_count,
           `${e.object_count.min}–${e.object_count.max.toLocaleString("en-US")} objects.`,
         )}
-        <label>
+        <label data-spt-legacy="">
           Object size
-          <span className="size-input">
+          <span data-spt-legacy="" className="size-input">
             <input
+              data-spt-legacy=""
               type="number"
               inputMode="numeric"
               min={1}
@@ -969,6 +1071,7 @@ function ExpertFields({
               }
             />
             <select
+              data-spt-legacy=""
               value={draft.size_unit}
               aria-label="Object size unit"
               onChange={(ev) =>
@@ -976,7 +1079,9 @@ function ExpertFields({
               }
             >
               {Object.keys(sizeUnits).map((u) => (
-                <option key={u}>{u}</option>
+                <option data-spt-legacy="" key={u}>
+                  {u}
+                </option>
               ))}
             </select>
           </span>

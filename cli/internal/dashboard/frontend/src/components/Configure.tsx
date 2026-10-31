@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import type { HistoryRun, Options, RunMode, State } from "../types";
 import { defaults } from "../config";
 import { StorageConfiguration } from "./StorageConfiguration";
-import { Status } from "./Status";
 import { formatNumber as fmt } from "../utils/metrics";
 import {
   fallbackLimits,
@@ -204,7 +203,6 @@ function ExpertWorkspace({
   useEffect(() => {
     if (start !== "previous") return;
     const controller = new AbortController();
-    setHistoryMessage("Loading saved runs…");
     fetch("/api/runs", { cache: "no-store", signal: controller.signal })
       .then(async (response) =>
         readJSON(response, "Could not load saved runs."),
@@ -306,7 +304,12 @@ function ExpertWorkspace({
               key={key}
               className={`expert-start-option ${start === key ? "active" : ""}`}
               aria-pressed={start === key}
-              onClick={() => setStart(key)}
+              onClick={() => {
+                if (key === "previous" && start !== "previous") {
+                  setHistoryMessage("Loading saved runs…");
+                }
+                setStart(key);
+              }}
             >
               <strong>{name}</strong>
               <small>{detail}</small>
@@ -606,7 +609,11 @@ export function Configure({
     (parseSize(config.object_size) ?? 0) *
     (Number.isFinite(config.object_count) ? config.object_count : 0);
   // Each mode keeps its own values; a mode change returns to editing.
-  useEffect(() => setReview(false), [mode]);
+  const [previousMode, setPreviousMode] = useState(mode);
+  if (mode !== previousMode) {
+    setPreviousMode(mode);
+    setReview(false);
+  }
   const clients = state?.storage?.hosts.length ?? 1;
   const verified =
     state?.storage?.verification.status === "passed" && !storageDirty;

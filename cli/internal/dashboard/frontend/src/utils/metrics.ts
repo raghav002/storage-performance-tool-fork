@@ -1,4 +1,3 @@
-import type { Row } from "../types";
 export function numeric(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }

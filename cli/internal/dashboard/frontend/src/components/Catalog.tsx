@@ -362,7 +362,6 @@ function CatalogRow({
   );
 }
 
-
 type Artifact = {
   name: string;
   kind: string;
@@ -374,6 +373,8 @@ function RunArtifacts({ runId }: { runId: string }) {
   const [items, setItems] = useState<Artifact[] | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
+    setItems(null);
+    setError("");
     const controller = new AbortController();
     fetch(`/api/catalog/artifacts?id=${encodeURIComponent(runId)}`, {
       cache: "no-store",
@@ -382,12 +383,15 @@ function RunArtifacts({ runId }: { runId: string }) {
       .then(async (r) => {
         const body = await r.json();
         if (!r.ok) throw new Error(body.error ?? "Could not list artifacts.");
+        if (controller.signal.aborted) return;
         setItems((body.artifacts as Artifact[]) ?? []);
         setError("");
       })
       .catch((e) => {
         if (!controller.signal.aborted)
-          setError(e instanceof Error ? e.message : "Could not list artifacts.");
+          setError(
+            e instanceof Error ? e.message : "Could not list artifacts.",
+          );
       });
     return () => controller.abort();
   }, [runId]);

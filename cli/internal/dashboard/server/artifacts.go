@@ -63,6 +63,7 @@ func classifyArtifact(name string) (kind, label string, ok bool) {
 }
 
 // listCatalogArtifacts returns the downloadable files in a run folder, newest first.
+// Symlinks and files over maxArtifactBytes are omitted so the UI never offers a dead link.
 func listCatalogArtifacts(dir string) ([]catalogArtifact, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -82,6 +83,9 @@ func listCatalogArtifacts(dir string) ([]catalogArtifact, error) {
 		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
+		if info.Size() > maxArtifactBytes {
+			continue
+		}
 		out = append(out, catalogArtifact{Name: name, Kind: kind, Type: label, Size: info.Size()})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
@@ -94,7 +98,8 @@ func listCatalogArtifacts(dir string) ([]catalogArtifact, error) {
 }
 
 // resolveCatalogArtifactPath returns an absolute path inside run.dir for a basename
-// that matches an allow-listed artifact suffix. Anything else is rejected.
+// that matches an allow-listed artifact suffix. Symlinks are rejected so an
+// allow-listed name cannot be used to read a blocked file via a link.
 func resolveCatalogArtifactPath(run catalogRun, name string) (string, bool) {
 	if name == "" || name != filepath.Base(name) || strings.Contains(name, "..") || strings.ContainsAny(name, `/\`) {
 		return "", false
@@ -103,16 +108,16 @@ func resolveCatalogArtifactPath(run catalogRun, name string) (string, bool) {
 		return "", false
 	}
 	full := filepath.Join(run.dir, name)
+	info, err := os.Lstat(full)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return "", false
+	}
+	if !strings.HasPrefix(full, run.dir+string(filepath.Separator)) && full != run.dir {
+		return "", false
+	}
+	// EvalSymlinks still guards against a directory component that is a symlink.
 	resolved, err := filepath.EvalSymlinks(full)
 	if err != nil {
-		// EvalSymlinks fails when the file is missing; still check the join stays under dir.
-		if !strings.HasPrefix(full, run.dir+string(filepath.Separator)) && full != run.dir {
-			return "", false
-		}
-		info, err := os.Lstat(full)
-		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-			return "", false
-		}
 		return full, true
 	}
 	root, err := filepath.EvalSymlinks(run.dir)
@@ -120,10 +125,6 @@ func resolveCatalogArtifactPath(run catalogRun, name string) (string, bool) {
 		root = run.dir
 	}
 	if resolved != root && !strings.HasPrefix(resolved, root+string(filepath.Separator)) {
-		return "", false
-	}
-	info, err := os.Lstat(resolved)
-	if err != nil || !info.Mode().IsRegular() {
 		return "", false
 	}
 	return resolved, true
@@ -162,8 +163,8 @@ func (a *app) handleCatalogArtifact(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 404, map[string]any{keyError: "Artifact not found for this run."})
 		return
 	}
-	info, err := os.Stat(path)
-	if err != nil || !info.Mode().IsRegular() {
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		writeJSON(w, 404, map[string]any{keyError: "Artifact not found for this run."})
 		return
 	}
@@ -180,9 +181,65 @@ func (a *app) handleCatalogArtifact(w http.ResponseWriter, r *http.Request) {
 	name := filepath.Base(path)
 	w.Header().Set("Content-Type", artifactContentType(name))
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
+	if !artifactNeedsRedaction(name) {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.Copy(w, io.LimitReader(f, maxArtifactBytes))
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxArtifactBytes))
+	if err != nil {
+		writeJSON(w, 500, map[string]any{keyError: "Could not read the artifact."})
+		return
+	}
+	out := redactArtifactBytes(data)
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(out)))
 	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, io.LimitReader(f, maxArtifactBytes))
+	_, _ = w.Write(out)
+}
+
+func artifactNeedsRedaction(name string) bool {
+	lower := strings.ToLower(name)
+	switch {
+	case strings.HasSuffix(lower, ".log"), strings.HasSuffix(lower, ".txt"),
+		strings.HasSuffix(lower, ".csv"), strings.HasSuffix(lower, ".json"),
+		strings.HasSuffix(lower, ".yaml"), strings.HasSuffix(lower, ".yml"),
+		strings.HasSuffix(lower, ".xml"):
+		return true
+	default:
+		return false
+	}
+}
+
+// redactArtifactBytes applies the same secret scrubbing as the live run log,
+// line by line, so downloaded message/error logs do not leak credentials.
+func redactArtifactBytes(data []byte) []byte {
+	if len(data) == 0 {
+		return data
+	}
+	var b strings.Builder
+	b.Grow(len(data))
+	start := 0
+	for i := 0; i < len(data); i++ {
+		if data[i] != '\n' {
+			continue
+		}
+		line := string(data[start:i])
+		if strings.HasSuffix(line, "\r") {
+			line = line[:len(line)-1]
+			b.WriteString(redactLine(line))
+			b.WriteString("\r\n")
+		} else {
+			b.WriteString(redactLine(line))
+			b.WriteByte('\n')
+		}
+		start = i + 1
+	}
+	if start < len(data) {
+		line := string(data[start:])
+		b.WriteString(redactLine(line))
+	}
+	return []byte(b.String())
 }
 
 func artifactContentType(name string) string {

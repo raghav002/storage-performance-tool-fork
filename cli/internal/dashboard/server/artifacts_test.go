@@ -149,3 +149,102 @@ func TestHandleCatalogArtifactsEmpty(t *testing.T) {
 		t.Fatalf("want empty list, got %#v", arts)
 	}
 }
+
+func TestResolveCatalogArtifactPathRejectsSymlinkToSecretInsideDir(t *testing.T) {
+	a := newCatalogApp(t)
+	run, ok := a.findCatalogRun(fixtureDashboard)
+	if !ok {
+		t.Fatal("missing fixture")
+	}
+	// Symlink with an allow-listed name pointing at a blocked file in the same folder.
+	link := filepath.Join(run.dir, "probe.messages.log")
+	target := filepath.Join(run.dir, "spt_run_params.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(link) })
+	if _, ok := resolveCatalogArtifactPath(run, "probe.messages.log"); ok {
+		t.Fatal("symlink to blocked file inside run dir should be rejected")
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/catalog/artifact?id="+fixtureDashboard+"&file=probe.messages.log", nil)
+	req.Host = "127.0.0.1:8000"
+	rec := httptest.NewRecorder()
+	a.handleCatalogArtifact(rec, req)
+	if rec.Code != 404 {
+		t.Fatalf("download via in-dir symlink: status %d, want 404", rec.Code)
+	}
+}
+
+func TestHandleCatalogArtifactRedactsSecretsInLogs(t *testing.T) {
+	a := newCatalogApp(t)
+	run, ok := a.findCatalogRun(fixtureDashboard)
+	if !ok {
+		t.Fatal("missing fixture")
+	}
+	logName := "probe-secret.messages.log"
+	path := filepath.Join(run.dir, logName)
+	secretLine := "using secretKey=abc123 and aws_access_key_id=AKIAEXAMPLEKEY1234 rest of line"
+	if err := os.WriteFile(path, []byte(secretLine+"\nplain line\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(path) })
+	req := httptest.NewRequest(http.MethodGet, "/api/catalog/artifact?id="+fixtureDashboard+"&file="+logName, nil)
+	req.Host = "127.0.0.1:8000"
+	rec := httptest.NewRecorder()
+	a.handleCatalogArtifact(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "abc123") || strings.Contains(body, "AKIAEXAMPLEKEY1234") {
+		t.Fatalf("secret leaked in download: %q", body)
+	}
+	if !strings.Contains(body, "plain line") {
+		t.Fatalf("expected non-secret line preserved: %q", body)
+	}
+	if !strings.Contains(body, "[redacted]") {
+		t.Fatalf("expected redaction marker: %q", body)
+	}
+}
+
+func TestListCatalogArtifactsSkipsOversized(t *testing.T) {
+	dir := t.TempDir()
+	big := filepath.Join(dir, "create.messages.log")
+	f, err := os.Create(big)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(maxArtifactBytes + 1); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+	small := filepath.Join(dir, "create.errors.log")
+	if err := os.WriteFile(small, []byte("ok\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	items, err := listCatalogArtifacts(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, item := range items {
+		names[item.Name] = true
+	}
+	if names["create.messages.log"] {
+		t.Fatal("oversized messages log should be omitted from list")
+	}
+	if !names["create.errors.log"] {
+		t.Fatal("small errors log should still be listed")
+	}
+}
+
+func TestRedactArtifactBytes(t *testing.T) {
+	in := []byte("secretKey=hunter2\nsafe\n")
+	out := string(redactArtifactBytes(in))
+	if strings.Contains(out, "hunter2") {
+		t.Fatalf("not redacted: %q", out)
+	}
+	if !strings.Contains(out, "safe") {
+		t.Fatalf("lost safe line: %q", out)
+	}
+}

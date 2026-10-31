@@ -138,3 +138,43 @@ func TestZeroRateStillPresentNotNoData(t *testing.T) {
 		t.Fatalf("node data_status for measured zero: %#v", metrics["nodes"])
 	}
 }
+
+func TestMergeRunWarningsDedupesAndCaps(t *testing.T) {
+	const src = "live"
+	prior := []runWarning{{Code: "a", Observed: "1", Source: src}, {Code: "b", Observed: "2", Source: src}}
+	next := []runWarning{{Code: "a", Observed: "1", Source: src}, {Code: "c", Observed: "3", Source: src}}
+	got := mergeRunWarnings(prior, next)
+	if len(got) != 3 {
+		t.Fatalf("len=%d want 3: %#v", len(got), got)
+	}
+	codes := map[string]bool{}
+	for _, w := range got {
+		codes[w.Code] = true
+	}
+	if !codes["a"] || !codes["b"] || !codes["c"] {
+		t.Fatalf("codes %#v", codes)
+	}
+}
+
+func TestSaveRunWarningsMergesAcrossCalls(t *testing.T) {
+	dir := t.TempDir()
+	a := &app{stateDir: dir}
+	runID := "mt-dashboard-20261030T120000-merge"
+	const src = "live"
+	a.saveRunWarnings(runID, []runWarning{{Code: warnFleetPartial, Observed: "first", Source: src}})
+	a.saveRunWarnings(runID, []runWarning{
+		{Code: warnFleetPartial, Observed: "first", Source: src},
+		{Code: warnFailedOps, Observed: "second", Source: src},
+	})
+	got := a.loadRunWarningStructs(runID)
+	if len(got) != 2 {
+		t.Fatalf("want 2 merged warnings, got %#v", got)
+	}
+	codes := map[string]bool{}
+	for _, w := range got {
+		codes[w.Code] = true
+	}
+	if !codes[warnFleetPartial] || !codes[warnFailedOps] {
+		t.Fatalf("codes %#v", codes)
+	}
+}

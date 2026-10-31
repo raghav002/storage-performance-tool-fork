@@ -13,6 +13,7 @@ const (
 	// How old a live sample_ts may be before the dashboard labels it delayed.
 	// The live poll is ~500 ms–2 s; 10 s means several missed refreshes.
 	sampleStaleAfter = 10 * time.Second
+	maxSavedWarnings = 64
 
 	warnFleetPartial  = "fleet_partial"
 	warnNodeNoData    = "node_no_data"
@@ -292,24 +293,24 @@ func (a *app) attachWarnings(metrics map[string]any, now time.Time) map[string]a
 	return metrics
 }
 
-func (a *app) saveRunWarnings(runID string, list []runWarning) {
-	if a.stateDir == "" || !runPattern.MatchString(runID) {
-		return
+// mergeRunWarnings concatenates prior and next warnings, dropping duplicates
+// by code|host|metric|observed. Caps at maxSavedWarnings (keeps the newest tail).
+func mergeRunWarnings(prior, next []runWarning) []runWarning {
+	sink := &warningSink{seen: map[string]bool{}}
+	for _, w := range prior {
+		sink.add(w)
 	}
-	b, err := json.Marshal(list)
-	if err != nil {
-		return
+	for _, w := range next {
+		sink.add(w)
 	}
-	tmp := filepath.Join(a.stateDir, runID+".warnings.tmp")
-	path := filepath.Join(a.stateDir, runID+".warnings.json")
-	if os.WriteFile(tmp, b, 0600) != nil {
-		return
+	out := sink.out
+	if len(out) > maxSavedWarnings {
+		out = append([]runWarning(nil), out[len(out)-maxSavedWarnings:]...)
 	}
-	_ = os.Chmod(tmp, 0600)
-	_ = os.Rename(tmp, path)
+	return out
 }
 
-func (a *app) loadRunWarnings(runID string) []map[string]any {
+func (a *app) loadRunWarningStructs(runID string) []runWarning {
 	if a == nil || a.stateDir == "" || !runPattern.MatchString(runID) {
 		return nil
 	}
@@ -326,5 +327,30 @@ func (a *app) loadRunWarnings(runID string) []map[string]any {
 	if json.Unmarshal(b, &list) != nil {
 		return nil
 	}
-	return warningsAsMaps(list)
+	return list
+}
+
+func (a *app) saveRunWarnings(runID string, list []runWarning) {
+	if a.stateDir == "" || !runPattern.MatchString(runID) {
+		return
+	}
+	merged := mergeRunWarnings(a.loadRunWarningStructs(runID), list)
+	if len(merged) == 0 {
+		return
+	}
+	b, err := json.Marshal(merged)
+	if err != nil {
+		return
+	}
+	tmp := filepath.Join(a.stateDir, runID+".warnings.tmp")
+	path := filepath.Join(a.stateDir, runID+".warnings.json")
+	if os.WriteFile(tmp, b, 0600) != nil {
+		return
+	}
+	_ = os.Chmod(tmp, 0600)
+	_ = os.Rename(tmp, path)
+}
+
+func (a *app) loadRunWarnings(runID string) []map[string]any {
+	return warningsAsMaps(a.loadRunWarningStructs(runID))
 }

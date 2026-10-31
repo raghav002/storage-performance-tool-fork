@@ -713,7 +713,7 @@ function Dashboard({
                     value={formatMetric(
                       row?.interval_iops,
                       2,
-                      !row && m.is_active ? m.data_status : undefined,
+                      m.is_active ? m.data_status : undefined,
                     )}
                     unit="ops/s"
                     detail={
@@ -729,7 +729,7 @@ function Dashboard({
                     value={formatMetric(
                       row?.bandwidth_mib_s,
                       2,
-                      !row && m.is_active ? m.data_status : undefined,
+                      m.is_active ? m.data_status : undefined,
                     )}
                     unit="MiB/s"
                     detail="Data transferred per second"
@@ -740,7 +740,7 @@ function Dashboard({
                     value={formatMetric(
                       row?.p50_latency_us,
                       1,
-                      !row && m.is_active ? m.data_status : undefined,
+                      m.is_active ? m.data_status : undefined,
                     )}
                     unit="µs"
                     detail="Half of measured operations were faster"
@@ -751,9 +751,9 @@ function Dashboard({
                     value={formatMetric(
                       row?.cumulative_ops,
                       0,
-                      !row && m.is_active ? m.data_status : undefined,
+                      m.is_active ? m.data_status : undefined,
                     )}
-                    detail={`In ${phaseName(selectedPhase).toLowerCase()} phase · ${formatMetric(row?.count_failed, 0, !row && m.is_active ? m.data_status : undefined)} failed`}
+                    detail={`In ${phaseName(selectedPhase).toLowerCase()} phase · ${formatMetric(row?.count_failed, 0, m.is_active ? m.data_status : undefined)} failed`}
                     accent="orange"
                   />
                 </div>

@@ -11,4 +11,13 @@ describe("formatMetric", () => {
     expect(formatMetric(12.5, 1, "delayed")).toBe("12.5 (delayed)");
     expect(formatNumber(null)).toBe("—");
   });
+
+  it("still marks delayed when an old measurement value exists", () => {
+    // Live cards pass data_status whenever is_active, even if a stale row remains.
+    const rowValue = 12.5;
+    const isActive = true;
+    const dataStatus = "delayed" as const;
+    const status = isActive ? dataStatus : undefined;
+    expect(formatMetric(rowValue, 1, status)).toBe("12.5 (delayed)");
+  });
 });

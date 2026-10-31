@@ -76,6 +76,7 @@ type app struct {
 	storageFile    string
 	verifyFile     string
 	endpointClient *http.Client
+	verifyNodes    verificationRunner
 	storageMu      sync.Mutex
 	storage        storageConfig
 	verification   verification

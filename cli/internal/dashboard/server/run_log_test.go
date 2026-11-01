@@ -113,7 +113,6 @@ func TestLogEndpointsRejectForeignHost(t *testing.T) {
 	}
 }
 
-
 func TestRedactLineCLIFlagAndBareSecret(t *testing.T) {
 	cases := []struct {
 		in, wantSub, mustGone string

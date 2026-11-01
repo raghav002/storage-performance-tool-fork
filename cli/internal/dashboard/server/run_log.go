@@ -20,7 +20,7 @@ const (
 )
 
 var (
-	ansiPattern   = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
+	ansiPattern = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
 	// Also covers --storage-auth-secret=… and bare secret: … / secret= … forms.
 	secretPattern = regexp.MustCompile(`(?i)(--[\w-]*secret[\w-]*|(?:access|secret)[_-]?key(?:[_-]?id)?|password|passwd|token|authorization|credentials?|secret)(["']?\s*[:=]\s*|\s+)("[^"]*"|'[^']*'|\S+)`)
 	levelWords    = map[string]string{"TRACE": "debug", "DEBUG": "debug", "INFO": levelInfo, "WARN": levelWarn, "WARNING": levelWarn, "ERROR": levelError, "FATAL": levelError, "SEVERE": levelError}

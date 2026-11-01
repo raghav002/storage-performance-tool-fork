@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -134,6 +135,24 @@ func validateEndpoint(candidate string) (endpoint, label string, ok bool) {
 	u, err := url.Parse(candidate)
 	if err != nil || (strings.ToLower(u.Scheme) != "http" && strings.ToLower(u.Scheme) != "https") || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.ContainsAny(candidate, " \t\r\n") {
 		return "", "", false
+	}
+	// url.Parse accepts out-of-range ports and malformed DNS names. Reject
+	// those before saving settings or starting node verification.
+	if addr, err := netip.ParseAddr(u.Hostname()); err == nil {
+		if addr.Is6() && !strings.HasPrefix(u.Host, "[") {
+			return "", "", false
+		}
+	} else if validateHostEntry(u.Hostname()) != nil {
+		return "", "", false
+	}
+	if strings.HasSuffix(u.Host, ":") {
+		return "", "", false
+	}
+	if port := u.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return "", "", false
+		}
 	}
 	return candidate, u.Host, true
 }

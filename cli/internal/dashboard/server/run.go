@@ -39,7 +39,7 @@ func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 403, map[string]any{keyError: "Run requests must come from this dashboard through its SSH tunnel."})
 		return
 	}
-	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/json") {
+	if !isJSONRequest(r) {
 		writeJSON(w, 415, map[string]any{keyError: "Send JSON dashboard settings."})
 		return
 	}

@@ -93,19 +93,26 @@ func annotateNodeDataStatus(row map[string]any, now time.Time) {
 }
 
 type warningSink struct {
-	out  []runWarning
-	seen map[string]bool
+	out   []runWarning
+	index map[string]int
 }
 
+// add keeps one slot per code|host|metric so age-changing sample_delayed
+// text refreshes in place instead of filling maxSavedWarnings and evicting
+// earlier distinct warnings.
 func (s *warningSink) add(w runWarning) {
-	key := w.Code + "|" + w.Host + "|" + w.Metric + "|" + w.Observed
-	if s.seen[key] {
-		return
-	}
-	s.seen[key] = true
 	if w.Severity == "" {
 		w.Severity = levelWarn
 	}
+	key := w.Code + "|" + w.Host + "|" + w.Metric
+	if s.index == nil {
+		s.index = map[string]int{}
+	}
+	if i, ok := s.index[key]; ok {
+		s.out[i] = w
+		return
+	}
+	s.index[key] = len(s.out)
 	s.out = append(s.out, w)
 }
 
@@ -245,7 +252,7 @@ func buildRunWarnings(metrics map[string]any, now time.Time) []runWarning {
 	if metrics == nil {
 		return nil
 	}
-	sink := &warningSink{seen: map[string]bool{}}
+	sink := &warningSink{index: map[string]int{}}
 	add := sink.add
 	appendFleetPartialWarning(metrics, add)
 	active, _ := metrics[keyIsActive].(bool)
@@ -293,10 +300,10 @@ func (a *app) attachWarnings(metrics map[string]any, now time.Time) map[string]a
 	return metrics
 }
 
-// mergeRunWarnings concatenates prior and next warnings, dropping duplicates
-// by code|host|metric|observed. Caps at maxSavedWarnings (keeps the newest tail).
+// mergeRunWarnings concatenates prior and next warnings, keeping one entry per
+// code|host|metric (Observed refreshes in place). Caps at maxSavedWarnings (newest tail).
 func mergeRunWarnings(prior, next []runWarning) []runWarning {
-	sink := &warningSink{seen: map[string]bool{}}
+	sink := &warningSink{index: map[string]int{}}
 	for _, w := range prior {
 		sink.add(w)
 	}

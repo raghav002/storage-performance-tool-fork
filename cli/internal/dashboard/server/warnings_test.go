@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -176,5 +177,48 @@ func TestSaveRunWarningsMergesAcrossCalls(t *testing.T) {
 	}
 	if !codes[warnFleetPartial] || !codes[warnFailedOps] {
 		t.Fatalf("codes %#v", codes)
+	}
+}
+
+func TestMergeRunWarningsDoesNotLetDelayFloodEvictOthers(t *testing.T) {
+	const src = "live"
+	prior := make([]runWarning, 0, 20)
+	for i := 0; i < 20; i++ {
+		prior = append(prior, runWarning{Code: "stable-" + strconv.Itoa(i), Observed: "x", Source: src})
+	}
+	next := make([]runWarning, 0, maxSavedWarnings+5)
+	for i := 0; i < maxSavedWarnings+5; i++ {
+		next = append(next, runWarning{
+			Code:     warnSampleDelayed,
+			Observed: "Latest live metrics timestamp is T (" + strconv.Itoa(i) + "s ago).",
+			Source:   src,
+			Metric:   "updated_at",
+		})
+	}
+	got := mergeRunWarnings(prior, next)
+	codes := map[string]bool{}
+	for _, w := range got {
+		codes[w.Code] = true
+	}
+	for i := 0; i < 20; i++ {
+		if !codes["stable-"+strconv.Itoa(i)] {
+			t.Fatalf("stable-%d evicted by delay flood; len=%d got=%#v", i, len(got), got)
+		}
+	}
+	if !codes[warnSampleDelayed] {
+		t.Fatalf("missing delay warning: %#v", got)
+	}
+	if len(got) != 21 {
+		t.Fatalf("len=%d want 21 (20 stable + 1 coalesced delay)", len(got))
+	}
+	var delayObserved string
+	for _, w := range got {
+		if w.Code == warnSampleDelayed {
+			delayObserved = w.Observed
+		}
+	}
+	wantObs := "Latest live metrics timestamp is T (" + strconv.Itoa(maxSavedWarnings+4) + "s ago)."
+	if delayObserved != wantObs {
+		t.Fatalf("delay Observed not refreshed to latest age: %q", delayObserved)
 	}
 }

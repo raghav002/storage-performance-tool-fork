@@ -6,6 +6,7 @@ import { formatNumber as fmt } from "../utils/metrics";
 import {
   catalogQuery,
   maxCompare,
+  previousRun,
   runSettings,
   toggleSelection,
   type CatalogFilters,
@@ -29,6 +30,7 @@ export function Catalog({
     status: "",
   });
   const [data, setData] = useState<CatalogList | null>(null);
+  const [allRuns, setAllRuns] = useState<CatalogRun[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
@@ -64,6 +66,25 @@ export function Catalog({
       clearTimeout(timer);
     };
   }, [filters, version]);
+  // Unfiltered snapshot for "Compare with previous" so a status/source filter
+  // cannot hide the next older complete match.
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(catalogQuery({ q: "", source: "", status: "" }), {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (r) => {
+        const body = await r.json();
+        if (!r.ok) throw new Error(body.error ?? "Could not read results.");
+        if (controller.signal.aborted) return;
+        setAllRuns((body as CatalogList).runs ?? []);
+      })
+      .catch(() => {
+        /* filtered list still works; previous-run just falls back below */
+      });
+    return () => controller.abort();
+  }, [version]);
   const effectiveBaseline = selected.includes(baseline)
     ? baseline
     : (selected[0] ?? "");
@@ -139,7 +160,11 @@ export function Catalog({
         </label>
         <p className="form-help">
           Select 2–{maxCompare} runs to compare; the baseline is the run the
-          others are checked against.
+          others are checked against. "Compare with previous" pairs this run
+          with the next older complete run that shares the same workload, object
+          size, threads, and (when recorded) object count, host count, and S3
+          driver — not an SPT product version. Falls back to the next older
+          complete run when no shape match exists.
         </p>
       </section>
       {error && (
@@ -179,11 +204,18 @@ export function Catalog({
                     full={selected.length >= maxCompare}
                     isBaseline={effectiveBaseline === run.id}
                     open={open === run.id}
+                    previous={previousRun(
+                      allRuns.length ? allRuns : runs,
+                      run.id,
+                    )}
                     onToggle={() =>
                       setSelected((s) => toggleSelection(s, run.id))
                     }
                     onBaseline={() => setBaseline(run.id)}
                     onOpen={() => setOpen(open === run.id ? "" : run.id)}
+                    onComparePrevious={(prevId) =>
+                      onCompare([run.id, prevId], prevId)
+                    }
                   />
                 ))}
               </tbody>
@@ -214,18 +246,22 @@ function CatalogRow({
   full,
   isBaseline,
   open,
+  previous,
   onToggle,
   onBaseline,
   onOpen,
+  onComparePrevious,
 }: {
   run: CatalogRun;
   checked: boolean;
   full: boolean;
   isBaseline: boolean;
   open: boolean;
+  previous: CatalogRun | null;
   onToggle: () => void;
   onBaseline: () => void;
   onOpen: () => void;
+  onComparePrevious: (prevId: string) => void;
 }) {
   return (
     <>
@@ -280,10 +316,19 @@ function CatalogRow({
             <span className="subtle">No phase totals</span>
           )}
         </td>
-        <td>
+        <td className="catalog-row-actions">
           <button aria-expanded={open} onClick={onOpen}>
             {open ? "Hide" : "Details"}
           </button>
+          {run.status === "complete" && previous && (
+            <button
+              type="button"
+              title={`Compare with ${previous.name || previous.id}`}
+              onClick={() => onComparePrevious(previous.id)}
+            >
+              Compare with previous
+            </button>
+          )}
         </td>
       </tr>
       {open && (
@@ -348,6 +393,7 @@ function CatalogRow({
                 </table>
               </div>
             )}
+            <RunArtifacts runId={run.id} />
             {run.status !== "malformed" && (
               <RunLog
                 base={`/api/catalog/log?id=${encodeURIComponent(run.id)}`}
@@ -359,4 +405,89 @@ function CatalogRow({
       )}
     </>
   );
+}
+
+type Artifact = {
+  name: string;
+  kind: string;
+  type: string;
+  size: number;
+};
+
+function RunArtifacts({ runId }: { runId: string }) {
+  const [items, setItems] = useState<Artifact[] | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    setItems(null);
+    setError("");
+    const controller = new AbortController();
+    fetch(`/api/catalog/artifacts?id=${encodeURIComponent(runId)}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (r) => {
+        const body = await r.json();
+        if (!r.ok) throw new Error(body.error ?? "Could not list artifacts.");
+        if (controller.signal.aborted) return;
+        setItems((body.artifacts as Artifact[]) ?? []);
+        setError("");
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted)
+          setError(
+            e instanceof Error ? e.message : "Could not list artifacts.",
+          );
+      });
+    return () => controller.abort();
+  }, [runId]);
+  return (
+    <section className="catalog-artifacts" aria-label="Run artifacts">
+      <h3>Artifacts</h3>
+      <p className="form-help">
+        CSV, XML, and log files SPT left in this run folder. Only files the
+        dashboard recognizes are listed.
+      </p>
+      {error && (
+        <div className="error" role="alert">
+          {error}
+        </div>
+      )}
+      {items === null && !error ? (
+        <p className="subtle">Loading artifacts…</p>
+      ) : items && items.length === 0 ? (
+        <div className="history-empty catalog-artifacts-empty">
+          <h4>No downloadable artifacts</h4>
+          <p>
+            This run folder has no CSV, XML, or log files the dashboard can
+            offer. Engine log text may also be unavailable for the same reason.
+          </p>
+        </div>
+      ) : (
+        <ul className="artifact-list">
+          {(items ?? []).map((a) => (
+            <li key={a.name}>
+              <a
+                className="button-link"
+                href={`/api/catalog/artifact?id=${encodeURIComponent(runId)}&file=${encodeURIComponent(a.name)}`}
+                download={a.name}
+              >
+                Download {a.type}
+              </a>
+              <span className="artifact-meta">
+                <span className="artifact-kind">{a.kind.toUpperCase()}</span>
+                <span className="subtle">{a.name}</span>
+                <span className="subtle">{formatBytes(a.size)}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MiB`;
 }

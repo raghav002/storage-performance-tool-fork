@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Row, RunMode, State } from "./types";
 import { useSavedRun, useServerState } from "./api/queries";
 import { MetricCard } from "./components/MetricCard";
@@ -76,10 +76,6 @@ export default function App() {
   const received = server.dataUpdatedAt
     ? new Date(server.dataUpdatedAt).toISOString()
     : "";
-  const { refetch } = server;
-  const refresh = useCallback(async () => {
-    await refetch();
-  }, [refetch]);
   const [page, setPage] = useState<
     "dashboard" | "configure" | "history" | "connect" | "catalog" | "compare"
   >("configure");
@@ -301,10 +297,7 @@ export default function App() {
             <ConnectRun
               state={state}
               offline={!!error}
-              onConnected={async () => {
-                await refresh();
-                showDashboard();
-              }}
+              onConnected={showDashboard}
             />
           ) : page === "catalog" ? (
             <Catalog
@@ -333,11 +326,7 @@ export default function App() {
               state={state}
               mode={mode}
               offline={!!error}
-              onRefresh={refresh}
-              onStarted={async () => {
-                await refresh();
-                showDashboard();
-              }}
+              onStarted={showDashboard}
             />
           ) : (
             <>

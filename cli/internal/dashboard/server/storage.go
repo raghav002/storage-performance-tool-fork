@@ -43,6 +43,14 @@ type storageConfig struct {
 	Endpoint string   `json:"endpoint"`
 }
 
+// verificationRunner keeps the dashboard's report handling independent of how
+// node checks are executed. A nil app runner uses the real CLI verifier.
+type verificationRunner func([]*hostparse.HostInfo, verifyapi.Config) *verifyapi.Report
+
+func runHostVerification(hosts []*hostparse.HostInfo, cfg verifyapi.Config) *verifyapi.Report {
+	return verifyapi.NewVerifier(hosts, cfg).VerifyAll()
+}
+
 type verifyCheck struct {
 	Name    string `json:"name"`
 	Status  string `json:"status"`
@@ -264,6 +272,21 @@ func (a *app) verified(target map[string]any) bool {
 	return a.currentVerification(target).Status == verifyPassed
 }
 
+// nodesVerified reports whether every client machine passed the last verification
+// of the current configuration, ignoring the S3 endpoint check (mock runs need no S3).
+func (a *app) nodesVerified(target map[string]any) bool {
+	v := a.currentVerification(target)
+	if v.Status == "idle" || v.Status == verifyRunning || len(v.Nodes) == 0 {
+		return false
+	}
+	for _, n := range v.Nodes {
+		if n.Status != verifyPassed {
+			return false
+		}
+	}
+	return true
+}
+
 func (a *app) storageState(target map[string]any) map[string]any {
 	cfg := a.storageSnapshot()
 	return map[string]any{"hosts": cfg.Hosts, "endpoint": cfg.Endpoint, "max_hosts": maxHosts, "verification": a.currentVerification(target)}
@@ -420,14 +443,18 @@ func (a *app) runVerificationAPI(hosts []string) (string, error) {
 	if stopping {
 		return "", context.Canceled
 	}
-	report := verifyapi.NewVerifier(parsed, verifyapi.Config{
+	run := a.verifyNodes
+	if run == nil {
+		run = runHostVerification
+	}
+	report := run(parsed, verifyapi.Config{
 		NetworkMode:  constants.DefaultNetworkMode,
 		APIPort:      constants.SptAPIPortInt,
 		RMIPortStart: constants.DefaultRMIPortStart,
 		RMIPortCount: constants.DefaultRMIPortCount,
 		MinHosts:     len(parsed),
 		ShowProgress: false,
-	}).VerifyAll()
+	})
 	index := make(map[string]int, len(hosts))
 	for i, host := range hosts {
 		index[strings.ToLower(hostAddress(host))] = i

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import type { HistoryRun, Options, RunMode, State } from "../types";
+import type { Driver, HistoryRun, Options, RunMode, State } from "../types";
 import { defaults } from "../config";
 import { StorageConfiguration } from "./StorageConfiguration";
 import { formatNumber as fmt } from "../utils/metrics";
+import { driverReadiness } from "../utils/driver";
 import {
   fallbackLimits,
   readJSON,
@@ -155,9 +156,10 @@ function parseExpertCommand(
   return result;
 }
 
-function expertCommand(draft: ExpertDraft): string {
+function expertCommand(draft: ExpertDraft, driver: Driver): string {
   const opts = fromDraft(draft);
-  return `spt run write-verify --object-count ${opts.object_count} --object-size ${opts.object_size} --threads ${opts.threads} --auto-terminate-seconds ${opts.max_runtime_seconds}`;
+  const workload = driver === "mock" ? "mock" : "write-verify";
+  return `spt run ${workload} --object-count ${opts.object_count} --object-size ${opts.object_size} --threads ${opts.threads} --auto-terminate-seconds ${opts.max_runtime_seconds}`;
 }
 
 function ExpertWorkspace({
@@ -167,6 +169,7 @@ function ExpertWorkspace({
   limits,
   verified,
   clients,
+  driver,
 }: {
   draft: ExpertDraft;
   setDraft: (d: ExpertDraft) => void;
@@ -174,7 +177,9 @@ function ExpertWorkspace({
   limits: NonNullable<State["limits"]>;
   verified: boolean;
   clients: number;
+  driver: Driver;
 }) {
+  const workloadName = driver === "mock" ? "Mock driver" : "Write + verify";
   const [start, setStart] = useState<ExpertStart>("new");
   const [profiles, setProfiles] = useState(readExpertProfiles);
   const [chosenProfile, setChosenProfile] = useState("");
@@ -484,7 +489,7 @@ function ExpertWorkspace({
           className="expert-area-heading expert-essentials-heading"
         >
           <strong data-spt-legacy="">
-            Write + verify · Essential settings
+            {workloadName} · Essential settings
           </strong>
           <span data-spt-legacy="">
             The current dashboard API supports this workload and these four run
@@ -546,10 +551,14 @@ function ExpertWorkspace({
         <span data-spt-legacy="" className="eyebrow">
           CONFIGURATION SUMMARY
         </span>
-        <h3 data-spt-legacy="">Write + verify</h3>
+        <h3 data-spt-legacy="">{workloadName}</h3>
         <span data-spt-legacy="" className="expert-summary-sub">
           {clients} client machine{clients === 1 ? "" : "s"} ·{" "}
-          {verified ? "Storage verified" : "Storage not verified"}
+          {driver === "mock"
+            ? "No storage used"
+            : verified
+              ? "Storage verified"
+              : "Storage not verified"}
         </span>
         <dl data-spt-legacy="">
           <div data-spt-legacy="">
@@ -603,12 +612,13 @@ function ExpertWorkspace({
           <summary data-spt-legacy="">Preview CLI settings</summary>
           <pre data-spt-legacy="">
             {valid
-              ? expertCommand(draft)
+              ? expertCommand(draft, driver)
               : "Correct the settings to generate a command preview."}
           </pre>
           <small data-spt-legacy="">
-            The Go backend adds storage credentials, safe flags and the results
-            directory.
+            {driver === "mock"
+              ? "The Go backend adds the client machines, safe flags and the results directory. No storage credentials are passed."
+              : "The Go backend adds storage credentials, safe flags and the results directory."}
           </small>
         </details>
         <div data-spt-legacy="" className="expert-save">
@@ -660,10 +670,13 @@ export function Configure({
     [review, setReview] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [storageDirty, setStorageDirty] = useState(false);
+    [storageDirty, setStorageDirty] = useState(false),
+    [driver, setDriver] = useState<Driver>("s3");
   const limits = state?.limits ?? fallbackLimits;
-  const config: Options =
-    mode === "expert" ? fromDraft(draft) : { ...guided, mode: "guided" };
+  const config: Options = {
+    ...(mode === "expert" ? fromDraft(draft) : { ...guided, mode: "guided" }),
+    ...(driver === "mock" ? { driver } : {}),
+  };
   const errors: OptionErrors = validateOptions(config, limits);
   const valid = Object.keys(errors).length === 0;
   const totalBytes =
@@ -676,12 +689,15 @@ export function Configure({
     setReview(false);
   }
   const clients = state?.storage?.hosts.length ?? 1;
-  const verified =
-    state?.storage?.verification.status === "passed" && !storageDirty;
+  const { verified, targetReady } = driverReadiness(
+    driver,
+    state,
+    storageDirty,
+  );
   const ready =
-    !!state?.target.ready &&
+    targetReady &&
     !offline &&
-    state.job?.status !== "running" &&
+    state?.job?.status !== "running" &&
     verified &&
     valid;
   async function start() {
@@ -740,9 +756,56 @@ export function Configure({
         <h2 data-spt-legacy="">
           {review ? "Review your run" : "Workload configuration"}
         </h2>
+        <div
+          data-spt-legacy=""
+          className="driver-switch"
+          role="radiogroup"
+          aria-label="Storage driver"
+        >
+          {(
+            [
+              [
+                "s3",
+                "S3 write + verify",
+                "Writes, reads back, and cleans up objects in the configured bucket.",
+              ],
+              [
+                "mock",
+                "Mock driver",
+                "Runs SPT's mock storage driver. No S3 endpoint or credentials are used; for smoke tests only.",
+              ],
+            ] as const
+          ).map(([value, label, help]) => (
+            <label data-spt-legacy="" key={value} className="check-label">
+              <input
+                data-spt-legacy=""
+                type="radio"
+                name="driver"
+                value={value}
+                checked={driver === value}
+                disabled={busy}
+                onChange={() => {
+                  setDriver(value);
+                  setReview(false);
+                }}
+              />
+              <div data-spt-legacy="">
+                <strong data-spt-legacy="">{label}</strong>
+                <p data-spt-legacy="">{help}</p>
+              </div>
+            </label>
+          ))}
+        </div>
         {!verified && (
           <div data-spt-legacy="" className="notice">
-            Verify the storage configuration to unlock workload settings.
+            {driver === "mock"
+              ? "Verify the client machines to unlock workload settings. The S3 endpoint check is not needed for a mock run."
+              : "Verify the storage configuration to unlock workload settings."}
+          </div>
+        )}
+        {driver === "mock" && !!state?.target.mock_reasons?.length && (
+          <div data-spt-legacy="" className="notice notice-warn">
+            {state.target.mock_reasons.join(" ")}
           </div>
         )}
         <fieldset
@@ -754,8 +817,9 @@ export function Configure({
             <>
               <div data-spt-legacy="" className="review">
                 <h2 data-spt-legacy="">
-                  Write + verify · {mode === "expert" ? "Expert" : "Guided"} ·{" "}
-                  {clients} client machine
+                  {driver === "mock" ? "Mock driver" : "Write + verify"} ·{" "}
+                  {mode === "expert" ? "Expert" : "Guided"} · {clients} client
+                  machine
                   {clients === 1 ? "" : "s"}
                 </h2>
                 <dl data-spt-legacy="" className="review-grid">
@@ -776,14 +840,21 @@ export function Configure({
                     <dd data-spt-legacy="">{config.max_runtime_seconds}s</dd>
                   </div>
                 </dl>
-                <p data-spt-legacy="">
-                  Up to {fmt(totalBytes / 1048576, 2)} MiB of test data. A
-                  unique prefix isolates this run. Cleanup is best effort.
-                </p>
+                {driver === "mock" ? (
+                  <p data-spt-legacy="">
+                    Mock run: no data is written to S3. Results show SPT's mock
+                    driver, not storage performance.
+                  </p>
+                ) : (
+                  <p data-spt-legacy="">
+                    Up to {fmt(totalBytes / 1048576, 2)} MiB of test data. A
+                    unique prefix isolates this run. Cleanup is best effort.
+                  </p>
+                )}
                 {mode === "expert" && (
                   <div data-spt-legacy="" className="expert-reviewed-command">
                     <strong data-spt-legacy="">CLI settings preview</strong>
-                    <pre data-spt-legacy="">{expertCommand(draft)}</pre>
+                    <pre data-spt-legacy="">{expertCommand(draft, driver)}</pre>
                     <small data-spt-legacy="">
                       The server generates the complete command and validates
                       all options.
@@ -809,7 +880,9 @@ export function Configure({
                 </button>
               </div>
               <p data-spt-legacy="" className="form-help">
-                Starting runs a real benchmark on the configured storage target.
+                {driver === "mock"
+                  ? "Starting runs SPT with the mock driver on the verified client machines."
+                  : "Starting runs a real benchmark on the configured storage target."}
               </p>
             </>
           ) : (
@@ -834,6 +907,7 @@ export function Configure({
                   limits={limits}
                   verified={verified}
                   clients={clients}
+                  driver={driver}
                 />
               ) : (
                 <GuidedFields

@@ -60,14 +60,26 @@ func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target := a.targetConfiguration()
-	if target["ready"] != true {
-		reasons, _ := target["reasons"].([]string)
-		writeJSON(w, 503, map[string]any{keyError: "SPT is not ready: " + strings.Join(reasons, " ")})
-		return
-	}
-	if !a.verified(target) {
-		writeJSON(w, 409, map[string]any{keyError: "Verify the storage configuration before starting a run."})
-		return
+	if opts.Driver == driverMock {
+		// The mock driver never contacts S3, so only the client machines must verify.
+		if reasons := a.mockReasons(); len(reasons) > 0 {
+			writeJSON(w, 503, map[string]any{keyError: "SPT is not ready: " + strings.Join(reasons, " ")})
+			return
+		}
+		if !a.nodesVerified(target) {
+			writeJSON(w, 409, map[string]any{keyError: "Verify the client machines before starting a mock run."})
+			return
+		}
+	} else {
+		if target["ready"] != true {
+			reasons, _ := target["reasons"].([]string)
+			writeJSON(w, 503, map[string]any{keyError: "SPT is not ready: " + strings.Join(reasons, " ")})
+			return
+		}
+		if !a.verified(target) {
+			writeJSON(w, 409, map[string]any{keyError: "Verify the storage configuration before starting a run."})
+			return
+		}
 	}
 	a.mu.Lock()
 	if a.stopping || a.verifying {
@@ -127,23 +139,23 @@ func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 	go func() { defer close(drained); drainOutput(stdout, logPath) }()
 	started := time.Now().UTC()
 	job := map[string]any{keyRunID: runID, keyStatus: jobRunning, "created_at": started.Format(time.RFC3339Nano), keyStartedAt: started.Format(time.RFC3339Nano), "started_epoch": float64(started.UnixNano()) / 1e9, "pid": cmd.Process.Pid, "returncode": nil, keyOptions: opts, "prefix": "dashboard/" + runID + "/", "results_dir": runDir, "log_file": logPath, keyMessage: "SPT workload started on the configured environment.", keyPhase: "SPT setup"}
+	if err := a.writeState(job); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		unlockClose(lock)
+		_ = os.RemoveAll(runDir)
+		a.mu.Unlock()
+		writeJSON(w, 500, map[string]any{keyError: "Could not save dashboard run state."})
+		return
+	}
+	// Publish the new run only after saving it. A failed save must preserve
+	// the previous job and its live history rather than leave a phantom run.
 	a.activeJob = job
 	a.activeCmd = cmd
 	a.activeLock = lock
 	a.liveRunID = ""
 	a.liveSamples = nil
 	a.liveSignature = ""
-	if err := a.writeState(job); err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		unlockClose(lock)
-		a.activeCmd = nil
-		a.activeLock = nil
-		_ = os.RemoveAll(runDir)
-		a.mu.Unlock()
-		writeJSON(w, 500, map[string]any{keyError: "Could not save dashboard run state."})
-		return
-	}
 	a.processes.Add(2)
 	a.mu.Unlock()
 	go a.watchProcess(runID, cmd, lock, drained)
@@ -163,6 +175,9 @@ func ensureEOF(dec *json.Decoder) error {
 }
 
 func (a *app) validateOptions(o options) error {
+	if o.Driver != "" && o.Driver != driverS3 && o.Driver != driverMock {
+		return userError("Choose the S3 or mock storage driver.")
+	}
 	switch o.Mode {
 	case "", modeGuided:
 		return a.validateGuided(o)
@@ -253,6 +268,10 @@ func unlockClose(f *os.File) {
 }
 
 func (a *app) buildArgv(runDir, runID string, o options, target map[string]any) []string {
+	if o.Driver == driverMock {
+		// "spt run mock" selects the dummy-mock driver; it takes no endpoint, bucket, or credentials.
+		return []string{a.sptBin, "run", "mock", "--headless", "--object-count", strconv.Itoa(o.ObjectCount), "--object-size", o.ObjectSize, "--threads", strconv.Itoa(o.Threads), "--test-hosts", targetHosts(target), "--service-threads", strconv.Itoa(o.Threads), "--auto-terminate-seconds", strconv.Itoa(o.MaxRuntimeSeconds), "--label", sourceDashboard, "--results-dir", runDir}
+	}
 	return []string{a.sptBin, "run", driverWriteVerify, "--headless", "--endpoints", fmt.Sprint(target["endpoint"]), "--bucket", fmt.Sprint(target["bucket"]), "--prefix", "dashboard/" + runID + "/", "--object-count", strconv.Itoa(o.ObjectCount), "--object-size", o.ObjectSize, "--threads", strconv.Itoa(o.Threads), "--test-hosts", targetHosts(target), "--service-threads", strconv.Itoa(o.Threads), "--auto-terminate-seconds", strconv.Itoa(o.MaxRuntimeSeconds), "--s3-driver", "default", "--auth-version", "4", "--object-data-compressibility", "0", "--object-data-dedupable=true", "--cleanup", "--label", "dashboard", "--results-dir", runDir}
 }
 
@@ -261,6 +280,12 @@ func (a *app) childEnvironment(o options, target map[string]any) []string {
 	set := map[string]string{"S3_ENDPOINT": fmt.Sprint(target["endpoint"]), "S3_ENDPOINTS": fmt.Sprint(target["endpoint"]), "S3_BUCKET": fmt.Sprint(target["bucket"]), "HOSTS": targetHosts(target), "THREADS": strconv.Itoa(o.Threads), "SPT_ENGINE_OVERRIDES": "", "SPT_SERVICE_THREADS": strconv.Itoa(o.Threads), "SPT_S3_DRIVER": "default", "SPT_IMAGE": "", "SPT_SKIP_IMAGE_PULL": "false", "SPT_OBJECT_DATA_COMPRESSIBILITY": "0", "SPT_OBJECT_DATA_DEDUPABLE": "true", "SPT_DEFER_VERIFICATION": "false", "SPT_CHECKSUM": "", "AWS_EC2_METADATA_DISABLED": "true"}
 	for k, v := range set {
 		values[k] = v
+	}
+	if o.Driver == driverMock {
+		// A mock run has no storage target, so it never receives S3 settings or credentials.
+		for _, k := range []string{"S3_ENDPOINT", "S3_ENDPOINTS", "S3_BUCKET", "S3_ACCESS_KEY", "S3_SECRET_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"} {
+			delete(values, k)
+		}
 	}
 	return envList(values)
 }
@@ -353,5 +378,18 @@ func (a *app) targetConfiguration() map[string]any {
 	if _, err := exec.LookPath("docker"); err != nil {
 		reasons = append(reasons, "Docker is not installed on this VM.")
 	}
-	return map[string]any{"ready": len(reasons) == 0, "reasons": reasons, "endpoint": endpoint, "endpoint_label": label, "bucket": bucket, "credentials_configured": creds, "endpoint_source": source, "hosts": saved.Hosts}
+	mockReasons := a.mockReasons()
+	return map[string]any{"ready": len(reasons) == 0, "reasons": reasons, "mock_ready": len(mockReasons) == 0, "mock_reasons": mockReasons, "endpoint": endpoint, "endpoint_label": label, "bucket": bucket, "credentials_configured": creds, "endpoint_source": source, "hosts": saved.Hosts}
+}
+
+// mockReasons lists what a mock-driver run still needs: only SPT and Docker on this VM.
+func (a *app) mockReasons() []string {
+	reasons := []string{}
+	if !executable(a.sptBin) {
+		reasons = append(reasons, "SPT is not executable on this VM.")
+	}
+	if _, err := exec.LookPath("docker"); err != nil {
+		reasons = append(reasons, "Docker is not installed on this VM.")
+	}
+	return reasons
 }

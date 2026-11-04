@@ -562,11 +562,7 @@ function ExpertWorkspace({
                   <span key={label}>{label}</span>
                 ))}
                 {advancedChanged.map((f) => (
-                  <span
-                    key={f.name}
-                    className="preview"
-                    title="Preview only: not applied to dashboard runs"
-                  >
+                  <span key={f.name} className="preview">
                     {f.label}
                   </span>
                 ))}

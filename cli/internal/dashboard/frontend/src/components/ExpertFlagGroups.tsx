@@ -34,7 +34,7 @@ function FlagControl({
   invalid: boolean;
   onChange: (v: FlagValue) => void;
 }) {
-  const describedBy = `${id}-hint`;
+  const describedBy = invalid ? `${id}-error` : `${id}-default`;
   if (flag.kind === "bool")
     return (
       <span className="expert-toggle">
@@ -95,6 +95,7 @@ function FlagControl({
   );
 }
 
+// The default as shown to users: "On"/"Off", or what an empty value means.
 const defaultText = (f: FlagDef) =>
   typeof f.default === "boolean"
     ? f.default
@@ -199,7 +200,6 @@ export function ExpertFlagGroups({
                               type="button"
                               className="expert-flag-reset"
                               aria-label={`Reset ${f.label}`}
-                              title={`Reset to ${defaultText(f)}`}
                               disabled={!modified}
                               onClick={() => set(f.name, f.default)}
                             >
@@ -208,15 +208,15 @@ export function ExpertFlagGroups({
                           </div>
                           {errors[f.name] ? (
                             <small
-                              id={`${id}-hint`}
+                              id={`${id}-error`}
                               className="field-error"
                               role="alert"
                             >
                               {errors[f.name]}
                             </small>
                           ) : (
-                            <small id={`${id}-hint`}>
-                              {f.help} Default: {defaultText(f)}.
+                            <small id={`${id}-default`}>
+                              Default: {defaultText(f)}
                             </small>
                           )}
                         </div>

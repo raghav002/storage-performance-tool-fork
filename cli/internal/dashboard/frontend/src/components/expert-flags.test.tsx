@@ -83,6 +83,17 @@ describe("expert flag groups", () => {
     const data = group("Object data");
     expect(data.open).toBe(false);
     expect(within(data).getByText("Preview only")).toBeTruthy();
+    // Groups keep their description; each flag shows only its default.
+    expect(
+      within(data).getByText(/What the written bytes look like/),
+    ).toBeTruthy();
+    expect(
+      within(data)
+        .getAllByText(/^Default:/)
+        .map((el) => el.textContent),
+    ).toEqual(["Default: 0", "Default: On", "Default: Off"]);
+    expect(within(data).queryByText(/zero-filled/)).toBeNull();
+    expect(data.querySelector("[title]")).toBeNull();
     fireEvent.click(data.querySelector("summary")!);
     expect(data.open).toBe(true);
     fireEvent.click(data.querySelector("summary")!);

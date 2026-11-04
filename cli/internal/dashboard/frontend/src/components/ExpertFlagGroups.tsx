@@ -137,9 +137,9 @@ export function ExpertFlagGroups({
           <div key={group.id}>
             {index === 1 && (
               <p className="expert-preview-banner" role="note">
-                <strong>Preview only.</strong> The groups below shape the CLI
-                preview, but this dashboard version runs only the four settings
-                above.
+                <strong>Preview only.</strong> The groups below are saved in
+                profiles and shape the CLI preview, but this dashboard version
+                runs only the four settings above.
               </p>
             )}
             <details

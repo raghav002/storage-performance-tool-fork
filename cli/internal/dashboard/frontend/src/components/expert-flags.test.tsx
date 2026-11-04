@@ -14,6 +14,7 @@ import { Configure } from "./Configure";
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  localStorage.clear();
 });
 
 const state = {
@@ -165,5 +166,44 @@ describe("expert flag groups", () => {
     expect(
       (screen.getByLabelText(/^Parallel threads/) as HTMLInputElement).value,
     ).toBe("1");
+  });
+
+  it("saves and reloads a profile with its workload and flags", () => {
+    renderExpert();
+    fireEvent.click(screen.getByRole("radio", { name: /Mock driver/ }));
+    fireEvent.click(screen.getByLabelText(/^Add a delete phase/));
+    fireEvent.change(screen.getByLabelText(/^Parallel threads/), {
+      target: { value: "4" },
+    });
+    fireEvent.change(screen.getByLabelText("Save this configuration"), {
+      target: { value: "smoke" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
+    expect(screen.getByText(/with 1 preview-only flag\./)).toBeTruthy();
+
+    // Change everything, then load the profile back.
+    fireEvent.click(screen.getByRole("radio", { name: /S3 write/ }));
+    fireEvent.change(screen.getByLabelText(/^Parallel threads/), {
+      target: { value: "2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Saved profile/ }));
+    fireEvent.change(screen.getByLabelText("Saved configurations"), {
+      target: { value: "smoke" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Load profile" }));
+    expect(
+      (screen.getByRole("radio", { name: /Mock driver/ }) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    expect(
+      (screen.getByLabelText(/^Parallel threads/) as HTMLInputElement).value,
+    ).toBe("4");
+    expect(
+      (screen.getByLabelText(/^Add a delete phase/) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    expect(localStorage.getItem("spt-dashboard-expert-profiles-v2")).toContain(
+      '"workload":"mock"',
+    );
   });
 });

@@ -19,6 +19,11 @@ import {
   type Workload,
 } from "../flags/schema";
 import { validateAdvanced, type FlagErrors } from "../flags/validate";
+import {
+  readProfiles,
+  saveProfile as writeProfile,
+  type ExpertProfile,
+} from "../flags/profiles";
 import { changedFlags, ExpertFlagGroups } from "./ExpertFlagGroups";
 
 type AdvancedValues = Record<string, FlagValue>;
@@ -92,31 +97,18 @@ function fromDraft(d: ExpertDraft): Options {
 }
 
 type ExpertStart = "new" | "saved" | "previous" | "command";
-type SavedExpertProfile = { name: string; options: Options };
-const expertProfileStorageKey = "spt-dashboard-expert-profiles-v1";
-
-function readExpertProfiles(): SavedExpertProfile[] {
+// localStorage itself can throw, e.g. when the browser blocks site data.
+function browserStorage(): Storage | null {
   try {
-    const parsed: unknown = JSON.parse(
-      localStorage.getItem(expertProfileStorageKey) ?? "[]",
-    );
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(
-        (item): item is SavedExpertProfile =>
-          !!item &&
-          typeof item === "object" &&
-          typeof item.name === "string" &&
-          !!item.options &&
-          typeof item.options.object_count === "number" &&
-          typeof item.options.object_size === "string" &&
-          typeof item.options.threads === "number" &&
-          typeof item.options.max_runtime_seconds === "number",
-      )
-      .slice(0, 12);
+    return window.localStorage;
   } catch {
-    return [];
+    return null;
   }
+}
+
+function readExpertProfiles(): ExpertProfile[] {
+  const storage = browserStorage();
+  return storage ? readProfiles(storage) : [];
 }
 
 // The equivalent spt run command, including the preview-only flags.
@@ -221,7 +213,7 @@ function ExpertWorkspace({
 
   function saveProfile() {
     const name = profileName.trim().slice(0, 60);
-    if (!name || !valid) {
+    if (!name || !valid || !advancedValid) {
       setSaveMessage(
         name
           ? "Correct invalid settings before saving."
@@ -229,17 +221,18 @@ function ExpertWorkspace({
       );
       return;
     }
-    const next = [
-      { name, options: { ...options, mode: "expert" as const } },
-      ...profiles.filter((p) => p.name !== name),
-    ].slice(0, 12);
     try {
-      localStorage.setItem(expertProfileStorageKey, JSON.stringify(next));
-      setProfiles(next);
+      const storage = browserStorage();
+      if (!storage) throw new Error("unavailable");
+      setProfiles(
+        writeProfile(storage, profiles, { name, workload, options, advanced }),
+      );
       setChosenProfile(name);
       setProfileName("");
       setSaveMessage(
-        "Saved in this browser. Storage credentials are not saved.",
+        advancedChanged.length
+          ? `Saved in this browser with ${advancedChanged.length} preview-only flag${advancedChanged.length === 1 ? "" : "s"}. Storage credentials are not saved.`
+          : "Saved in this browser. Storage credentials are not saved.",
       );
     } catch {
       setSaveMessage(
@@ -358,7 +351,8 @@ function ExpertWorkspace({
                   <option value="">Choose a saved profile</option>
                   {profiles.map((p) => (
                     <option key={p.name} value={p.name}>
-                      {p.name}
+                      {p.name} ·{" "}
+                      {p.workload === "mock" ? "Mock driver" : "Write + verify"}
                     </option>
                   ))}
                 </select>
@@ -370,7 +364,10 @@ function ExpertWorkspace({
                   const p = profiles.find(
                     (item) => item.name === chosenProfile,
                   );
-                  if (p) setDraft(toDraft(p.options));
+                  if (!p) return;
+                  setDriver(driverForWorkload(p.workload));
+                  setDraft(toDraft(p.options));
+                  setAdvanced(p.workload, p.advanced);
                 }}
               >
                 Load profile

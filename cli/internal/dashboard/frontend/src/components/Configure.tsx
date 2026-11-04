@@ -15,7 +15,13 @@ import {
   driverForWorkload,
   findFlag,
   workloadForDriver,
+  type FlagValue,
+  type Workload,
 } from "../flags/schema";
+import { validateAdvanced, type FlagErrors } from "../flags/validate";
+import { changedFlags, ExpertFlagGroups } from "./ExpertFlagGroups";
+
+type AdvancedValues = Record<string, FlagValue>;
 import {
   fallbackLimits,
   readJSON,
@@ -113,15 +119,13 @@ function readExpertProfiles(): SavedExpertProfile[] {
   }
 }
 
-// The equivalent spt run command. Preview-only flags keep their defaults
-// until expert mode can edit them.
-function expertCommand(draft: ExpertDraft, driver: Driver): string {
-  const workload = workloadForDriver(driver);
-  return buildSptCommand(
-    workload,
-    fromDraft(draft),
-    advancedDefaults(workload),
-  );
+// The equivalent spt run command, including the preview-only flags.
+function expertCommand(
+  draft: ExpertDraft,
+  driver: Driver,
+  advanced: AdvancedValues,
+): string {
+  return buildSptCommand(workloadForDriver(driver), fromDraft(draft), advanced);
 }
 
 function ExpertWorkspace({
@@ -133,6 +137,9 @@ function ExpertWorkspace({
   clients,
   driver,
   setDriver,
+  advanced,
+  setAdvanced,
+  advancedErrors,
 }: {
   draft: ExpertDraft;
   setDraft: (d: ExpertDraft) => void;
@@ -142,8 +149,14 @@ function ExpertWorkspace({
   clients: number;
   driver: Driver;
   setDriver: (d: Driver) => void;
+  advanced: AdvancedValues;
+  setAdvanced: (workload: Workload, values: AdvancedValues) => void;
+  advancedErrors: FlagErrors;
 }) {
+  const workload = workloadForDriver(driver);
   const workloadName = driver === "mock" ? "Mock driver" : "Write + verify";
+  const advancedChanged = changedFlags(workload, advanced);
+  const advancedValid = Object.keys(advancedErrors).length === 0;
   const [start, setStart] = useState<ExpertStart>("new");
   const [profiles, setProfiles] = useState(readExpertProfiles);
   const [chosenProfile, setChosenProfile] = useState("");
@@ -246,14 +259,15 @@ function ExpertWorkspace({
       if (limitError) throw new CommandError([limitError]);
       setDriver(driverForWorkload(parsed.workload));
       setDraft(toDraft(result));
-      const advanced = parsed.flags.filter(
+      setAdvanced(parsed.workload, parsed.advanced);
+      const previewed = parsed.flags.filter(
         (f) => !findFlag(parsed.workload, f)?.core,
-      );
+      ).length;
       const name =
         parsed.workload === "mock" ? "Mock driver" : "Write + verify";
       setCommandMessage(
-        advanced.length
-          ? `${name} settings imported. Recognized but not applied yet: ${advanced.map((f) => `--${f}`).join(", ")}.`
+        previewed
+          ? `${name} settings imported, including ${previewed} preview-only flag${previewed === 1 ? "" : "s"}. Review the groups below.`
           : `${name} settings imported. Review the fields and host limits below.`,
       );
       setCommandProblems([]);
@@ -454,48 +468,58 @@ function ExpertWorkspace({
         </div>
 
         <div className="expert-area-heading expert-essentials-heading">
-          <strong>{workloadName} · Essential settings</strong>
+          <strong>{workloadName} · SPT flags</strong>
           <span>
-            The current dashboard API supports this workload and these four run
-            settings.
+            Open a group to change its flags. Each flag shows its SPT name and
+            default.
           </span>
         </div>
-        <ExpertFields
-          draft={draft}
-          setDraft={setDraft}
-          errors={errors}
-          limits={limits}
-          showPresets={false}
+        <ExpertFlagGroups
+          workload={workload}
+          coreChanged={changed.length}
+          values={advanced}
+          errors={advancedErrors}
+          onChange={(values) => setAdvanced(workload, values)}
+          core={
+            <>
+              <ExpertFields
+                draft={draft}
+                setDraft={setDraft}
+                errors={errors}
+                limits={limits}
+                showPresets={false}
+              />
+              <details className="expert-limits">
+                <summary>Host limits</summary>
+                <p>The dashboard server enforces these limits on every run.</p>
+                <dl>
+                  <div>
+                    <dt>Maximum objects</dt>
+                    <dd>
+                      {limits.expert.object_count.max.toLocaleString("en-US")}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Maximum threads / client</dt>
+                    <dd>{limits.expert.threads.max}</dd>
+                  </div>
+                  <div>
+                    <dt>Maximum object size</dt>
+                    <dd>{formatBytes(limits.expert.object_size_bytes.max)}</dd>
+                  </div>
+                  <div>
+                    <dt>Maximum runtime</dt>
+                    <dd>{limits.expert.max_runtime_seconds.max}s</dd>
+                  </div>
+                  <div>
+                    <dt>Maximum data</dt>
+                    <dd>{formatBytes(limits.expert.max_total_bytes)}</dd>
+                  </div>
+                </dl>
+              </details>
+            </>
+          }
         />
-        <details className="expert-limits">
-          <summary>Host limits &amp; advanced settings</summary>
-          <p>
-            Other SPT CLI flags are not available through this version of the
-            Dashboard API. Defaults are enforced by the Go server.
-          </p>
-          <dl>
-            <div>
-              <dt>Maximum objects</dt>
-              <dd>{limits.expert.object_count.max.toLocaleString("en-US")}</dd>
-            </div>
-            <div>
-              <dt>Maximum threads / client</dt>
-              <dd>{limits.expert.threads.max}</dd>
-            </div>
-            <div>
-              <dt>Maximum object size</dt>
-              <dd>{formatBytes(limits.expert.object_size_bytes.max)}</dd>
-            </div>
-            <div>
-              <dt>Maximum runtime</dt>
-              <dd>{limits.expert.max_runtime_seconds.max}s</dd>
-            </div>
-            <div>
-              <dt>Maximum data</dt>
-              <dd>{formatBytes(limits.expert.max_total_bytes)}</dd>
-            </div>
-          </dl>
-        </details>
       </div>
       <aside
         className="expert-summary"
@@ -544,8 +568,21 @@ function ExpertWorkspace({
         <div className="expert-changes">
           <strong>Modified from defaults</strong>
           <div className="expert-chips">
-            {changed.length ? (
-              changed.map(([, label]) => <span key={label}>{label}</span>)
+            {changed.length || advancedChanged.length ? (
+              <>
+                {changed.map(([, label]) => (
+                  <span key={label}>{label}</span>
+                ))}
+                {advancedChanged.map((f) => (
+                  <span
+                    key={f.name}
+                    className="preview"
+                    title="Preview only: not applied to dashboard runs"
+                  >
+                    {f.label}
+                  </span>
+                ))}
+              </>
             ) : (
               <span className="quiet">Using defaults</span>
             )}
@@ -554,14 +591,16 @@ function ExpertWorkspace({
         <details className="expert-cli-preview">
           <summary>Preview CLI settings</summary>
           <pre>
-            {valid
-              ? expertCommand(draft, driver)
+            {valid && advancedValid
+              ? expertCommand(draft, driver, advanced)
               : "Correct the settings to generate a command preview."}
           </pre>
           <small>
             {driver === "mock"
               ? "The Go backend adds the client machines, safe flags and the results directory. No storage credentials are passed."
               : "The Go backend adds storage credentials, safe flags and the results directory."}
+            {advancedChanged.length > 0 &&
+              " Dashboard runs apply only the four core settings; copy this command to run the rest with the SPT CLI."}
           </small>
         </details>
         <div className="expert-save">
@@ -602,7 +641,18 @@ export function Configure({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [storageDirty, setStorageDirty] = useState(false),
-    [driver, setDriver] = useState<Driver>("s3");
+    [driver, setDriver] = useState<Driver>("s3"),
+    // Preview-only flags, kept per workload. Never sent with a run request.
+    [advancedByWorkload, setAdvancedByWorkload] = useState<
+      Record<Workload, AdvancedValues>
+    >(() => ({
+      "write-verify": advancedDefaults("write-verify"),
+      mock: advancedDefaults("mock"),
+    }));
+  const workload = workloadForDriver(driver);
+  const advanced = advancedByWorkload[workload];
+  const setAdvanced = (w: Workload, values: AdvancedValues) =>
+    setAdvancedByWorkload((all) => ({ ...all, [w]: values }));
   const limits = state?.limits ?? fallbackLimits;
   const config: Options = {
     ...(mode === "expert" ? fromDraft(draft) : { ...guided, mode: "guided" }),
@@ -610,6 +660,13 @@ export function Configure({
   };
   const errors: OptionErrors = validateOptions(config, limits);
   const valid = Object.keys(errors).length === 0;
+  // Advanced flags are not applied to runs, so their errors never block one.
+  const advancedErrors = validateAdvanced(
+    workload,
+    advanced,
+    config.object_size,
+  );
+  const previewOnly = mode === "expert" ? changedFlags(workload, advanced) : [];
   const totalBytes =
     (parseSize(config.object_size) ?? 0) *
     (Number.isFinite(config.object_count) ? config.object_count : 0);
@@ -763,10 +820,23 @@ export function Configure({
                     unique prefix isolates this run. Cleanup is best effort.
                   </p>
                 )}
+                {previewOnly.length > 0 && (
+                  <div className="notice notice-warn" role="note">
+                    {previewOnly.length} preview-only flag
+                    {previewOnly.length === 1 ? " is" : "s are"} set (
+                    {previewOnly.map((f) => `--${f.name}`).join(", ")}). This
+                    run applies only the four core settings; the other flags are
+                    not sent.
+                  </div>
+                )}
                 {mode === "expert" && (
                   <div className="expert-reviewed-command">
                     <strong>CLI settings preview</strong>
-                    <pre>{expertCommand(draft, driver)}</pre>
+                    <pre>
+                      {Object.keys(advancedErrors).length
+                        ? "Correct the advanced flags to generate a command preview."
+                        : expertCommand(draft, driver, advanced)}
+                    </pre>
                     <small>
                       The server generates the complete command and validates
                       all options.
@@ -815,6 +885,9 @@ export function Configure({
                   clients={clients}
                   driver={driver}
                   setDriver={setDriver}
+                  advanced={advanced}
+                  setAdvanced={setAdvanced}
+                  advancedErrors={advancedErrors}
                 />
               ) : (
                 <GuidedFields

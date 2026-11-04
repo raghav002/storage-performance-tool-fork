@@ -81,6 +81,44 @@ Defaults preserve the reviewed Capstone VM profile. Deployment-specific limits c
 
 The settings file supports `branding.product_name`, `branding.environment_label`, and a `limits` object. The `limits.guided` object accepts arrays named `object_counts`, `object_sizes`, `threads`, and `max_runtime_seconds`. `limits.expert` accepts `object_count_min`, `object_count_max`, `object_size_bytes_min`, `object_size_bytes_max`, `threads_min`, `threads_max`, `max_runtime_seconds_min`, `max_runtime_seconds_max`, and `max_total_bytes`. Any omitted fields keep their defaults.
 
+### Expert flags
+
+Expert mode shows the relevant `spt run` flags for the selected workload in collapsible groups. Write + verify has nine groups:
+- Run size & limits
+- Object data
+- Multipart upload
+- Verification & cleanup
+- Key layout
+- Protocol & driver
+- Endpoint routing
+- Distribution & engine
+- Results
+
+Mock has three: Run size & limits, Cleanup, and Distribution & engine.
+
+Each flag shows its SPT name, its default, a reset button and any validation error. Each group header shows how many flags are changed or invalid.
+
+**Only the first group is applied to runs.** "Run size & limits" holds the four settings that `POST /api/runs` accepts. Every other group is **preview only**. Those flags are:
+- shown in the CLI preview, so the full command can be copied to the SPT CLI
+- saved in profiles
+- never sent to the server
+
+The review step lists any preview-only flags that are set. Their errors never block a run. The schema, the validation rules and the list of flags the GUI never sets are in `frontend/src/flags/`.
+
+**Profiles** are saved in the browser's `localStorage`, up to 12. A profile holds:
+- the workload
+- the four core settings
+- every preview-only flag
+
+It never holds credentials. Loading a profile switches the workload. Values that aren't valid flags for that workload are dropped. Profiles saved before expert flags existed load as write-verify, with default flags.
+
+**Pasting an `spt run write-verify …` or `spt run mock …` command** anywhere in Expert mode opens a prompt:
+- Paste into a field outside the Expert workspace, such as Storage configuration, and no prompt opens.
+- The **CLI command** start option opens the same prompt.
+- Applying the command switches to its workload and sets every flag it names. Settings it leaves out return to their defaults.
+- The command is only read, never executed.
+- If any flag can't be set from the GUI, the whole command is rejected and the prompt lists the reasons. That includes credentials, endpoints, paths, the image, engine overrides, RDMA, `--duration`, and other workloads' flags. A rejected flag's value is never displayed.
+
 ## Storage configuration
 
 The app opens on **Configure run**, which has two steps. Workload settings stay locked until the storage step has been verified, and the server refuses to start a run without a passing verification.
@@ -160,4 +198,8 @@ cd internal/dashboard/frontend
 npm run typecheck && npm test
 ```
 
-The Go tests use fixture result folders under `server/testdata/catalog/results` (baseline, regressed, corrupt, partial, malformed, different-thread runs) and a fake SPT executable for the mock driver, so they need neither S3 nor Docker. The Vitest suite covers the catalog/compare helpers, driver readiness, and the catalog, compare, and log components.
+The Go tests use fixture result folders under `server/testdata/catalog/results` (baseline, regressed, corrupt, partial, malformed, different-thread runs) and a fake SPT executable for the mock driver, so they need neither S3 nor Docker. The Vitest suite covers:
+- the catalog/compare helpers and driver readiness
+- the catalog, compare and log components
+- the expert flag schema, validation, command parsing and profiles
+- the expert flag groups and the paste prompt

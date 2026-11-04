@@ -1,14 +1,15 @@
 import {
-  Alert,
   Accordion,
+  Alert,
   Badge,
+  Box,
+  Button,
   Checkbox,
   Drawer,
   NativeSelect,
-  Paper,
-  Box,
-  Button,
   NavLink,
+  Paper,
+  Progress,
   SegmentedControl,
   Text,
   Title,
@@ -392,8 +393,8 @@ export default function App() {
         </Box>
         <main className="mx-auto max-w-[1550px] px-xxl py-[32px] [@media(min-width:1500px)]:pt-[40px] [@media(max-width:1150px)]:p-section [@media(max-width:760px)]:px-md [@media(max-width:760px)]:py-panel">
           {error && (
-            <div data-spt-legacy="" className="error" role="alert">
-              <strong data-spt-legacy="">Connection unavailable. </strong>
+            <Alert color="red" role="alert">
+              <strong>Connection unavailable. </strong>
               {error}
               {received && (
                 <Text>
@@ -401,7 +402,7 @@ export default function App() {
                   controls are disabled until the connection returns.
                 </Text>
               )}
-            </div>
+            </Alert>
           )}
           {page === "connect" ? (
             <ConnectRun
@@ -685,8 +686,13 @@ function Dashboard({
               {stopPending ? "Stopping…" : "Stop run"}
             </Button>
           )}
-          <Button variant="filled" onClick={onConfigure}>
-            ＋ Configure run
+          <Button
+            variant="filled"
+            onClick={onConfigure}
+            leftSection={<Plus size={16} aria-hidden="true" />}
+          >
+            Configure run
+
           </Button>
         </div>
       </div>
@@ -697,9 +703,17 @@ function Dashboard({
       )}
       {!job && !m ? (
         <section data-spt-legacy="" className="panel empty-state">
-          <div data-spt-legacy="" className="empty-icon">
-            ◫
-          </div>
+          <Paper
+            radius="xl"
+            bg="var(--spt-surface-selected)"
+            className="mx-auto mb-lg grid size-[56px] place-items-center"
+          >
+            <LayoutDashboard
+              size={26}
+              color="var(--spt-action-primary)"
+              aria-hidden="true"
+            />
+          </Paper>
           <Title order={2}>
             {state
               ? "No benchmark results yet"
@@ -750,9 +764,7 @@ function Dashboard({
                 </strong>
               </div>
               {progress !== null && (
-                <progress
-                  data-spt-legacy=""
-                  max="100"
+                <Progress
                   value={Math.max(0, Math.min(100, progress))}
                   aria-label="Reported phase progress"
                 />

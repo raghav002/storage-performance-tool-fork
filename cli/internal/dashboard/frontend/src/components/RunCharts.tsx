@@ -1,4 +1,11 @@
-import { Button, Checkbox, NativeSelect, Text, Title } from "@mantine/core";
+import {
+  Alert,
+  Button,
+  Checkbox,
+  NativeSelect,
+  Text,
+  Title,
+} from "@mantine/core";
 import { useMemo, useState } from "react";
 import type { Metrics, Sample } from "../types";
 import { TrendChart } from "./TrendChart";
@@ -218,15 +225,15 @@ export function Charts({
             </label>
           )}
           {!samples.length && (
-            <div data-spt-legacy="" className="notice">
+            <Alert role="note">
               No interval history recorded for this phase. Final phase averages
               appear once SPT reports them.
-            </div>
+            </Alert>
           )}
           {samples.length === 1 && (
-            <div data-spt-legacy="" className="notice">
+            <Alert role="note">
               One measured point is available. It cannot establish a trend.
-            </div>
+            </Alert>
           )}
           {graphs.map((g) => (
             <TrendChart

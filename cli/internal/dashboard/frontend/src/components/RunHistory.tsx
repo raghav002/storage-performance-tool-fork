@@ -1,4 +1,4 @@
-import { Button, Paper, Table, Text, Title } from "@mantine/core";
+import { Alert, Button, Paper, Table, Text, Title } from "@mantine/core";
 import { useRuns } from "../api/queries";
 import { Status } from "./Status";
 import { formatNumber as fmt, phaseName } from "../utils/metrics";
@@ -52,9 +52,9 @@ export function RunHistory({
         </div>
       </div>
       {error && (
-        <div data-spt-legacy="" className="error" role="alert">
+        <Alert color="red" role="alert">
           {error}
-        </div>
+        </Alert>
       )}
       <Paper component="section" className="mb-panel">
         {loading && !runs.length ? (

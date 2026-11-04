@@ -1,4 +1,12 @@
-import { Accordion, Button, Paper, Table, Text, Title } from "@mantine/core";
+import {
+  Accordion,
+  Button,
+  Code,
+  Paper,
+  Table,
+  Text,
+  Title,
+} from "@mantine/core";
 import type { Metrics, Row } from "../types";
 import {
   elapsed,
@@ -156,7 +164,7 @@ export function MeasuredDetails({
               <Accordion.Item value="section">
                 <Accordion.Control>SPT run summary</Accordion.Control>
                 <Accordion.Panel>
-                  <pre data-spt-legacy="">{m.spt_summary_report}</pre>
+                  <Code block>{m.spt_summary_report}</Code>
                 </Accordion.Panel>
               </Accordion.Item>
             </Accordion>
@@ -191,7 +199,7 @@ export function MeasuredDetails({
                     Export all samples CSV
                   </Button>
                 </div>
-                <pre data-spt-legacy="">{JSON.stringify(raw, null, 2)}</pre>
+                <Code block>{JSON.stringify(raw, null, 2)}</Code>
               </Accordion.Panel>
             </Accordion.Item>
           </Accordion>

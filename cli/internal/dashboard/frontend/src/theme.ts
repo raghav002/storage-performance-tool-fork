@@ -1,12 +1,15 @@
 import {
   Accordion,
+  Alert,
   Badge,
   Button,
+  Code,
   Drawer,
   Fieldset,
   Input,
   NavLink,
   Paper,
+  Progress,
   Radio,
   SegmentedControl,
   Table,
@@ -177,6 +180,62 @@ export const theme = createTheme({
   },
   cursorType: "pointer",
   components: {
+    Alert: Alert.extend({
+      defaultProps: {
+        variant: "light",
+        radius: "md",
+        p: "md",
+        my: "comfortable",
+      },
+      vars: (_theme, { color, variant }) => ({
+        root:
+          variant === "light"
+            ? {
+                "--alert-bg":
+                  color === "red"
+                    ? "var(--spt-status-error-background)"
+                    : color === "yellow"
+                      ? "var(--spt-status-warning-background)"
+                      : "var(--spt-surface-subtle)",
+                "--alert-bd": `1px solid ${color === "red" ? "var(--spt-status-error-border)" : color === "yellow" ? "var(--spt-status-warning-border)" : "var(--spt-border-panel)"}`,
+                "--alert-color":
+                  color === "red"
+                    ? "var(--spt-status-error-text)"
+                    : color === "yellow"
+                      ? "var(--spt-status-warning-text)"
+                      : "var(--spt-text-muted)",
+              }
+            : {},
+      }),
+      styles: {
+        message: {
+          color: "inherit",
+          lineHeight: "var(--mantine-line-height-body)",
+        },
+      },
+      classNames: { message: "wrap-anywhere" },
+    }),
+    Progress: Progress.extend({
+      defaultProps: { size: "6px", radius: "sm", color: "spt" },
+      styles: { root: { backgroundColor: "var(--spt-surface-track)" } },
+    }),
+    Code: Code.extend({
+      defaultProps: {
+        color: "var(--spt-surface-code)",
+        c: "var(--spt-text-primary)",
+        fz: "caption",
+      },
+      styles: (_theme, { block }) => ({
+        root: block
+          ? {
+              maxHeight: 350,
+              padding: "var(--mantine-spacing-md)",
+              borderRadius: "var(--mantine-radius-md)",
+              lineHeight: "var(--mantine-line-height-code)",
+            }
+          : {},
+      }),
+    }),
     Accordion: Accordion.extend({
       defaultProps: {
         variant: "separated",

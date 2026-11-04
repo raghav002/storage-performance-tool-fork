@@ -2232,6 +2232,17 @@ details.run-log[open] > summary {
   font-size: 11px;
   margin-top: 9px;
 }
+.expert-feedback-error p,
+.expert-feedback-good p {
+  margin: 0;
+}
+.expert-feedback-error ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.expert-feedback-error li + li {
+  margin-top: 2px;
+}
 .expert-reviewed-command {
   margin-top: 14px;
 }

@@ -6,6 +6,17 @@ import { Status } from "./Status";
 import { formatNumber as fmt } from "../utils/metrics";
 import { driverReadiness } from "../utils/driver";
 import {
+  buildSptCommand,
+  CommandError,
+  parseSptCommand,
+} from "../flags/command";
+import {
+  advancedDefaults,
+  driverForWorkload,
+  findFlag,
+  workloadForDriver,
+} from "../flags/schema";
+import {
   fallbackLimits,
   readJSON,
   formatBytes,
@@ -102,65 +113,15 @@ function readExpertProfiles(): SavedExpertProfile[] {
   }
 }
 
-// Only parse the four settings currently accepted by POST /api/runs.
-// Never execute user input or pass arbitrary CLI flags to the backend.
-function parseExpertCommand(
-  text: string,
-  base: Options,
-  limits: NonNullable<State["limits"]>,
-): Options {
-  const parts = text
-    .replace(/\\\s*\r?\n/g, " ")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  if (
-    parts.length < 3 ||
-    !["spt", "./spt"].includes(parts[0]) ||
-    parts[1] !== "run" ||
-    parts[2] !== "write-verify"
-  ) {
-    throw new Error("Start with: spt run write-verify");
-  }
-  const result: Options = { ...base, mode: "expert" };
-  const map = {
-    "--object-count": "object_count",
-    "--object-size": "object_size",
-    "--threads": "threads",
-    "--auto-terminate-seconds": "max_runtime_seconds",
-  } as const;
-  const seen = new Set<string>();
-  for (let i = 3; i < parts.length; i++) {
-    const [flag, inline] = parts[i].split("=", 2);
-    if (!(flag in map))
-      throw new Error(
-        `Unsupported flag: ${flag}. Only the four dashboard run settings can be imported.`,
-      );
-    if (seen.has(flag)) throw new Error(`Duplicate flag: ${flag}`);
-    seen.add(flag);
-    const value = inline ?? parts[++i];
-    if (!value || value.startsWith("--"))
-      throw new Error(`Missing value for ${flag}.`);
-    const key = map[flag as keyof typeof map];
-    if (key === "object_size") {
-      result.object_size = value;
-    } else {
-      if (!/^\d+$/.test(value))
-        throw new Error(`${flag} must be a whole number.`);
-      result[key] = Number(value);
-    }
-  }
-  if (seen.size === 0) throw new Error("Include at least one supported flag.");
-  const errors = validateOptions(result, limits);
-  const first = Object.values(errors).find(Boolean);
-  if (first) throw new Error(first);
-  return result;
-}
-
+// The equivalent spt run command. Preview-only flags keep their defaults
+// until expert mode can edit them.
 function expertCommand(draft: ExpertDraft, driver: Driver): string {
-  const opts = fromDraft(draft);
-  const workload = driver === "mock" ? "mock" : "write-verify";
-  return `spt run ${workload} --object-count ${opts.object_count} --object-size ${opts.object_size} --threads ${opts.threads} --auto-terminate-seconds ${opts.max_runtime_seconds}`;
+  const workload = workloadForDriver(driver);
+  return buildSptCommand(
+    workload,
+    fromDraft(draft),
+    advancedDefaults(workload),
+  );
 }
 
 function ExpertWorkspace({
@@ -171,6 +132,7 @@ function ExpertWorkspace({
   verified,
   clients,
   driver,
+  setDriver,
 }: {
   draft: ExpertDraft;
   setDraft: (d: ExpertDraft) => void;
@@ -179,6 +141,7 @@ function ExpertWorkspace({
   verified: boolean;
   clients: number;
   driver: Driver;
+  setDriver: (d: Driver) => void;
 }) {
   const workloadName = driver === "mock" ? "Mock driver" : "Write + verify";
   const [start, setStart] = useState<ExpertStart>("new");
@@ -191,6 +154,7 @@ function ExpertWorkspace({
   const [historyMessage, setHistoryMessage] = useState("");
   const [commandText, setCommandText] = useState("");
   const [commandMessage, setCommandMessage] = useState("");
+  const [commandProblems, setCommandProblems] = useState<string[]>([]);
   const [importError, setImportError] = useState(false);
   const options = fromDraft(draft);
   const valid = Object.keys(errors).length === 0;
@@ -271,17 +235,41 @@ function ExpertWorkspace({
     }
   }
 
+  // The whole command is rejected if any part of it cannot be imported.
   function importCommand() {
     try {
-      setDraft(toDraft(parseExpertCommand(commandText, options, limits)));
-      setCommandMessage(
-        "Supported settings imported. Review the fields and host limits below.",
+      const parsed = parseSptCommand(commandText);
+      const result: Options = { ...options, ...parsed.core, mode: "expert" };
+      const limitError = Object.values(validateOptions(result, limits)).find(
+        Boolean,
       );
+      if (limitError) throw new CommandError([limitError]);
+      setDriver(driverForWorkload(parsed.workload));
+      setDraft(toDraft(result));
+      const advanced = parsed.flags.filter(
+        (f) => !findFlag(parsed.workload, f)?.core,
+      );
+      const name =
+        parsed.workload === "mock" ? "Mock driver" : "Write + verify";
+      setCommandMessage(
+        advanced.length
+          ? `${name} settings imported. Recognized but not applied yet: ${advanced.map((f) => `--${f}`).join(", ")}.`
+          : `${name} settings imported. Review the fields and host limits below.`,
+      );
+      setCommandProblems([]);
       setImportError(false);
     } catch (e) {
-      setCommandMessage(
-        e instanceof Error ? e.message : "Command could not be parsed.",
-      );
+      if (e instanceof CommandError) {
+        setCommandMessage(
+          "This command can't be imported. Nothing was changed:",
+        );
+        setCommandProblems(e.problems);
+      } else {
+        setCommandMessage(
+          e instanceof Error ? e.message : "Command could not be parsed.",
+        );
+        setCommandProblems([]);
+      }
       setImportError(true);
     }
   }
@@ -438,12 +426,12 @@ function ExpertWorkspace({
                   Import supported settings
                 </button>
                 <span className="expert-muted">
-                  Import only; commands are never executed. Four flags
-                  supported.
+                  Import only; commands are never executed. Write-verify and
+                  mock commands are supported.
                 </span>
               </div>
               {commandMessage && (
-                <p
+                <div
                   className={
                     importError
                       ? "expert-feedback-error"
@@ -451,8 +439,15 @@ function ExpertWorkspace({
                   }
                   role="status"
                 >
-                  {commandMessage}
-                </p>
+                  <p>{commandMessage}</p>
+                  {commandProblems.length > 0 && (
+                    <ul>
+                      {commandProblems.map((problem) => (
+                        <li key={problem}>{problem}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -819,6 +814,7 @@ export function Configure({
                   verified={verified}
                   clients={clients}
                   driver={driver}
+                  setDriver={setDriver}
                 />
               ) : (
                 <GuidedFields

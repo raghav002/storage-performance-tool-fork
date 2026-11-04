@@ -1,3 +1,4 @@
+import { Text, Title } from "@mantine/core";
 import type { NodeRow } from "../types";
 import { formatNumber as fmt } from "../utils/metrics";
 
@@ -10,7 +11,7 @@ export function NodeTable({ nodes }: { nodes: NodeRow[] }) {
       className="panel run-history-panel"
       aria-label="Client machines"
     >
-      <h2 data-spt-legacy="">Client machines</h2>
+      <Title order={2}>Client machines</Title>
       <div data-spt-legacy="" className="table-wrap">
         <table data-spt-legacy="" className="run-history-table node-table">
           <thead data-spt-legacy="">
@@ -48,11 +49,11 @@ export function NodeTable({ nodes }: { nodes: NodeRow[] }) {
           </tbody>
         </table>
       </div>
-      <p data-spt-legacy="" className="history-footnote">
+      <Text size="caption" className="px-comfortable pb-md">
         Live values from each machine’s SPT API. A machine shows as unavailable
         when its API cannot be reached; that does not by itself mean its run
         failed.
-      </p>
+      </Text>
     </section>
   );
 }

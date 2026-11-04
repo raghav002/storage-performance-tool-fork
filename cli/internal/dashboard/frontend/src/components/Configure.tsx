@@ -1,4 +1,5 @@
 import {
+  Accordion,
   Button,
   Fieldset,
   Input,
@@ -338,8 +339,7 @@ function ExpertWorkspace({
           </span>
         </div>
         <div
-          data-spt-legacy=""
-          className="expert-start-grid"
+          className="my-[14px] mb-compact grid grid-cols-2 gap-[9px] [@media(max-width:560px)]:grid-cols-1"
           role="group"
           aria-label="Start expert configuration"
         >
@@ -351,17 +351,27 @@ function ExpertWorkspace({
               ["command", "CLI command", "Import supported SPT flags"],
             ] as const
           ).map(([key, name, detail]) => (
-            <button
-              data-spt-legacy=""
+            <Button
               type="button"
               key={key}
-              className={`expert-start-option ${start === key ? "active" : ""}`}
+              variant={start === key ? "light" : "default"}
+              h="auto"
+              p="sm"
+              justify="flex-start"
+              classNames={{
+                label:
+                  "flex-col items-start gap-[5px] whitespace-normal text-left",
+              }}
               aria-pressed={start === key}
               onClick={() => setStart(key)}
             >
-              <strong data-spt-legacy="">{name}</strong>
-              <small data-spt-legacy="">{detail}</small>
-            </button>
+              <Text component="span" size="sm" c="inherit" fw="inherit">
+                {name}
+              </Text>
+              <Text component="span" size="xs" lh="xs">
+                {detail}
+              </Text>
+            </Button>
           ))}
         </div>
         <div data-spt-legacy="" className="expert-starter">
@@ -489,45 +499,49 @@ function ExpertWorkspace({
           limits={limits}
           showPresets={false}
         />
-        <details data-spt-legacy="" className="expert-limits">
-          <summary data-spt-legacy="">
-            Host limits &amp; advanced settings
-          </summary>
-          <Text size="caption" className="pt-sm">
-            Other SPT CLI flags are not available through this version of the
-            Dashboard API. Defaults are enforced by the Go server.
-          </Text>
-          <dl data-spt-legacy="">
-            <div data-spt-legacy="">
-              <dt data-spt-legacy="">Maximum objects</dt>
-              <dd data-spt-legacy="">
-                {limits.expert.object_count.max.toLocaleString("en-US")}
-              </dd>
-            </div>
-            <div data-spt-legacy="">
-              <dt data-spt-legacy="">Maximum threads / client</dt>
-              <dd data-spt-legacy="">{limits.expert.threads.max}</dd>
-            </div>
-            <div data-spt-legacy="">
-              <dt data-spt-legacy="">Maximum object size</dt>
-              <dd data-spt-legacy="">
-                {formatBytes(limits.expert.object_size_bytes.max)}
-              </dd>
-            </div>
-            <div data-spt-legacy="">
-              <dt data-spt-legacy="">Maximum runtime</dt>
-              <dd data-spt-legacy="">
-                {limits.expert.max_runtime_seconds.max}s
-              </dd>
-            </div>
-            <div data-spt-legacy="">
-              <dt data-spt-legacy="">Maximum data</dt>
-              <dd data-spt-legacy="">
-                {formatBytes(limits.expert.max_total_bytes)}
-              </dd>
-            </div>
-          </dl>
-        </details>
+        <Accordion className="expert-limits">
+          <Accordion.Item value="section">
+            <Accordion.Control>
+              Host limits &amp; advanced settings
+            </Accordion.Control>
+            <Accordion.Panel>
+              <Text size="caption" className="pt-sm">
+                Other SPT CLI flags are not available through this version of
+                the Dashboard API. Defaults are enforced by the Go server.
+              </Text>
+              <dl data-spt-legacy="">
+                <div data-spt-legacy="">
+                  <dt data-spt-legacy="">Maximum objects</dt>
+                  <dd data-spt-legacy="">
+                    {limits.expert.object_count.max.toLocaleString("en-US")}
+                  </dd>
+                </div>
+                <div data-spt-legacy="">
+                  <dt data-spt-legacy="">Maximum threads / client</dt>
+                  <dd data-spt-legacy="">{limits.expert.threads.max}</dd>
+                </div>
+                <div data-spt-legacy="">
+                  <dt data-spt-legacy="">Maximum object size</dt>
+                  <dd data-spt-legacy="">
+                    {formatBytes(limits.expert.object_size_bytes.max)}
+                  </dd>
+                </div>
+                <div data-spt-legacy="">
+                  <dt data-spt-legacy="">Maximum runtime</dt>
+                  <dd data-spt-legacy="">
+                    {limits.expert.max_runtime_seconds.max}s
+                  </dd>
+                </div>
+                <div data-spt-legacy="">
+                  <dt data-spt-legacy="">Maximum data</dt>
+                  <dd data-spt-legacy="">
+                    {formatBytes(limits.expert.max_total_bytes)}
+                  </dd>
+                </div>
+              </dl>
+            </Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>
       </div>
       <aside
         data-spt-legacy=""
@@ -596,19 +610,23 @@ function ExpertWorkspace({
             )}
           </div>
         </div>
-        <details data-spt-legacy="" className="expert-cli-preview">
-          <summary data-spt-legacy="">Preview CLI settings</summary>
-          <pre data-spt-legacy="">
-            {valid
-              ? expertCommand(draft, driver)
-              : "Correct the settings to generate a command preview."}
-          </pre>
-          <small data-spt-legacy="">
-            {driver === "mock"
-              ? "The Go backend adds the client machines, safe flags and the results directory. No storage credentials are passed."
-              : "The Go backend adds storage credentials, safe flags and the results directory."}
-          </small>
-        </details>
+        <Accordion mt="md" className="expert-cli-preview">
+          <Accordion.Item value="section">
+            <Accordion.Control>Preview CLI settings</Accordion.Control>
+            <Accordion.Panel>
+              <pre data-spt-legacy="">
+                {valid
+                  ? expertCommand(draft, driver)
+                  : "Correct the settings to generate a command preview."}
+              </pre>
+              <small data-spt-legacy="">
+                {driver === "mock"
+                  ? "The Go backend adds the client machines, safe flags and the results directory. No storage credentials are passed."
+                  : "The Go backend adds storage credentials, safe flags and the results directory."}
+              </small>
+            </Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>
         <div data-spt-legacy="" className="expert-save">
           <TextInput
             label="Save this configuration"
@@ -990,24 +1008,28 @@ function ExpertFields({
     <>
       {showPresets && (
         <div
-          data-spt-legacy=""
-          className="preset-chips"
+          className="mt-[6px] flex flex-wrap gap-compact"
           role="group"
           aria-label="Starting points"
         >
           {expertPresets.map((p) => (
-            <button
-              data-spt-legacy=""
+            <Button
               type="button"
               key={p.label}
+              h="auto"
+              py="sm"
+              classNames={{
+                label:
+                  "flex-col items-start gap-[3px] whitespace-normal text-left",
+              }}
               onClick={() => setDraft(toDraft(p.options))}
             >
               {p.label}
-              <small data-spt-legacy="">
+              <Text component="span" size="caption" c="var(--spt-text-muted)">
                 {p.options.object_count.toLocaleString("en-US")} ×{" "}
                 {p.options.object_size} · {p.options.threads} threads
-              </small>
-            </button>
+              </Text>
+            </Button>
           ))}
         </div>
       )}

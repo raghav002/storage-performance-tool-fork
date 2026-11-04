@@ -1,4 +1,14 @@
-import { Badge, Button, Paper, Table, Text, Title } from "@mantine/core";
+import {
+  Badge,
+  Button,
+  NativeSelect,
+  Paper,
+  SegmentedControl,
+  Table,
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core";
 import { useState } from "react";
 import type { CompareDelta, CompareResult, SeriesPoint } from "../types";
 import { useComparison, useLastSuccessfulData } from "../api/queries";
@@ -115,68 +125,60 @@ export function Compare({
         )
       ) : (
         <>
-          <section
-            data-spt-legacy=""
-            className="panel compare-rule"
+          <Paper
+            component="section"
+            p="panel"
+            mb="comfortable"
+            className="flex flex-wrap items-end gap-[14px]"
             aria-label="Regression rule"
           >
-            <div data-spt-legacy="">
+            <div className="basis-full">
               <strong data-spt-legacy="">{data.rule.label}</strong>
               <Text size="sm" className="mt-xxs">
                 {data.rule.description}
               </Text>
             </div>
-            <label data-spt-legacy="">
-              Baseline
-              <select
-                data-spt-legacy=""
-                value={data.baseline}
-                onChange={(e) => setBase(e.target.value)}
-              >
-                {data.runs.map((r) => (
-                  <option data-spt-legacy="" key={r.id} value={r.id}>
-                    {r.id}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label data-spt-legacy="">
-              Threshold %
-              <input
-                data-spt-legacy=""
-                type="number"
-                min={0}
-                step={1}
-                value={draft.threshold_pct ?? ""}
-                onChange={(e) =>
-                  setDraft({ ...draft, threshold_pct: e.target.value })
-                }
-              />
-            </label>
-            <label data-spt-legacy="">
-              Latency floor µs
-              <input
-                data-spt-legacy=""
-                type="number"
-                min={0}
-                value={draft.latency_floor_us ?? ""}
-                onChange={(e) =>
-                  setDraft({ ...draft, latency_floor_us: e.target.value })
-                }
-              />
-            </label>
-            <label data-spt-legacy="">
-              Min operations
-              <input
-                data-spt-legacy=""
-                type="number"
-                min={0}
-                value={draft.min_ops ?? ""}
-                onChange={(e) =>
-                  setDraft({ ...draft, min_ops: e.target.value })
-                }
-              />
-            </label>
+            <NativeSelect
+              label="Baseline"
+              className="min-w-0 max-w-full"
+              value={data.baseline}
+              onChange={(e) => setBase(e.target.value)}
+            >
+              {data.runs.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.id}
+                </option>
+              ))}
+            </NativeSelect>
+            <TextInput
+              label="Threshold %"
+              className="w-[110px]"
+              type="number"
+              min={0}
+              step={1}
+              value={draft.threshold_pct ?? ""}
+              onChange={(e) =>
+                setDraft({ ...draft, threshold_pct: e.target.value })
+              }
+            />
+            <TextInput
+              label="Latency floor µs"
+              className="w-[110px]"
+              type="number"
+              min={0}
+              value={draft.latency_floor_us ?? ""}
+              onChange={(e) =>
+                setDraft({ ...draft, latency_floor_us: e.target.value })
+              }
+            />
+            <TextInput
+              label="Min operations"
+              className="w-[110px]"
+              type="number"
+              min={0}
+              value={draft.min_ops ?? ""}
+              onChange={(e) => setDraft({ ...draft, min_ops: e.target.value })}
+            />
             <Button variant="filled" onClick={apply}>
               Apply
             </Button>
@@ -191,7 +193,7 @@ export function Compare({
                 : `No metric past the threshold vs ${data.baseline}.`}{" "}
               Threshold check, not statistical significance.
             </Text>
-          </section>
+          </Paper>
           {Object.entries(data.settings_differences ?? {}).some(
             ([, d]) => d.length,
           ) && (
@@ -220,24 +222,13 @@ export function Compare({
               <Title order={2} className="flex-auto">
                 Time series
               </Title>
-              <div
-                data-spt-legacy=""
-                className="mode-switch"
-                role="group"
-                aria-label="Metric"
-              >
-                {metrics.map((m) => (
-                  <button
-                    data-spt-legacy=""
-                    key={m.key}
-                    className={metric === m.key ? "active" : ""}
-                    aria-pressed={metric === m.key}
-                    onClick={() => setMetric(m.key)}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
+              <SegmentedControl<OverlayMetric>
+                aria-label="Comparison metric"
+                value={metric}
+                onChange={setMetric}
+                data={metrics.map((m) => ({ value: m.key, label: m.label }))}
+                className="max-w-full flex-wrap"
+              />
             </div>
             <ul data-spt-legacy="" className="compare-legend">
               {data.runs.map((r) => (

@@ -1,5 +1,11 @@
 import {
+  Alert,
+  Accordion,
   Badge,
+  Checkbox,
+  Drawer,
+  NativeSelect,
+  Paper,
   Box,
   Button,
   NavLink,
@@ -456,116 +462,79 @@ export default function App() {
                 }
                 onConfigure={() => setPage("configure")}
               />
-              {mode === "expert" && customizing && (
-                <div
-                  data-spt-legacy=""
-                  className="expert-view-overlay"
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") setCustomizing(false);
-                  }}
+              {mode === "expert" && (
+                <Drawer
+                  opened={customizing}
+                  onClose={() => setCustomizing(false)}
+                  title={
+                    <>
+                      <Text
+                        component="span"
+                        className="block"
+                        size="xs"
+                        fw="var(--mantine-font-weight-bold)"
+                        tt="uppercase"
+                      >
+                        Expert view
+                      </Text>
+                      <Text
+                        component="span"
+                        className="block"
+                        size="xl"
+                        c="var(--spt-text-primary)"
+                        fw="var(--mantine-font-weight-heading)"
+                      >
+                        Customize dashboard
+                      </Text>
+                    </>
+                  }
+                  closeButtonProps={{ "aria-label": "Close customization" }}
                 >
-                  <button
-                    data-spt-legacy=""
-                    className="expert-view-backdrop"
-                    type="button"
-                    aria-label="Close dashboard customization"
-                    onClick={() => setCustomizing(false)}
-                  />
-                  <aside
-                    data-spt-legacy=""
-                    className="expert-view-drawer"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="expert-view-drawer-title"
-                  >
-                    <div
-                      data-spt-legacy=""
-                      className="expert-view-drawer-heading"
-                    >
-                      <div data-spt-legacy="">
-                        <span data-spt-legacy="" className="eyebrow">
-                          EXPERT VIEW
-                        </span>
-                        <Title
-                          order={2}
-                          size="xl"
-                          className="mt-[3px]"
-                          id="expert-view-drawer-title"
-                        >
-                          Customize dashboard
-                        </Title>
-                      </div>
-                      <button
-                        data-spt-legacy=""
-                        type="button"
-                        autoFocus
-                        aria-label="Close customization"
-                        onClick={() => setCustomizing(false)}
+                  <Text size="sm">
+                    Show or hide sections. This only changes your display, not
+                    the benchmark or its data.
+                  </Text>
+                  <div className="flex gap-xs">
+                    <Button onClick={() => setSelection(allSectionKeys())}>
+                      Show all
+                    </Button>
+                    <Button onClick={() => setSelection([])}>Hide all</Button>
+                  </div>
+                  <div className="grid gap-[9px]">
+                    {fields.map((field) => (
+                      <Paper
+                        key={field.key}
+                        p="sm"
+                        radius="md"
+                        bg="var(--spt-surface-subtle)"
                       >
-                        ✕
-                      </button>
-                    </div>
+                        <Checkbox
+                          label={field.title}
+                          description={field.detail}
+                          checked={selection.includes(field.key)}
+                          onChange={(event) =>
+                            setSelection((previous) =>
+                              event.target.checked
+                                ? [...previous, field.key]
+                                : previous.filter((key) => key !== field.key),
+                            )
+                          }
+                        />
+                      </Paper>
+                    ))}
+                  </div>
+                  <div className="mt-auto flex items-center justify-between gap-compact border-t border-divider pt-comfortable">
                     <Text size="sm">
-                      Show or hide sections. This only changes your display, not
-                      the benchmark or its data.
+                      {selection.length} of {fields.length} sections shown
                     </Text>
-                    <div
-                      data-spt-legacy=""
-                      className="expert-view-drawer-actions"
+                    <Button
+                      variant="filled"
+                      onClick={() => setCustomizing(false)}
                     >
-                      <Button
-                        type="button"
-                        onClick={() => setSelection(allSectionKeys())}
-                      >
-                        Show all
-                      </Button>
-                      <Button type="button" onClick={() => setSelection([])}>
-                        Hide all
-                      </Button>
-                    </div>
-                    <div data-spt-legacy="" className="expert-view-drawer-list">
-                      {fields.map((field) => (
-                        <label
-                          data-spt-legacy=""
-                          className="check-label"
-                          key={field.key}
-                        >
-                          <input
-                            data-spt-legacy=""
-                            type="checkbox"
-                            checked={selection.includes(field.key)}
-                            onChange={(event) =>
-                              setSelection((previous) =>
-                                event.target.checked
-                                  ? [...previous, field.key]
-                                  : previous.filter((key) => key !== field.key),
-                              )
-                            }
-                          />
-                          <span data-spt-legacy="">
-                            <strong data-spt-legacy="">{field.title}</strong>
-                            <small data-spt-legacy="">{field.detail}</small>
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                    <div
-                      data-spt-legacy=""
-                      className="expert-view-drawer-footer"
-                    >
-                      <span data-spt-legacy="">
-                        {selection.length} of {fields.length} sections shown
-                      </span>
-                      <Button
-                        variant="filled"
-                        type="button"
-                        onClick={() => setCustomizing(false)}
-                      >
-                        Done
-                      </Button>
-                    </div>
-                  </aside>
-                </div>
+                      Done
+                    </Button>
+                  </div>
+                </Drawer>
               )}
             </>
           )}
@@ -722,9 +691,9 @@ function Dashboard({
         </div>
       </div>
       {stopError && (
-        <div data-spt-legacy="" className="error" role="alert">
+        <Alert color="red" role="alert">
           {stopError}
-        </div>
+        </Alert>
       )}
       {!job && !m ? (
         <section data-spt-legacy="" className="panel empty-state">
@@ -822,20 +791,16 @@ function Dashboard({
           {m && (
             <>
               <div data-spt-legacy="" className="scope-bar">
-                <label data-spt-legacy="">
-                  Inspect phase
-                  <select
-                    data-spt-legacy=""
-                    value={selectedPhase}
-                    onChange={(e) => setPhase(e.target.value)}
-                  >
-                    {available.map((p) => (
-                      <option data-spt-legacy="" key={p} value={p}>
-                        {phaseName(p)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <NativeSelect
+                  label="Inspect phase"
+                  value={selectedPhase}
+                  onChange={(e) => setPhase(e.target.value)}
+                  data={available.map((p) => ({
+                    value: p,
+                    label: phaseName(p),
+                  }))}
+                  className="min-w-[160px]"
+                />
                 <Text size="caption">
                   {!m.is_active && final
                     ? "Final phase averages"
@@ -930,46 +895,56 @@ function Dashboard({
             />
           )}
           {has("record") && (
-            <details data-spt-legacy="" className="panel">
-              <summary data-spt-legacy="">Run record and settings</summary>
-              <div data-spt-legacy="" className="detail-strip">
-                <span data-spt-legacy="">Started: {utc(job?.started_at)}</span>
-                <span data-spt-legacy="">
-                  Finished: {utc(job?.finished_at)}
-                </span>
-                <span data-spt-legacy="">
-                  Exit code: {fmt(job?.returncode)}
-                </span>
-              </div>
-              <dl data-spt-legacy="" className="record-grid">
-                <div data-spt-legacy="">
-                  <dt data-spt-legacy="">Objects</dt>
-                  <dd data-spt-legacy="">{fmt(job?.options?.object_count)}</dd>
-                </div>
-                <div data-spt-legacy="">
-                  <dt data-spt-legacy="">Object size</dt>
-                  <dd data-spt-legacy="">{job?.options?.object_size ?? "—"}</dd>
-                </div>
-                <div data-spt-legacy="">
-                  <dt data-spt-legacy="">Threads</dt>
-                  <dd data-spt-legacy="">{fmt(job?.options?.threads)}</dd>
-                </div>
-                <div data-spt-legacy="">
-                  <dt data-spt-legacy="">Safety time limit</dt>
-                  <dd data-spt-legacy="">
-                    {elapsed(job?.options?.max_runtime_seconds)}
-                  </dd>
-                </div>
-                <div data-spt-legacy="">
-                  <dt data-spt-legacy="">Run prefix</dt>
-                  <dd data-spt-legacy="">{job?.prefix ?? "—"}</dd>
-                </div>
-                <div data-spt-legacy="">
-                  <dt data-spt-legacy="">Source</dt>
-                  <dd data-spt-legacy="">{m?.source_file ?? "—"}</dd>
-                </div>
-              </dl>
-            </details>
+            <Accordion mb="panel">
+              <Accordion.Item value="section">
+                <Accordion.Control>Run record and settings</Accordion.Control>
+                <Accordion.Panel>
+                  <div data-spt-legacy="" className="detail-strip">
+                    <span data-spt-legacy="">
+                      Started: {utc(job?.started_at)}
+                    </span>
+                    <span data-spt-legacy="">
+                      Finished: {utc(job?.finished_at)}
+                    </span>
+                    <span data-spt-legacy="">
+                      Exit code: {fmt(job?.returncode)}
+                    </span>
+                  </div>
+                  <dl data-spt-legacy="" className="record-grid">
+                    <div data-spt-legacy="">
+                      <dt data-spt-legacy="">Objects</dt>
+                      <dd data-spt-legacy="">
+                        {fmt(job?.options?.object_count)}
+                      </dd>
+                    </div>
+                    <div data-spt-legacy="">
+                      <dt data-spt-legacy="">Object size</dt>
+                      <dd data-spt-legacy="">
+                        {job?.options?.object_size ?? "—"}
+                      </dd>
+                    </div>
+                    <div data-spt-legacy="">
+                      <dt data-spt-legacy="">Threads</dt>
+                      <dd data-spt-legacy="">{fmt(job?.options?.threads)}</dd>
+                    </div>
+                    <div data-spt-legacy="">
+                      <dt data-spt-legacy="">Safety time limit</dt>
+                      <dd data-spt-legacy="">
+                        {elapsed(job?.options?.max_runtime_seconds)}
+                      </dd>
+                    </div>
+                    <div data-spt-legacy="">
+                      <dt data-spt-legacy="">Run prefix</dt>
+                      <dd data-spt-legacy="">{job?.prefix ?? "—"}</dd>
+                    </div>
+                    <div data-spt-legacy="">
+                      <dt data-spt-legacy="">Source</dt>
+                      <dd data-spt-legacy="">{m?.source_file ?? "—"}</dd>
+                    </div>
+                  </dl>
+                </Accordion.Panel>
+              </Accordion.Item>
+            </Accordion>
           )}
         </>
       )}

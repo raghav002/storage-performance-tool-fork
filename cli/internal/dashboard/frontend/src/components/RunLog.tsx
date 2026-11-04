@@ -1,4 +1,11 @@
-import { Button, Text, Title } from "@mantine/core";
+import {
+  Accordion,
+  Button,
+  Paper,
+  SegmentedControl,
+  Text,
+  Title,
+} from "@mantine/core";
 import { useState } from "react";
 import type { LogLevel, LogResponse } from "../types";
 import { useLog } from "../api/queries";
@@ -25,7 +32,7 @@ export function RunLog({
   sources?: ("console" | "results")[];
   title?: string;
   refreshMs?: number;
-  /** Render inside a closed <details> so long traces stay hidden until asked for. */
+  /** Start collapsed so long traces stay hidden until requested. */
   collapsed?: boolean;
 }) {
   const [open, setOpen] = useState(!collapsed);
@@ -48,19 +55,22 @@ export function RunLog({
     />
   ) : null;
   return collapsed ? (
-    <details
-      data-spt-legacy=""
-      className="panel run-log"
+    <Accordion
+      mb="panel"
       aria-label={title}
-      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
+      value={open ? "log" : null}
+      onChange={(value) => setOpen(value === "log")}
+      keepMounted={false}
     >
-      <summary data-spt-legacy="">{title}</summary>
-      {open && body}
-    </details>
+      <Accordion.Item value="log">
+        <Accordion.Control>{title}</Accordion.Control>
+        <Accordion.Panel>{body}</Accordion.Panel>
+      </Accordion.Item>
+    </Accordion>
   ) : (
-    <section data-spt-legacy="" className="panel run-log" aria-label={title}>
+    <Paper component="section" p="panel" mb="panel" aria-label={title}>
       {body}
-    </section>
+    </Paper>
   );
 }
 
@@ -97,43 +107,22 @@ function LogContents({
             {title}
           </Title>
         )}
-        <div
-          data-spt-legacy=""
-          className="mode-switch"
-          role="group"
+        <SegmentedControl<LogLevel>
           aria-label="Log level"
-        >
-          {levels.map((l) => (
-            <button
-              data-spt-legacy=""
-              key={l.value}
-              className={level === l.value ? "active" : ""}
-              aria-pressed={level === l.value}
-              onClick={() => setLevel(l.value)}
-            >
-              {l.label}
-            </button>
-          ))}
-        </div>
+          value={level}
+          onChange={setLevel}
+          data={levels}
+        />
         {sources && sources.length > 1 && (
-          <div
-            data-spt-legacy=""
-            className="mode-switch"
-            role="group"
+          <SegmentedControl<LogResponse["source"] | "">
             aria-label="Log source"
-          >
-            {sources.map((s) => (
-              <button
-                data-spt-legacy=""
-                key={s}
-                className={source === s ? "active" : ""}
-                aria-pressed={source === s}
-                onClick={() => setSource(s)}
-              >
-                {s === "console" ? "Console (interim)" : "Results logs"}
-              </button>
-            ))}
-          </div>
+            value={source}
+            onChange={setSource}
+            data={sources.map((s) => ({
+              value: s,
+              label: s === "console" ? "Console (interim)" : "Results logs",
+            }))}
+          />
         )}
         <Button onClick={() => void log.refetch()}>Reload</Button>
       </div>

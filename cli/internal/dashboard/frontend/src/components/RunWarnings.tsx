@@ -1,48 +1,71 @@
-import { Text, Title } from "@mantine/core";
+import { Alert, Badge, Paper, Text, Title } from "@mantine/core";
 import type { RunWarning } from "../types";
 
 /** Live observations about unreliable telemetry. Text is what was observed only. */
 export function RunWarnings({ warnings }: { warnings?: RunWarning[] }) {
   if (!warnings?.length) return null;
   return (
-    <section
-      data-spt-legacy=""
-      className="panel notice-warn run-warnings"
+    <Alert
+      component="section"
+      color="yellow"
       aria-label="Run warnings"
+      className="mb-panel"
+      title={
+        <Title order={2} size="lg">
+          Run warnings
+        </Title>
+      }
     >
-      <div data-spt-legacy="" className="section-heading">
-        <div data-spt-legacy="">
-          <Title order={2}>Run warnings</Title>
-          <Text c="#7a5a2b" className="mt-1">
-            Observations from SPT metrics and reachability. These describe what
-            was seen; they do not claim a root cause.
-          </Text>
-        </div>
-      </div>
-      <ul data-spt-legacy="" className="run-warnings-list">
-        {warnings.map((w, i) => (
-          <li
-            data-spt-legacy=""
-            key={`${w.code}-${w.host ?? ""}-${w.metric ?? ""}-${i}`}
+      <Text size="sm">
+        Observations from SPT metrics and reachability. These describe what was
+        seen; they do not claim a root cause.
+      </Text>
+      <ul className="m-0 mt-md grid list-none gap-sm p-0">
+        {warnings.map((warning, index) => (
+          <Paper
+            component="li"
+            key={`${warning.code}-${warning.host ?? ""}-${warning.metric ?? ""}-${index}`}
+            p="sm"
+            radius="md"
           >
-            <strong data-spt-legacy="">{label(w.code)}</strong>
-            {w.host ? (
-              <span data-spt-legacy="" className="warn-host">
-                {w.host}
-              </span>
-            ) : null}
-            {w.metric ? (
-              <span data-spt-legacy="" className="warn-metric">
-                {w.metric}
-              </span>
-            ) : null}
-            <Text c="#4d3a1f" className="mt-[0.35rem]">
-              {w.observed}
+            <div className="flex flex-wrap items-center gap-xs">
+              <Text
+                component="strong"
+                size="sm"
+                fw="var(--mantine-font-weight-semibold)"
+              >
+                {label(warning.code)}
+              </Text>
+              {warning.host && (
+                <Badge
+                  color="yellow"
+                  variant="light"
+                  tt="none"
+                  className="max-w-full"
+                  title={warning.host}
+                >
+                  {warning.host}
+                </Badge>
+              )}
+              {warning.metric && (
+                <Badge
+                  color="yellow"
+                  variant="light"
+                  tt="none"
+                  className="max-w-full"
+                  title={warning.metric}
+                >
+                  {warning.metric}
+                </Badge>
+              )}
+            </div>
+            <Text size="sm" className="mt-xs wrap-anywhere">
+              {warning.observed}
             </Text>
-          </li>
+          </Paper>
         ))}
       </ul>
-    </section>
+    </Alert>
   );
 }
 

@@ -203,7 +203,10 @@ export function Compare({
               </ul>
             </Alert>
           )}
-          <section data-spt-legacy="" className="panel">
+          <Paper
+            component="section"
+            className="mb-panel p-panel [@media(max-width:760px)]:p-[17px]"
+          >
             <div data-spt-legacy="" className="run-log-heading">
               <Title order={2} className="flex-auto">
                 Time series
@@ -245,7 +248,7 @@ export function Compare({
                 </Text>
               )}
             </div>
-          </section>
+          </Paper>
           <DeltaTable deltas={data.deltas} baseline={data.baseline} />
         </>
       )}

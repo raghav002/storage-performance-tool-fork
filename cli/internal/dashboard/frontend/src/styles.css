@@ -216,13 +216,6 @@ small:where([data-spt-legacy]) {
   gap: var(--mantine-spacing-md);
   margin-bottom: var(--mantine-spacing-panel);
 }
-.panel:where([data-spt-legacy]) {
-  background: var(--spt-surface-panel);
-  border: 1px solid var(--spt-border-panel);
-  border-radius: var(--mantine-radius-lg);
-  padding: var(--mantine-spacing-panel);
-  margin-bottom: var(--mantine-spacing-panel);
-}
 .section-heading:where([data-spt-legacy]) {
   display: flex;
   justify-content: space-between;
@@ -331,10 +324,6 @@ small:where([data-spt-legacy]) {
   padding: var(--mantine-spacing-lg);
   margin-bottom: var(--mantine-spacing-lg);
 }
-.connect-panel:where([data-spt-legacy]) {
-  max-width: 880px;
-  padding: var(--mantine-spacing-wide);
-}
 .connect-actions:where([data-spt-legacy]) {
   display: flex;
   align-items: center;
@@ -353,9 +342,6 @@ small:where([data-spt-legacy]) {
   position: static;
 }
 @media (max-width: 620px) {
-  .connect-panel:where([data-spt-legacy]) {
-    padding: var(--mantine-spacing-lg);
-  }
   .connect-actions:where([data-spt-legacy]) {
     align-items: stretch;
     flex-direction: column;
@@ -385,9 +371,6 @@ small:where([data-spt-legacy]) {
   .progress:where([data-spt-legacy]) {
     flex-basis: 100%;
   }
-  .panel:where([data-spt-legacy]) {
-    padding: 17px;
-  }
   .section-heading:where([data-spt-legacy]) {
     align-items: flex-start;
   }
@@ -405,9 +388,6 @@ small:where([data-spt-legacy]) {
 .button-group:where([data-spt-legacy]) {
   display: flex;
   gap: 5px;
-}
-.fleet:where([data-spt-legacy]) {
-  min-width: 0;
 }
 @media (max-width: 760px) {
   .fleet-toolbar:where([data-spt-legacy]) {
@@ -457,10 +437,6 @@ small:where([data-spt-legacy]) {
 .page-heading > div:first-child:where([data-spt-legacy]) {
   min-width: 0;
 }
-.empty-state:where([data-spt-legacy]) {
-  text-align: center;
-  padding: 64px var(--mantine-spacing-section);
-}
 .history-empty:where([data-spt-legacy]) {
   padding: var(--mantine-spacing-xxl) var(--mantine-spacing-section);
   text-align: center;
@@ -507,12 +483,6 @@ small:where([data-spt-legacy]) {
   font-size: var(--mantine-font-size-control);
   font-weight: var(--mantine-font-weight-semibold);
   overflow-wrap: anywhere;
-}
-.outcome:where([data-spt-legacy]) {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--mantine-spacing-section);
 }
 .outcome .eyebrow:where([data-spt-legacy]) {
   margin-bottom: 7px;
@@ -616,10 +586,6 @@ small:where([data-spt-legacy]) {
   font-variant-numeric: tabular-nums;
 }
 @media (max-width: 1150px) {
-  .outcome:where([data-spt-legacy]) {
-    align-items: flex-start;
-    flex-direction: column;
-  }
   .comparison-grid:where([data-spt-legacy]) {
     grid-template-columns: 1fr;
     gap: var(--mantine-spacing-wide);
@@ -720,7 +686,7 @@ small:where([data-spt-legacy]) {
 }
 .compare-charts:where([data-spt-legacy]) {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
   gap: var(--mantine-spacing-md);
 }
 .overlay-chart:where([data-spt-legacy]) {

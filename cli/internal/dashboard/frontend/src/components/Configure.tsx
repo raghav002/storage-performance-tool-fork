@@ -6,6 +6,7 @@ import {
   Fieldset,
   Input,
   NativeSelect,
+  Paper,
   Radio,
   Text,
   TextInput,
@@ -732,7 +733,10 @@ export function Configure({
           dashboard.
         </Alert>
       )}
-      <section data-spt-legacy="" className="panel">
+      <Paper
+        component="section"
+        className="mb-panel p-panel [@media(max-width:760px)]:p-[17px]"
+      >
         <span data-spt-legacy="" className="eyebrow">
           STEP 1
         </span>
@@ -742,8 +746,11 @@ export function Configure({
           offline={offline}
           onDirty={setStorageDirty}
         />
-      </section>
-      <section data-spt-legacy="" className="panel">
+      </Paper>
+      <Paper
+        component="section"
+        className="mb-panel p-panel [@media(max-width:760px)]:p-[17px]"
+      >
         <span data-spt-legacy="" className="eyebrow">
           STEP 2
         </span>
@@ -918,7 +925,7 @@ export function Configure({
             {error}
           </Alert>
         )}
-      </section>
+      </Paper>
     </div>
   );
 }

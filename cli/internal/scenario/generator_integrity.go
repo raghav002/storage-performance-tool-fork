@@ -46,7 +46,7 @@ func GenerateWriteVerifyScenario(params Params) (string, error) {
 		ReadStep:   readID,
 		DeleteStep: deleteID,
 		CreateStorage: integrityStorageTemplateData{
-			Driver: driver, Concurrency: params.Threads,
+			Driver: driver, Concurrency: params.Threads, CreatesObjects: true,
 			Integrity: integrityTemplateData{
 				Provenance: constants.IntegrityProvenanceNone,
 			},
@@ -125,7 +125,7 @@ func GenerateReadVerifyScenario(params Params) (string, error) {
 			},
 		},
 		BucketPath:      bucketPath,
-		Prefix:          params.Prefix,
+		Prefix:          readVerifyListPrefix(params.Prefix),
 		ItemsFile:       params.ItemsFile,
 		IncludeVersions: versions == VersionsAll,
 	})
@@ -292,7 +292,7 @@ func generateSeededDeleteScenario(
 		DeleteStep:  deleteStep,
 		CleanupStep: formatStepID(params.Label, 3, ts, stepOpCleanup),
 		SeedStorage: integrityStorageTemplateData{
-			Driver: driver, Concurrency: params.Threads,
+			Driver: driver, Concurrency: params.Threads, CreatesObjects: true,
 			Integrity: integrityTemplateData{
 				Provenance:              constants.IntegrityProvenanceNone,
 				RequireExactOutputCount: true,
@@ -374,4 +374,13 @@ func deleteSeedNamespace(root string, runID int64) string {
 
 func quoteJS(value string) string {
 	return fmt.Sprintf("\"%s\"", escapeJSONString(value))
+}
+
+// readVerifyListPrefix drops a prefix's leading slashes, because a LIST prefix is part of the key. A
+// prefix of slashes only stays as written: it already means the whole bucket, which the engine lists.
+func readVerifyListPrefix(prefix string) string {
+	if trimmed := strings.TrimLeft(prefix, "/"); trimmed != "" {
+		return trimmed
+	}
+	return prefix
 }

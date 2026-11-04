@@ -1,5 +1,7 @@
 package com.dell.spt.base.load.step;
 
+import com.dell.spt.base.metrics.bucket.BucketMetricsRange;
+import com.dell.spt.base.metrics.bucket.BucketMetricsReply;
 import com.dell.spt.base.concurrent.Daemon;
 import com.dell.spt.base.metrics.snapshot.AllMetricsSnapshot;
 import com.dell.spt.base.item.op.deletion.DeleteObjectLifecycleSnapshot;
@@ -10,6 +12,9 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 public interface LoadStep extends Daemon {
+	/** The message of the admission barrier methods' defaults, which the Entry Node recognizes. */
+	String NO_ADMISSION_BARRIER = "worker does not support the admission barrier";
+
 	/** Returns the unique identifier for this step. */
 	String loadStepId() throws RemoteException;
 
@@ -21,6 +26,18 @@ public interface LoadStep extends Daemon {
 
 	/** Publishes worker object counters for the controller; compatibility workers provide no evidence. */
 	default DeleteObjectLifecycleSnapshot deleteObjectLifecycle() throws RemoteException {
+		return null;
+	}
+
+	/**
+	 * Returns this worker's terminal bucket metrics, separately from the periodic snapshots. The
+	 * worker holds them until its step service closes, so an entry node may ask again.
+	 *
+	 * @param range the records to return; {@link BucketMetricsRange#ALL} for every record
+	 * @return the records, or null when this worker has none: bucket metrics are off, or this is
+	 *     an older or third-party implementation
+	 */
+	default BucketMetricsReply bucketMetrics(final BucketMetricsRange range) throws RemoteException {
 		return null;
 	}
 
@@ -96,6 +113,38 @@ public interface LoadStep extends Daemon {
 	 */
 	default DurationAwaitStatus durationAwaitStatus() throws RemoteException {
 		return DurationAwaitStatus.NOT_STARTED;
+	}
+
+	/**
+	 * Arms the next {@link #start()} as an admission-barrier start: it holds admission, prepares on
+	 * its own thread and returns. The worker fences itself when the budget runs out, on its own
+	 * clock, even if the Entry Node is gone.
+	 *
+	 * @param preparationId a token the Entry Node draws for the step
+	 */
+	default void startPreparation(final long preparationId, final long budgetNanos) throws RemoteException {
+		throw new RemoteException(NO_ADMISSION_BARRIER);
+	}
+
+	/** Polls the preparation; a stale token reads as fenced. */
+	default PreparationStatus preparationStatus(final long preparationId) throws RemoteException {
+		throw new RemoteException(NO_ADMISSION_BARRIER);
+	}
+
+	/**
+	 * Opens admission and starts the Load Interval, once. Returns true once it is released, and
+	 * false, changing nothing, for a stale token or a preparation that is not ready.
+	 */
+	default boolean releasePreparedAdmission(final long preparationId) throws RemoteException {
+		throw new RemoteException(NO_ADMISSION_BARRIER);
+	}
+
+	/**
+	 * Fences the preparation for good and starts stopping the contexts. It waits out a release in
+	 * progress but not the contexts' stop. Idempotent.
+	 */
+	default void fencePreparation(final long preparationId) throws RemoteException {
+		throw new RemoteException(NO_ADMISSION_BARRIER);
 	}
 
 	@Override

@@ -671,6 +671,67 @@ public class S3AwsStorageDriverTest {
 			assertEquals("mybucket", second[0], "bucket on recycled call");
 			assertEquals("somekey", second[1], "key on recycled call");
 		}
+
+		/** A key that repeats the bucket keeps it, on the first call and after a recycle. */
+		@SuppressWarnings("unchecked")
+		@Test
+		void generatedNameRepeatingTheBucket_keepsThePrefix() {
+			Operation<Item> op = mock(Operation.class);
+			Item item = mock(Item.class);
+			when(op.dstPath()).thenReturn("/abc");
+			when(item.name()).thenReturn("abc/s0/k");
+			when(op.item()).thenReturn(item);
+
+			assertArrayEquals(new String[]{"abc", "abc/s0/k"
+			}, drv.resolveBucketAndKey(op));
+
+			when(item.name()).thenReturn("/abc/abc/s0/k");
+			assertArrayEquals(new String[]{"abc", "abc/s0/k"
+			}, drv.resolveBucketAndKey(op));
+		}
+
+		@SuppressWarnings("unchecked")
+		@Test
+		void generatedNameRepeatingTheNestedPrefix_keepsIt() {
+			Operation<Item> op = mock(Operation.class);
+			Item item = mock(Item.class);
+			when(op.dstPath()).thenReturn("/abc/pre");
+			when(item.name()).thenReturn("pre/k");
+			when(op.item()).thenReturn(item);
+
+			assertArrayEquals(new String[]{"abc", "pre/pre/k"
+			}, drv.resolveBucketAndKey(op));
+
+			when(item.name()).thenReturn("/abc/pre/pre/k");
+			assertArrayEquals(new String[]{"abc", "pre/pre/k"
+			}, drv.resolveBucketAndKey(op));
+		}
+
+		@SuppressWarnings("unchecked")
+		@Test
+		void nameStartingWithTheBucketLetters_isTheKey() {
+			Operation<Item> op = mock(Operation.class);
+			Item item = mock(Item.class);
+			when(op.dstPath()).thenReturn("/abc");
+			when(item.name()).thenReturn("abcdef/k");
+			when(op.item()).thenReturn(item);
+
+			assertArrayEquals(new String[]{"abc", "abcdef/k"
+			}, drv.resolveBucketAndKey(op));
+		}
+
+		@SuppressWarnings("unchecked")
+		@Test
+		void pathWithoutLeadingSlash_rootedRecordedName_resolvesToTheKey() {
+			Operation<Item> op = mock(Operation.class);
+			Item item = mock(Item.class);
+			when(op.dstPath()).thenReturn("abc");
+			when(item.name()).thenReturn("/abc/k");
+			when(op.item()).thenReturn(item);
+
+			assertArrayEquals(new String[]{"abc", "k"
+			}, drv.resolveBucketAndKey(op));
+		}
 	}
 
 	// -----------------------------------------------------------------------
@@ -1940,59 +2001,20 @@ public class S3AwsStorageDriverTest {
 	class RequestNewPathTest {
 
 		@Test
-		void extractsBucketPath_withSlash() {
-			when(mockS3Client.headBucket(any(HeadBucketRequest.class)))
-							.thenReturn(CompletableFuture.completedFuture(HeadBucketResponse.builder().build()));
+		void workerNeverChecksOrCreatesBuckets() {
+			assertEquals("/large", drv.requestNewPath("/large/prefix"));
+			assertEquals("/mybucket", drv.requestNewPath("/mybucket"));
 
-			String result = drv.requestNewPath("/large/prefix");
-			assertEquals("/large", result);
-
-			// Verify headBucket was called with the bucket from path, not this.bucketName
-			ArgumentCaptor<HeadBucketRequest> cap = ArgumentCaptor.forClass(HeadBucketRequest.class);
-			verify(mockS3Client).headBucket(cap.capture());
-			assertEquals("large", cap.getValue().bucket());
+			verify(mockS3Client, never()).headBucket(any(HeadBucketRequest.class));
+			verify(mockS3Client, never()).createBucket(any(CreateBucketRequest.class));
 		}
 
 		@Test
-		void extractsBucketPath_noSubpath() {
-			when(mockS3Client.headBucket(any(HeadBucketRequest.class)))
-							.thenReturn(CompletableFuture.completedFuture(HeadBucketResponse.builder().build()));
-
-			String result = drv.requestNewPath("/mybucket");
-			assertEquals("/mybucket", result);
-		}
-
-		@Test
-		void missingBucket_createsIt() {
-			when(mockS3Client.headBucket(any(HeadBucketRequest.class)))
-							.thenReturn(CompletableFuture.failedFuture(NoSuchBucketException.builder().message("no bucket").build()));
-			when(mockS3Client.createBucket(any(CreateBucketRequest.class)))
-							.thenReturn(CompletableFuture.completedFuture(CreateBucketResponse.builder().build()));
-
-			String result = drv.requestNewPath("/newbucket");
-			assertEquals("/newbucket", result);
-
-			ArgumentCaptor<CreateBucketRequest> cap = ArgumentCaptor.forClass(CreateBucketRequest.class);
-			verify(mockS3Client).createBucket(cap.capture());
-			assertEquals("newbucket", cap.getValue().bucket());
-		}
-
-		@Test
-		void headBucketFailure_nonNoSuchBucket_throwsRuntimeException() {
-			when(mockS3Client.headBucket(any(HeadBucketRequest.class)))
-							.thenReturn(CompletableFuture.failedFuture(S3Exception.builder().message("access denied").build()));
-
-			assertThrows(RuntimeException.class, () -> drv.requestNewPath("/nonexistent"));
-		}
-
-		@Test
-		void createBucketFailure_throwsRuntimeException() {
-			when(mockS3Client.headBucket(any(HeadBucketRequest.class)))
-							.thenReturn(CompletableFuture.failedFuture(NoSuchBucketException.builder().message("no bucket").build()));
-			when(mockS3Client.createBucket(any(CreateBucketRequest.class)))
-							.thenReturn(CompletableFuture.failedFuture(S3Exception.builder().message("create failed").build()));
-
-			assertThrows(RuntimeException.class, () -> drv.requestNewPath("/failbucket"));
+		void operationsDoNotInitializeTheirOutputPath() throws Exception {
+			// The controller engine provisions target buckets; the per-operation path cache is off.
+			final var field = com.dell.spt.base.storage.driver.StorageDriverBase.class.getDeclaredField("requestNewPathFunc");
+			field.setAccessible(true);
+			assertNull(field.get(drv));
 		}
 	}
 
@@ -2250,11 +2272,8 @@ public class S3AwsStorageDriverTest {
 
 		@Test
 		void pathWithoutLeadingSlash() {
-			when(mockS3Client.headBucket(any(HeadBucketRequest.class)))
-							.thenReturn(CompletableFuture.completedFuture(HeadBucketResponse.builder().build()));
-
-			String result = drv.requestNewPath("nobucket");
-			assertEquals("/nobucket", result);
+			assertEquals("/nobucket", drv.requestNewPath("nobucket"));
+			assertEquals("/nobucket", drv.requestNewPath("nobucket/prefix"));
 		}
 	}
 
@@ -3586,6 +3605,189 @@ public class S3AwsStorageDriverTest {
 			uploadExecutorField.setAccessible(true);
 			ExecutorService uploadExecutor = (ExecutorService) uploadExecutorField.get(driver);
 			assertTrue(uploadExecutor.isShutdown(), "Upload executor should be shut down");
+		}
+	}
+
+	// -----------------------------------------------------------------------
+	// Target bucket set: every request addresses the bucket its operation names
+	// -----------------------------------------------------------------------
+
+	@Nested
+	class TargetBucketSetRoutingTest {
+
+		/** A listed set, whose names no generated set could contain. */
+		private final List<String> listed = com.dell.spt.base.storage.driver.bucket.TargetBucketSet.memberPaths(
+						"/placeholder/prefix", 4, List.of("ps-eu", "PS_US", "ps-ap", "ps-sa"));
+
+		private Operation<Item> build(final OpType opType, final DataItem item, final long sizeThreshold) throws Exception {
+			return build(opType, item, sizeThreshold,
+							com.dell.spt.base.storage.driver.bucket.TargetBucketSet.memberPaths("/bench/prefix", 4));
+		}
+
+		@SuppressWarnings({"rawtypes", "unchecked"
+		})
+		private Operation<Item> build(
+						final OpType opType, final DataItem item, final long sizeThreshold, final List<String> members)
+						throws Exception {
+			final var builder = new com.dell.spt.base.item.op.data.DataOperationsBuilderImpl(0);
+			builder.opType(opType);
+			builder.credentialInput(null);
+			builder.sizeThreshold(sizeThreshold);
+			if (OpType.CREATE.equals(opType)) {
+				builder.outputPathInput(new com.dell.spt.base.config.ConstantValueInputImpl<>("/bench/prefix"));
+				builder.targetBucketMembers(members, 0);
+			}
+			return (Operation<Item>) builder.buildOp(item);
+		}
+
+		@Test
+		void objectAndMultipartRequestsResolveTheListedBucketAsWritten() throws Exception {
+			final var create = build(OpType.CREATE, new DataItemImpl("k5", 5, 1024), Long.MAX_VALUE, listed);
+			assertArrayEquals(new String[]{"PS_US", "prefix/k5"
+			}, drv.resolveBucketAndKey(create));
+			final var recorded = (DataItem) create.result().item();
+			assertEquals("/PS_US/prefix/k5", recorded.name());
+			for (final var opType : List.of(OpType.READ, OpType.UPDATE, OpType.DELETE)) {
+				final var existing = build(opType, new DataItemImpl(recorded.name(), recorded.offset(), 1024),
+								Long.MAX_VALUE, listed);
+				assertArrayEquals(new String[]{"PS_US", "prefix/k5"
+				}, drv.resolveBucketAndKey(existing), opType.name());
+			}
+			final var multipart = build(OpType.CREATE, new DataItemImpl("big", 6, 3000), 1024, listed);
+			final var composite = assertInstanceOf(CompositeDataOperation.class, multipart);
+			assertArrayEquals(new String[]{"ps-ap", "prefix/big"
+			}, drv.resolveBucketAndKey(multipart));
+			for (final Object part : composite.subOperations()) {
+				final var partial = (PartialDataOperation) part;
+				assertArrayEquals(new String[]{"ps-ap", "prefix/big"
+				}, drv.resolveBucketAndKey((Operation<Item>) partial.parent()));
+				assertEquals("/ps-ap/prefix", partial.dstPath(), "a part keeps its parent's listed bucket");
+			}
+		}
+
+		@Test
+		@SuppressWarnings("unchecked")
+		void putAndDeleteRequestsCarryTheListedBucketAsWritten() throws Exception {
+			when(mockS3Client.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class)))
+							.thenReturn(CompletableFuture.completedFuture(PutObjectResponse.builder().build()));
+			when(mockS3Client.deleteObject(any(DeleteObjectRequest.class)))
+							.thenReturn(CompletableFuture.completedFuture(
+											software.amazon.awssdk.services.s3.model.DeleteObjectResponse.builder().build()));
+			final DataItem item = new DataItemImpl("k5", 5, 4);
+			item.dataInput(DataInput.instance(null, "7a42d9c483244167", new SizeInBytes("4MB"), 1, false));
+			final var create = build(OpType.CREATE, item, Long.MAX_VALUE, listed);
+
+			drv.execute(create).join();
+			drv.execute(build(OpType.DELETE, new DataItemImpl("/PS_US/prefix/k5", 5, 4), Long.MAX_VALUE)).join();
+
+			final ArgumentCaptor<PutObjectRequest> put = ArgumentCaptor.forClass(PutObjectRequest.class);
+			verify(mockS3Client).putObject(put.capture(), any(AsyncRequestBody.class));
+			assertEquals("PS_US", put.getValue().bucket());
+			assertEquals("prefix/k5", put.getValue().key());
+			final ArgumentCaptor<DeleteObjectRequest> delete = ArgumentCaptor.forClass(DeleteObjectRequest.class);
+			verify(mockS3Client).deleteObject(delete.capture());
+			assertEquals("PS_US", delete.getValue().bucket());
+			assertEquals("prefix/k5", delete.getValue().key());
+		}
+
+		@Test
+		void objectAndMultipartRequestsResolveTheMemberBucket() throws Exception {
+			final var create = build(OpType.CREATE, new DataItemImpl("k6", 6, 1024), Long.MAX_VALUE);
+			assertArrayEquals(new String[]{"bench-2", "prefix/k6"
+			}, drv.resolveBucketAndKey(create));
+			final var recorded = (DataItem) create.result().item();
+			assertEquals("/bench-2/prefix/k6", recorded.name());
+			for (final var opType : List.of(OpType.READ, OpType.UPDATE, OpType.DELETE)) {
+				final var existing = build(opType, new DataItemImpl(recorded.name(), recorded.offset(), 1024), Long.MAX_VALUE);
+				assertArrayEquals(new String[]{"bench-2", "prefix/k6"
+				}, drv.resolveBucketAndKey(existing), opType.name());
+			}
+			final var multipart = build(OpType.CREATE, new DataItemImpl("big", 7, 3000), 1024);
+			final var composite = assertInstanceOf(CompositeDataOperation.class, multipart);
+			assertArrayEquals(new String[]{"bench-3", "prefix/big"
+			}, drv.resolveBucketAndKey(multipart));
+			for (final Object part : composite.subOperations()) {
+				final var partial = (PartialDataOperation) part;
+				assertArrayEquals(new String[]{"bench-3", "prefix/big"
+				}, drv.resolveBucketAndKey((Operation<Item>) partial.parent()));
+				assertEquals("/bench-3/prefix", partial.dstPath(), "a part keeps its parent's member");
+			}
+		}
+
+		@Test
+		@SuppressWarnings({"unchecked", "rawtypes"
+		})
+		void multipartInitiateAndAbortRequestsCarryTheParentsMemberBucket() throws Exception {
+			when(mockS3Client.createMultipartUpload(any(CreateMultipartUploadRequest.class)))
+							.thenReturn(CompletableFuture.completedFuture(
+											CreateMultipartUploadResponse.builder().uploadId("upload-member").build()));
+			when(mockS3Client.abortMultipartUpload(any(AbortMultipartUploadRequest.class)))
+							.thenReturn(CompletableFuture.completedFuture(AbortMultipartUploadResponse.builder().build()));
+			final var parent = (CompositeDataOperation) build(OpType.CREATE, new DataItemImpl("big", 7, 3000), 1024);
+			assertEquals("/bench-3/prefix", parent.dstPath());
+			final CompositeDataOperation initiate = mock(CompositeDataOperation.class);
+			final CompositeDataOperation abort = mock(CompositeDataOperation.class);
+			for (final var op : List.of(initiate, abort)) {
+				when(op.type()).thenReturn(OpType.CREATE);
+				when(op.item()).thenReturn(parent.item());
+				when(op.dstPath()).thenReturn(parent.dstPath());
+			}
+			when(initiate.allSubOperationsDone()).thenReturn(false);
+			when(abort.get(KEY_UPLOAD_ID)).thenReturn("upload-member");
+			when(abort.get(KEY_MPU_ABORT)).thenReturn("true");
+
+			drv.execute((Operation) initiate).join();
+			drv.execute((Operation) abort).join();
+
+			final ArgumentCaptor<CreateMultipartUploadRequest> created = ArgumentCaptor.forClass(CreateMultipartUploadRequest.class);
+			verify(mockS3Client).createMultipartUpload(created.capture());
+			assertEquals("bench-3", created.getValue().bucket());
+			assertEquals("prefix/big", created.getValue().key());
+			final ArgumentCaptor<AbortMultipartUploadRequest> aborted = ArgumentCaptor.forClass(AbortMultipartUploadRequest.class);
+			verify(mockS3Client).abortMultipartUpload(aborted.capture());
+			assertEquals("bench-3", aborted.getValue().bucket());
+			assertEquals("prefix/big", aborted.getValue().key());
+		}
+
+		@Test
+		void theConstructorFallbackBucketNeverComesFromTheBaseOfABucketSet() throws Exception {
+			final String defaults;
+			try (final var stream = getClass().getResourceAsStream("/config/defaults.yaml")) {
+				defaults = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+			}
+			final Config config = com.dell.spt.base.config.ConfigUtil.loadConfig(
+							defaults, com.dell.spt.base.config.ConfigFormat.YAML,
+							com.dell.spt.base.config.InitialConfigSchemaProvider.provider().schema());
+			config.val("item-output-path", "/bench");
+			config.val("storage-targetBucket-count", 4);
+
+			// The factory hands the driver the storage configuration only, which holds no item paths.
+			assertNotEquals("bench", S3AwsStorageDriver.resolveBucketName(config.configVal("storage")));
+		}
+
+		@Test
+		@SuppressWarnings("unchecked")
+		void putAndDeleteRequestsCarryTheMemberBucket() throws Exception {
+			when(mockS3Client.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class)))
+							.thenReturn(CompletableFuture.completedFuture(PutObjectResponse.builder().build()));
+			when(mockS3Client.deleteObject(any(DeleteObjectRequest.class)))
+							.thenReturn(CompletableFuture.completedFuture(
+											software.amazon.awssdk.services.s3.model.DeleteObjectResponse.builder().build()));
+			final DataItem item = new DataItemImpl("k5", 5, 4);
+			item.dataInput(DataInput.instance(null, "7a42d9c483244167", new SizeInBytes("4MB"), 1, false));
+			final var create = build(OpType.CREATE, item, Long.MAX_VALUE);
+
+			drv.execute(create).join();
+			drv.execute(build(OpType.DELETE, new DataItemImpl("/bench-1/prefix/k5", 5, 4), Long.MAX_VALUE)).join();
+
+			final ArgumentCaptor<PutObjectRequest> put = ArgumentCaptor.forClass(PutObjectRequest.class);
+			verify(mockS3Client).putObject(put.capture(), any(AsyncRequestBody.class));
+			assertEquals("bench-1", put.getValue().bucket());
+			assertEquals("prefix/k5", put.getValue().key());
+			final ArgumentCaptor<DeleteObjectRequest> delete = ArgumentCaptor.forClass(DeleteObjectRequest.class);
+			verify(mockS3Client).deleteObject(delete.capture());
+			assertEquals("bench-1", delete.getValue().bucket());
+			assertEquals("prefix/k5", delete.getValue().key());
 		}
 	}
 

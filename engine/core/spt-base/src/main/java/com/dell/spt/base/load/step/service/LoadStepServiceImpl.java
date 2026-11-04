@@ -9,6 +9,7 @@ import com.dell.spt.base.env.Extension;
 import com.dell.spt.base.load.step.DurationAwaitStatus;
 import com.dell.spt.base.load.step.LoadStepFactory;
 import com.dell.spt.base.load.step.LoadStep;
+import com.dell.spt.base.load.step.PreparationStatus;
 import com.dell.spt.base.item.op.deletion.DeleteObjectLifecycleSnapshot;
 import com.dell.spt.base.logging.Loggers;
 import com.dell.spt.base.metrics.MetricsManager;
@@ -17,6 +18,8 @@ import com.dell.spt.base.svc.ServiceBase;
 import com.github.akurilov.confuse.Config;
 import java.io.IOException;
 import java.rmi.RemoteException;
+import com.dell.spt.base.metrics.bucket.BucketMetricsRange;
+import com.dell.spt.base.metrics.bucket.BucketMetricsReply;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -123,6 +126,26 @@ public final class LoadStepServiceImpl extends ServiceBase implements LoadStepSe
 	@Override
 	public final void releaseObjectFailureBudgetAdmission() throws RemoteException {
 		localLoadStep.releaseObjectFailureBudgetAdmission();
+	}
+
+	@Override
+	public final void startPreparation(final long preparationId, final long budgetNanos) throws RemoteException {
+		localLoadStep.startPreparation(preparationId, budgetNanos);
+	}
+
+	@Override
+	public final PreparationStatus preparationStatus(final long preparationId) throws RemoteException {
+		return localLoadStep.preparationStatus(preparationId);
+	}
+
+	@Override
+	public final boolean releasePreparedAdmission(final long preparationId) throws RemoteException {
+		return localLoadStep.releasePreparedAdmission(preparationId);
+	}
+
+	@Override
+	public final void fencePreparation(final long preparationId) throws RemoteException {
+		localLoadStep.fencePreparation(preparationId);
 	}
 
 	@Override
@@ -233,6 +256,11 @@ public final class LoadStepServiceImpl extends ServiceBase implements LoadStepSe
 	@Override
 	public final boolean isDeleteInventoryVerificationCompleteForStepStop() throws RemoteException {
 		return localLoadStep.isDeleteInventoryVerificationCompleteForStepStop();
+	}
+
+	@Override
+	public final BucketMetricsReply bucketMetrics(final BucketMetricsRange range) throws RemoteException {
+		return localLoadStep.bucketMetrics(range);
 	}
 
 	@Override

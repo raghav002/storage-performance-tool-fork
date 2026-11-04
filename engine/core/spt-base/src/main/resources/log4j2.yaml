@@ -77,6 +77,30 @@ Configuration:
         PatternLayout:
           # header: is removed as it's dynamically generated based on the passed quantiles
           pattern: "%m%n"
+      - name: metricsSteadyFileTotal
+        filePattern: "${ctx:home_dir}${sys:file.separator}log${sys:file.separator}$${ctx:step_id}${sys:file.separator}metrics.steady.total.csv"
+        Policies:
+          StepIdTriggeringPolicy: {}
+        DirectWriteRolloverStrategy: {}
+        PatternLayout:
+          # the header is written with the first row, from the step's configured quantiles
+          pattern: "%m%n"
+      - name: metricsBucketFileTotal
+        filePattern: "${ctx:home_dir}${sys:file.separator}log${sys:file.separator}$${ctx:step_id}${sys:file.separator}metrics.bucket.total.csv"
+        Policies:
+          StepIdTriggeringPolicy: {}
+        DirectWriteRolloverStrategy: {}
+        PatternLayout:
+          # the header is written with the first row, from the step's configured quantiles
+          pattern: "%m%n"
+      - name: metricsBucketSteadyFileTotal
+        filePattern: "${ctx:home_dir}${sys:file.separator}log${sys:file.separator}$${ctx:step_id}${sys:file.separator}metrics.bucket.steady.total.csv"
+        Policies:
+          StepIdTriggeringPolicy: {}
+        DirectWriteRolloverStrategy: {}
+        PatternLayout:
+          # the header is written with the first row, from the step's configured quantiles
+          pattern: "%m%n"
       - name: metricsThresholdFileTotal
         filePattern: "${ctx:home_dir}${sys:file.separator}log${sys:file.separator}$${ctx:step_id}${sys:file.separator}metrics.threshold.total.csv"
         Policies:
@@ -187,6 +211,20 @@ Configuration:
           pattern: "%m%n"
       - name: rangeReadFile
         filePattern: "${ctx:home_dir}${sys:file.separator}log${sys:file.separator}$${ctx:step_id}${sys:file.separator}range.read.csv"
+        Policies:
+          StepIdTriggeringPolicy: {}
+        DirectWriteRolloverStrategy: {}
+        PatternLayout:
+          pattern: "%m%n"
+      - name: nicPathsFile
+        filePattern: "${ctx:home_dir}${sys:file.separator}log${sys:file.separator}$${ctx:step_id}${sys:file.separator}nic.paths.csv"
+        Policies:
+          StepIdTriggeringPolicy: {}
+        DirectWriteRolloverStrategy: {}
+        PatternLayout:
+          pattern: "%m%n"
+      - name: nicSetFile
+        filePattern: "${ctx:home_dir}${sys:file.separator}log${sys:file.separator}$${ctx:step_id}${sys:file.separator}nic.set.json"
         Policies:
           StepIdTriggeringPolicy: {}
         DirectWriteRolloverStrategy: {}
@@ -341,6 +379,21 @@ Configuration:
         AppenderRef:
           ref: metricsThresholdFileTotal
         additivity: false
+      - name: com.dell.spt.base.logging.metrics.steady.FileTotal
+        level: INFO
+        AppenderRef:
+          ref: metricsSteadyFileTotal
+        additivity: false
+      - name: com.dell.spt.base.logging.metrics.bucket.FileTotal
+        level: INFO
+        AppenderRef:
+          ref: metricsBucketFileTotal
+        additivity: false
+      - name: com.dell.spt.base.logging.metrics.bucket.steady.FileTotal
+        level: INFO
+        AppenderRef:
+          ref: metricsBucketSteadyFileTotal
+        additivity: false
       - name: com.dell.spt.base.logging.metrics.ExtResultsFile
         level: INFO
         AppenderRef:
@@ -376,6 +429,16 @@ Configuration:
         level: INFO
         AppenderRef:
           ref: rangeReadFile
+        additivity: false
+      - name: com.dell.spt.base.logging.NicPaths
+        level: INFO
+        AppenderRef:
+          ref: nicPathsFile
+        additivity: false
+      - name: com.dell.spt.base.logging.NicSet
+        level: INFO
+        AppenderRef:
+          ref: nicSetFile
         additivity: false
       - name: com.dell.spt.base.logging.OperationLifecycle
         level: INFO

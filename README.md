@@ -92,6 +92,8 @@ S3_ENDPOINT=https://s3.example.com
 S3_ACCESS_KEY=your-access-key
 S3_SECRET_KEY=your-secret-key
 S3_BUCKET=test-bucket
+# Optional instead: several target buckets, used as written; new objects are spread over them
+# S3_BUCKETS=bucket-a,bucket-b
 
 # Optional: comma-separated user@host entries for distributed runs
 HOSTS=user@node1,user@node2,user@node3
@@ -104,7 +106,10 @@ Verify the local environment and configured target hosts:
 ```
 
 With no `HOSTS` setting, this checks localhost. With `HOSTS`, it runs the
-distributed prerequisite checks described above.
+distributed prerequisite checks described above. Each node's report also lists
+its NICs; add `--interfaces auto` (or a list of NICs) to preview the NICs and
+Paths a run would use for the configured S3 endpoints. See
+[`spt verify`](cli/docs/SPT_SYNTAX.md#infrastructure-command-spt-verify).
 
 ### Run your first test
 

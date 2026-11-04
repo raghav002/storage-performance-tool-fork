@@ -3,6 +3,7 @@ package com.dell.spt.base.load.generator;
 import static com.dell.spt.base.Constants.APP_NAME;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -33,12 +34,15 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.apache.commons.math3.stat.Frequency;
 
@@ -167,6 +171,147 @@ public class LoadGeneratorBuilderImplTest {
 		for (var i = 0; i < bucketCount; i++) {
 			assertEquals(expectedFreq, (double) freq.getCount(i), expectedFreq / 2.0);
 		}
+	}
+
+	private static List<String> targetBucketDestinations(final int count, final String outputPath) throws Exception {
+		return targetBucketDestinations(count, List.of(), outputPath);
+	}
+
+	private static List<String> targetBucketDestinations(
+					final int count, final List<String> names, final String outputPath) throws Exception {
+		final var options = baseSingleOpOptions();
+		options.put("item-output-path", outputPath);
+		options.put("item-naming-type", "serial");
+		options.put("load-batch-size", 8);
+		options.put("load-op-limit-count", 40);
+		final var config = (Config) new BasicConfig("-", CONFIG_SCHEMA);
+		options.forEach(config::val);
+		final List<DataOperation<DataItem>> ops = new ArrayList<>();
+		try (final IoBuffer<DataOperation<DataItem>> opBuff = new LimitedQueueBuffer<>(new ArrayBlockingQueue<>(40));
+						final LoadGenerator loadGenerator = new LoadGeneratorBuilderImpl()
+										.authConfig(config.configVal("storage-auth"))
+										.targetBucketCount(count)
+										.targetBucketNames(names)
+										.itemConfig(config.configVal("item"))
+										.itemFactory((ItemFactory) new DataItemFactoryImpl())
+										.itemType(ItemType.DATA)
+										.loadConfig(config.configVal("load"))
+										.loadOperationsOutput(opBuff)
+										.originIndex(0)
+										.build()) {
+			loadGenerator.start();
+			assertTrue(loadGenerator.await(10, TimeUnit.SECONDS), "load generator await timeout");
+			assertEquals(40, opBuff.get(ops, 40));
+		}
+		return ops.stream().map(Operation::dstPath).toList();
+	}
+
+	@Test
+	public void targetBucketSetSpreadsNewObjectsEvenlyOverItsMembers() throws Exception {
+		final var destinations = targetBucketDestinations(4, "/bench/prefix");
+
+		final Map<String, Long> perMember = destinations.stream()
+						.collect(Collectors.groupingBy(path -> path, Collectors.counting()));
+		assertEquals(Map.of(
+						"/bench-0/prefix", 10L, "/bench-1/prefix", 10L, "/bench-2/prefix", 10L, "/bench-3/prefix", 10L),
+						perMember);
+	}
+
+	@Test
+	public void oneTargetBucketKeepsTheOutputPathAsConfigured() throws Exception {
+		assertEquals(List.of("test-bucket"), targetBucketDestinations(1, "test-bucket").stream().distinct().toList());
+	}
+
+	@Test
+	public void aBucketListSpreadsNewObjectsEvenlyOverItsNamesInOrder() throws Exception {
+		final var names = List.of("ps-eu", "PS_US", "ps-ap", "ps-sa");
+		final var destinations = targetBucketDestinations(4, names, "/placeholder/prefix");
+
+		final Map<String, Long> perMember = destinations.stream()
+						.collect(Collectors.groupingBy(path -> path, Collectors.counting()));
+		assertEquals(Map.of(
+						"/ps-eu/prefix", 10L, "/PS_US/prefix", 10L, "/ps-ap/prefix", 10L, "/ps-sa/prefix", 10L),
+						perMember);
+		final var members = names.stream().map(name -> "/" + name + "/prefix").toList();
+		for (int i = 1; i < destinations.size(); i++) {
+			assertEquals(members.get((members.indexOf(destinations.get(i - 1)) + 1) % members.size()),
+							destinations.get(i), "serial ids walk the members in list order, operation " + i);
+		}
+	}
+
+	@Test
+	public void aBucketListOfTwoUsesTheListAndNotTheGeneratedNames() throws Exception {
+		final var destinations = targetBucketDestinations(2, List.of("alpha", "beta"), "/bench/prefix");
+
+		assertEquals(Set.of("/alpha/prefix", "/beta/prefix"), new HashSet<>(destinations));
+	}
+
+	// A list's placeholder is never evaluated: with two or more members the builder must not build an
+	// output path input from it, so an expression there starts no evaluator and cannot fail the build.
+	@Test
+	public void aBucketListNeverEvaluatesThePlaceholderExpression() throws Exception {
+		for (final var placeholder : List.of("/#{noSuchFunction()}/prefix", "/${noSuchFunction()}/prefix")) {
+			final var destinations = targetBucketDestinations(2, List.of("alpha", "beta"), placeholder);
+
+			assertEquals(Set.of("/alpha/prefix", "/beta/prefix"), new HashSet<>(destinations), placeholder);
+		}
+	}
+
+	@Test
+	public void aOneNameBucketListReplacesOnlyTheBucketSegmentOfTheOutputPath() throws Exception {
+		assertEquals(List.of("/ps-eu/prefix"),
+						targetBucketDestinations(1, List.of("ps-eu"), "/placeholder/prefix").stream().distinct().toList());
+		assertEquals(List.of("ps-eu"),
+						targetBucketDestinations(1, List.of("ps-eu"), "test-bucket").stream().distinct().toList());
+		assertEquals(List.of("test-bucket"),
+						targetBucketDestinations(1, List.of("test-bucket"), "test-bucket").stream().distinct().toList(),
+						"a placeholder equal to the name is exactly today's single-bucket path");
+	}
+
+	@Test
+	public void aBucketListRejectsACreateOfSuppliedItemsButAOneNameListDoesNot() {
+		final var config = (Config) new BasicConfig("-", CONFIG_SCHEMA);
+		baseSingleOpOptions().forEach(config::val);
+		final Function<List<String>, LoadGeneratorBuilderImpl<?, ?, ?>> builder = names -> (LoadGeneratorBuilderImpl<?, ?, ?>) new LoadGeneratorBuilderImpl()
+						.authConfig(config.configVal("storage-auth"))
+						.targetBucketCount(names.size())
+						.targetBucketNames(names)
+						.itemConfig(config.configVal("item"))
+						.itemFactory((ItemFactory) new DataItemFactoryImpl())
+						.itemType(ItemType.DATA)
+						.loadConfig(config.configVal("load"))
+						.loadOperationsOutput(new LimitedQueueBuffer<>(new ArrayBlockingQueue<>(1)))
+						.itemInput(new com.github.akurilov.commons.io.collection.ListInput<>(
+										List.of(new DataItemImpl("/ps-eu/existing", 5, 1024))))
+						.originIndex(0);
+
+		final var failure = assertThrows(IllegalConfigurationException.class,
+						() -> builder.apply(List.of("ps-eu", "ps-us")).build());
+
+		assertTrue(failure.getMessage().contains("storage.targetBucket.names (2 names)"), failure.getMessage());
+		assertTrue(failure.getMessage().contains("applies only to newly generated objects"), failure.getMessage());
+		assertDoesNotThrow(() -> builder.apply(List.of("ps-eu")).build().close());
+	}
+
+	@Test
+	public void targetBucketSetRejectsACreateOfSuppliedItems() {
+		final var config = (Config) new BasicConfig("-", CONFIG_SCHEMA);
+		baseSingleOpOptions().forEach(config::val);
+		final var builder = new LoadGeneratorBuilderImpl()
+						.authConfig(config.configVal("storage-auth"))
+						.targetBucketCount(4)
+						.itemConfig(config.configVal("item"))
+						.itemFactory((ItemFactory) new DataItemFactoryImpl())
+						.itemType(ItemType.DATA)
+						.loadConfig(config.configVal("load"))
+						.loadOperationsOutput(new LimitedQueueBuffer<>(new ArrayBlockingQueue<>(1)))
+						.itemInput(new com.github.akurilov.commons.io.collection.ListInput<>(
+										List.of(new DataItemImpl("/bench-2/existing", 5, 1024))))
+						.originIndex(0);
+
+		final var failure = assertThrows(IllegalConfigurationException.class, builder::build);
+
+		assertTrue(failure.getMessage().contains("applies only to newly generated objects"), failure.getMessage());
 	}
 
 	private static Map<String, Object> baseSingleOpOptions() {
@@ -555,6 +700,89 @@ public class LoadGeneratorBuilderImplTest {
 				Thread.sleep(5);
 			}
 			assertEquals(2, opBuff.size(), "retry should dispatch once the index throttle allows it again");
+			loadGenerator.stop();
+		}
+	}
+
+	/** A count-limited generator reports its once-per-step scheduling exhaustion exactly once. */
+	@Test
+	public void schedulingExhaustionListenerRunsOnceAtTheTransition() throws Exception {
+		final Map<String, Object> options = baseSingleOpOptions();
+		options.put("load-batch-size", 3);
+		options.put("load-op-limit-count", 3);
+		final var config = (Config) new BasicConfig("-", CONFIG_SCHEMA);
+		options.forEach(config::val);
+		final var itemFactory = (ItemFactory) new DataItemFactoryImpl();
+		final var calls = new java.util.concurrent.atomic.AtomicInteger();
+
+		try (final IoBuffer<DataOperation<DataItem>> opBuff = new LimitedQueueBuffer<>(new ArrayBlockingQueue<>(10));
+						final LoadGenerator loadGenerator = new LoadGeneratorBuilderImpl()
+										.authConfig(config.configVal("storage-auth"))
+										.itemConfig(config.configVal("item"))
+										.itemFactory(itemFactory)
+										.itemType(ItemType.DATA)
+										.loadConfig(config.configVal("load"))
+										.loadOperationsOutput(opBuff)
+										.originIndex(0)
+										.build()) {
+			loadGenerator.onSchedulingExhaustion(() -> {
+				assertTrue(loadGenerator.schedulingExhaustedAtNanos() > 0, "the transition is recorded before the callback");
+				calls.incrementAndGet();
+			});
+			loadGenerator.start();
+			final long deadline = System.currentTimeMillis() + 2000;
+			while (calls.get() == 0 && System.currentTimeMillis() < deadline) {
+				Thread.sleep(5);
+			}
+			Thread.sleep(100); // further work-loop iterations must not repeat it
+			assertEquals(3, opBuff.size());
+			assertEquals(1, calls.get());
+			loadGenerator.stop();
+		}
+	}
+
+	/**
+	 * A rate-limited generator asks its throttle for a whole batch at once. The paced throttle
+	 * must hand out one permit at the start, not the batch, and then follow its clock.
+	 */
+	@Test
+	public void pacedRateThrottleReleasesNoStartBatch() throws Exception {
+		final Map<String, Object> options = baseSingleOpOptions();
+		options.put("load-batch-size", 100);
+		options.put("load-op-limit-count", 100);
+		final var config = (Config) new BasicConfig("-", CONFIG_SCHEMA);
+		options.forEach(config::val);
+		final var itemFactory = (ItemFactory) new DataItemFactoryImpl();
+		final var clock = new java.util.concurrent.atomic.AtomicLong();
+		final var throttle = new PacedRateThrottle(1000, clock::get);
+
+		try (final IoBuffer<DataOperation<DataItem>> opBuff = new LimitedQueueBuffer<>(new ArrayBlockingQueue<>(200));
+						final LoadGenerator loadGenerator = new LoadGeneratorBuilderImpl()
+										.authConfig(config.configVal("storage-auth"))
+										.itemConfig(config.configVal("item"))
+										.itemFactory(itemFactory)
+										.itemType(ItemType.DATA)
+										.loadConfig(config.configVal("load"))
+										.loadOperationsOutput(opBuff)
+										.addThrottle(throttle)
+										.originIndex(0)
+										.build()) {
+			loadGenerator.start();
+			final long firstDeadline = System.currentTimeMillis() + 2000;
+			while (opBuff.size() < 1 && System.currentTimeMillis() < firstDeadline) {
+				Thread.sleep(5);
+			}
+			// Give the work loop many iterations to (incorrectly) release more of the batch.
+			Thread.sleep(200);
+			assertEquals(1, opBuff.size(), "only the first permit may be granted while the clock stands still");
+
+			clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(4));
+			final long pacedDeadline = System.currentTimeMillis() + 2000;
+			while (opBuff.size() < 5 && System.currentTimeMillis() < pacedDeadline) {
+				Thread.sleep(5);
+			}
+			Thread.sleep(100);
+			assertEquals(5, opBuff.size(), "four more periods release exactly four more operations");
 			loadGenerator.stop();
 		}
 	}

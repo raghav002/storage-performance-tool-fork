@@ -43,6 +43,9 @@ var (
 		"jsseProvider":   {},
 		"namedGroups":    {},
 		"pqcMode":        {},
+
+		legacyKeyTargetBucket: {},
+		legacyKeyCount:        {},
 	}
 	jsParentSSLAllowedKeys = map[string]struct{}{
 		legacyKeyEnabled: {},
@@ -66,6 +69,10 @@ func ConvertJS(raw []byte, runScript RunScript, opts Options) (*Generated, error
 	if len(endpointHosts(opts.Endpoints)) == 0 {
 		diagnostics = append(diagnostics, Diagnostic{Severity: severityError, Message: "local endpoints are required for replay"})
 	}
+	body := string(raw)
+	if err := refuseJSTargetBucket(body); err != nil {
+		diagnostics = append(diagnostics, Diagnostic{Severity: severityError, Message: err.Error()})
+	}
 	bucket := effectiveBucket(opts.Bucket, runScript)
 	if bucket == "" {
 		diagnostics = append(diagnostics, Diagnostic{Severity: severityError, Message: "bucket is required; set --bucket, S3_BUCKET, or archived BUCKET"})
@@ -73,7 +80,6 @@ func ConvertJS(raw []byte, runScript RunScript, opts Options) (*Generated, error
 		effectiveVars["BUCKET"] = bucket
 	}
 
-	body := string(raw)
 	diagnostics = append(diagnostics, detectUnsupportedJSProtocols(body, effectiveVars)...)
 	diagnostics = normalizeDiagnostics(diagnostics)
 	if hasErrors(diagnostics) {
@@ -111,6 +117,11 @@ func ConvertJS(raw []byte, runScript RunScript, opts Options) (*Generated, error
 	var endpointDiagnostics []Diagnostic
 	body, endpointDiagnostics = extractJSEndpointSelections(body, effectiveVars, archived)
 	diagnostics = append(diagnostics, endpointDiagnostics...)
+	nicSettings := &archivedNicSettings{}
+	var nicDiagnostics []Diagnostic
+	body, nicDiagnostics = extractJSNicSettings(body, nicSettings)
+	diagnostics = append(diagnostics, nicSettings.diagnostics()...)
+	diagnostics = append(diagnostics, nicDiagnostics...)
 	var parentDiagnostics []Diagnostic
 	body, parentDiagnostics = rewriteJSParentConfigs(body, opts, bucket, effectiveVars)
 	diagnostics = append(diagnostics, parentDiagnostics...)
@@ -503,6 +514,7 @@ func rewriteJSParentConfigs(source string, opts Options, bucket string, vars map
 		}
 		configText := source[open : closeIdx+1]
 		sslConfig, unsupportedSSLKeys := extractJSParentSSLConfig(configText, vars)
+		bucketCount := intValue(jsFieldValue(jsObjectForKey(jsObjectForKey(configText, "storage"), legacyKeyTargetBucket), legacyKeyCount, vars), vars)
 		if enabled, ok := sslConfig[legacyKeyEnabled].(bool); ok {
 			if warning, mismatch := archivedSSLMismatchWarning(enabled, opts.Endpoints, name); mismatch {
 				diagnostics = append(diagnostics, Diagnostic{Severity: severityWarning, Message: warning})
@@ -530,7 +542,7 @@ func rewriteJSParentConfigs(source string, opts Options, bucket string, vars map
 		replacements = append(replacements, jsReplacement{
 			start: match[0],
 			end:   end,
-			text:  sanitizedJSParentConfig(name, opts, bucket, sslConfig),
+			text:  sanitizedJSParentConfig(name, opts, bucket, sslConfig, bucketCount),
 		})
 	}
 	return applyJSReplacements(source, replacements), diagnostics
@@ -548,7 +560,7 @@ func parentConfigHasExtraKeys(configText string) bool {
 	return false
 }
 
-func sanitizedJSParentConfig(name string, opts Options, bucket string, sslConfig map[string]any) string {
+func sanitizedJSParentConfig(name string, opts Options, bucket string, sslConfig map[string]any, bucketCount int) string {
 	config := map[string]any{
 		"item": map[string]any{
 			legacyKeyOutput: map[string]any{
@@ -563,6 +575,10 @@ func sanitizedJSParentConfig(name string, opts Options, bucket string, sslConfig
 	}
 	if len(sslConfig) > 0 {
 		setPath(config, sslConfig, "storage", legacyKeyNet, legacyKeySSL)
+	}
+	// A target bucket set is kept; its base becomes the replay bucket of item.output.path.
+	if bucketCount > 1 {
+		setPath(config, bucketCount, "storage", legacyKeyTargetBucket, legacyKeyCount)
 	}
 	configJS, err := marshalJSConfig(config)
 	if err != nil {

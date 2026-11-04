@@ -119,6 +119,20 @@ func startStoppableRun(t *testing.T, a *app) string {
 	return body.Job.RunID
 }
 
+// currentJob returns the job that GET /api/state would publish.
+func currentJob(t *testing.T, a *app) map[string]any {
+	t.Helper()
+	state, err := a.currentState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, _ := state[keyJob].(map[string]any)
+	if job == nil {
+		t.Fatalf("state has no job: %v", state)
+	}
+	return job
+}
+
 func TestStopRunGracefully(t *testing.T) {
 	a, marker, _ := prepareShutdownTest(t)
 	const origin = "http://localhost:8000"
@@ -129,8 +143,23 @@ func TestStopRunGracefully(t *testing.T) {
 		t.Fatalf("stop without a run: %d", response.Code)
 	}
 	runID := startStoppableRun(t, a)
-	if response := stopRequest(a, runID, origin); response.Code != http.StatusAccepted {
+	if job := currentJob(t, a); job[keyCanStop] != true {
+		t.Fatalf("live run is not stoppable: %v", job)
+	}
+	response := stopRequest(a, runID, origin)
+	if response.Code != http.StatusAccepted {
 		t.Fatalf("stop run: %d %s", response.Code, response.Body.String())
+	}
+	var accepted struct {
+		Job map[string]any `json:"job"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &accepted); err != nil || accepted.Job[keyStopRequested] != true {
+		t.Fatalf("stop response job: %v %s", err, response.Body.String())
+	}
+	if at, _ := accepted.Job[keyStopRequestedAt].(string); at == "" {
+		t.Fatalf("stop response has no stop_requested_at: %v", accepted.Job)
+	} else if _, err := time.Parse(time.RFC3339Nano, at); err != nil {
+		t.Fatalf("stop_requested_at is not RFC 3339: %q", at)
 	}
 	if response := stopRequest(a, runID, origin); response.Code != http.StatusAccepted && response.Code != http.StatusConflict {
 		t.Fatalf("repeated stop: %d %s", response.Code, response.Body.String())
@@ -190,5 +219,30 @@ func TestStopRefusesAttachedRun(t *testing.T) {
 	response := stopRequest(a, "mt-dashboard-attached", "http://localhost:8000")
 	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "only monitoring") {
 		t.Fatalf("stop of an attached run: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestRestartedRunCannotBeStopped(t *testing.T) {
+	a, _, _ := prepareShutdownTest(t)
+	// A run started by an earlier dashboard process: its state file says
+	// running and its SPT still holds the run lock, but this process has no
+	// handle to it.
+	if err := a.writeState(map[string]any{keyRunID: "mt-dashboard-20000101T000000-beef", keyStatus: jobRunning, keyStartedAt: utcNow()}); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := os.OpenFile(a.lockFile, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lockFile(lock); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { unlockClose(lock) })
+	job := currentJob(t, a)
+	if job[keyStatus] != jobRunning || job[keyCanStop] != false {
+		t.Fatalf("restarted run: status=%v can_stop=%v", job[keyStatus], job[keyCanStop])
+	}
+	if response := stopRequest(a, "mt-dashboard-20000101T000000-beef", "http://localhost:8000"); response.Code != http.StatusConflict {
+		t.Fatalf("stop of a restarted run: %d %s", response.Code, response.Body.String())
 	}
 }

@@ -201,6 +201,7 @@ func (a *app) handleStop(w http.ResponseWriter, r *http.Request) {
 	}
 	a.activeJob = cloneMap(a.activeJob)
 	a.activeJob[keyStopRequested] = true
+	a.activeJob[keyStopRequestedAt] = utcNow()
 	a.activeJob[keyMessage] = "Stopping SPT gracefully…"
 	_ = a.writeState(a.activeJob)
 	writeJSON(w, 202, map[string]any{keyJob: publicJob(a.activeJob), keyMessage: "Stop requested."})

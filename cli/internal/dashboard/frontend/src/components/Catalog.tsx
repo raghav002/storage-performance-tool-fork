@@ -1,10 +1,12 @@
 import {
   Button,
   Checkbox,
+  NativeSelect,
   Paper,
   Radio,
   Table,
   Text,
+  TextInput,
   Title,
 } from "@mantine/core";
 import { useState } from "react";
@@ -95,73 +97,51 @@ export function Catalog({
           </Button>
         </div>
       </div>
-      <section
-        data-spt-legacy=""
-        className="panel catalog-filters"
+      <Paper
+        component="section"
+        p="panel"
+        mb="comfortable"
+        className="flex flex-wrap items-end gap-[14px]"
         aria-label="Filters"
       >
-        <label data-spt-legacy="">
-          Search
-          <input
-            data-spt-legacy=""
-            type="search"
-            value={filters.q}
-            placeholder="Run name, label, size, endpoint host"
-            onChange={(e) => setFilters({ ...filters, q: e.target.value })}
-          />
-        </label>
-        <label data-spt-legacy="">
-          Source
-          <select
-            data-spt-legacy=""
-            value={filters.source}
-            onChange={(e) =>
-              setFilters({
-                ...filters,
-                source: e.target.value as CatalogFilters["source"],
-              })
-            }
-          >
-            <option data-spt-legacy="" value="">
-              All sources
-            </option>
-            <option data-spt-legacy="" value="dashboard">
-              Dashboard
-            </option>
-            <option data-spt-legacy="" value="cli">
-              CLI
-            </option>
-          </select>
-        </label>
-        <label data-spt-legacy="">
-          Status
-          <select
-            data-spt-legacy=""
-            value={filters.status}
-            onChange={(e) =>
-              setFilters({
-                ...filters,
-                status: e.target.value as CatalogFilters["status"],
-              })
-            }
-          >
-            <option data-spt-legacy="" value="">
-              All statuses
-            </option>
-            <option data-spt-legacy="" value="complete">
-              Complete
-            </option>
-            <option data-spt-legacy="" value="partial">
-              Partial
-            </option>
-            <option data-spt-legacy="" value="malformed">
-              Malformed
-            </option>
-            <option data-spt-legacy="" value="failed">
-              Integrity failed
-            </option>
-          </select>
-        </label>
+        <TextInput
+          label="Search"
+          type="search"
+          value={filters.q}
+          placeholder="Run name, label, size, endpoint host"
+          onChange={(e) => setFilters({ ...filters, q: e.target.value })}
+          className="min-w-0 flex-[1_1_280px]"
+        />
+        <NativeSelect
+          label="Source"
+          value={filters.source}
+          onChange={(e) =>
+            setFilters({
+              ...filters,
+              source: e.target.value as CatalogFilters["source"],
+            })
+          }
+        >
+          <option value="">All sources</option>
+          <option value="dashboard">Dashboard</option>
+          <option value="cli">CLI</option>
+        </NativeSelect>
+        <NativeSelect
+          label="Status"
+          value={filters.status}
+          onChange={(e) =>
+            setFilters({
+              ...filters,
+              status: e.target.value as CatalogFilters["status"],
+            })
+          }
+        >
+          <option value="">All statuses</option>
+          <option value="complete">Complete</option>
+          <option value="partial">Partial</option>
+          <option value="malformed">Malformed</option>
+          <option value="failed">Integrity failed</option>
+        </NativeSelect>
         <Text size="sm" className="basis-full">
           Select 2–{maxCompare} runs to compare; the baseline is the run the
           others are checked against. "Compare with previous" pairs this run
@@ -170,7 +150,7 @@ export function Catalog({
           driver — not an SPT product version. Falls back to the next older
           complete run when no shape match exists.
         </Text>
-      </section>
+      </Paper>
       {error && (
         <div data-spt-legacy="" className="error" role="alert">
           {error}

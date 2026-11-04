@@ -1,6 +1,8 @@
 import {
+  Accordion,
   Badge,
   Button,
+  Drawer,
   Fieldset,
   Input,
   NavLink,
@@ -183,6 +185,45 @@ export const theme = createTheme({
   },
   cursorType: "pointer",
   components: {
+    Accordion: Accordion.extend({
+      defaultProps: {
+        variant: "separated",
+        radius: "lg",
+        keepMounted: true,
+        keepMountedMode: "display-none",
+      },
+      styles: {
+        item: {
+          backgroundColor: "var(--spt-surface-panel)",
+          borderColor: "var(--spt-border-panel)",
+        },
+        control: {
+          color: "var(--spt-text-primary)",
+          fontSize: "var(--mantine-font-size-control)",
+          fontWeight: "var(--mantine-font-weight-semibold)",
+        },
+      },
+      classNames: {
+        control:
+          "hover:bg-hover focus-visible:outline-solid focus-visible:outline-[length:var(--spt-focus-width)] focus-visible:outline-focus focus-visible:outline-offset-[var(--spt-focus-offset)]",
+      },
+    }),
+    Drawer: Drawer.extend({
+      defaultProps: {
+        position: "right",
+        size: "min(440px, 100%)",
+        padding: "section",
+        overlayProps: { backgroundOpacity: 0.42 },
+      },
+      styles: {
+        content: { backgroundColor: "var(--spt-surface-panel)" },
+        header: { backgroundColor: "var(--spt-surface-panel)" },
+      },
+      classNames: {
+        content: "flex flex-col",
+        body: "flex flex-1 flex-col gap-comfortable",
+      },
+    }),
     Table: Table.extend({
       defaultProps: {
         horizontalSpacing: "sm",

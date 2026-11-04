@@ -1,4 +1,4 @@
-import { Button, Paper, Table, Text, Title } from "@mantine/core";
+import { Accordion, Button, Paper, Table, Text, Title } from "@mantine/core";
 import type { Metrics, Row } from "../types";
 import {
   elapsed,
@@ -138,51 +138,65 @@ export function MeasuredDetails({
     sample_count: (chart_samples ?? samples ?? []).length,
   };
   return (
-    <details data-spt-legacy="" className="panel">
-      <summary data-spt-legacy="">
-        SPT measured details{" "}
-        <span data-spt-legacy="" className="summary-note">
-          {phaseName(phase)} phase
-        </span>
-      </summary>
-      <Text size="sm" className="my-comfortable">
-        All fields available from the dashboard API are retained below. A dash
-        means SPT did not report a value.
-      </Text>
-      {m.spt_summary_report && (
-        <details data-spt-legacy="" className="raw-details">
-          <summary data-spt-legacy="">SPT run summary</summary>
-          <pre data-spt-legacy="">{m.spt_summary_report}</pre>
-        </details>
-      )}
-      <div data-spt-legacy="" className="guided-core-grid">
-        {groups.map((g) => (
-          <section data-spt-legacy="" className="timing" key={g.title}>
-            <Title order={3}>{g.title}</Title>
-            <dl data-spt-legacy="">
-              {g.values.map(([name, value]) => (
-                <div data-spt-legacy="" key={name}>
-                  <dt data-spt-legacy="">{name}</dt>
-                  <dd data-spt-legacy="">{value}</dd>
+    <Accordion mb="panel">
+      <Accordion.Item value="section">
+        <Accordion.Control>
+          SPT measured details{" "}
+          <span data-spt-legacy="" className="summary-note">
+            {phaseName(phase)} phase
+          </span>
+        </Accordion.Control>
+        <Accordion.Panel>
+          <Text size="sm" className="my-comfortable">
+            All fields available from the dashboard API are retained below. A
+            dash means SPT did not report a value.
+          </Text>
+          {m.spt_summary_report && (
+            <Accordion mt="panel">
+              <Accordion.Item value="section">
+                <Accordion.Control>SPT run summary</Accordion.Control>
+                <Accordion.Panel>
+                  <pre data-spt-legacy="">{m.spt_summary_report}</pre>
+                </Accordion.Panel>
+              </Accordion.Item>
+            </Accordion>
+          )}
+          <div data-spt-legacy="" className="guided-core-grid">
+            {groups.map((g) => (
+              <section data-spt-legacy="" className="timing" key={g.title}>
+                <Title order={3}>{g.title}</Title>
+                <dl data-spt-legacy="">
+                  {g.values.map(([name, value]) => (
+                    <div data-spt-legacy="" key={name}>
+                      <dt data-spt-legacy="">{name}</dt>
+                      <dd data-spt-legacy="">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            ))}
+          </div>
+          <Accordion mt="panel">
+            <Accordion.Item value="section">
+              <Accordion.Control>
+                Source measurements and metadata
+              </Accordion.Control>
+              <Accordion.Panel>
+                <div data-spt-legacy="" className="actions">
+                  <Button
+                    component="a"
+                    href={`/api/runs/${encodeURIComponent(m.run_id)}/csv?kind=samples`}
+                    download
+                  >
+                    Export all samples CSV
+                  </Button>
                 </div>
-              ))}
-            </dl>
-          </section>
-        ))}
-      </div>
-      <details data-spt-legacy="" className="raw-details">
-        <summary data-spt-legacy="">Source measurements and metadata</summary>
-        <div data-spt-legacy="" className="actions">
-          <Button
-            component="a"
-            href={`/api/runs/${encodeURIComponent(m.run_id)}/csv?kind=samples`}
-            download
-          >
-            Export all samples CSV
-          </Button>
-        </div>
-        <pre data-spt-legacy="">{JSON.stringify(raw, null, 2)}</pre>
-      </details>
-    </details>
+                <pre data-spt-legacy="">{JSON.stringify(raw, null, 2)}</pre>
+              </Accordion.Panel>
+            </Accordion.Item>
+          </Accordion>
+        </Accordion.Panel>
+      </Accordion.Item>
+    </Accordion>
   );
 }

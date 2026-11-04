@@ -1,4 +1,11 @@
-import { Button, Code, Fieldset, Text, TextInput } from "@mantine/core";
+import {
+  Accordion,
+  Button,
+  Code,
+  Fieldset,
+  Text,
+  TextInput,
+} from "@mantine/core";
 import { useEffect, useState } from "react";
 import type { State } from "../types";
 import { useVerifyStorage } from "../api/mutations";
@@ -218,30 +225,47 @@ export function StorageConfiguration({
           ]
             .filter((n) => n.status === "failed")
             .map((n) => (
-              <details
-                data-spt-legacy=""
-                className="verify-failure"
+              <Accordion
                 key={n.host}
-                open
+                defaultValue="section"
+                classNames={{ label: "wrap-anywhere" }}
+                mt="md"
+                styles={{
+                  item: {
+                    backgroundColor: "var(--spt-status-error-background)",
+                    borderColor: "var(--spt-status-error-border)",
+                  },
+                  control: { color: "var(--spt-status-error-text)" },
+                }}
               >
-                <summary data-spt-legacy="">
-                  {n.host} failed{n.message ? `: ${n.message}` : ""}
-                </summary>
-                {n.checks.length > 0 && (
-                  <ul data-spt-legacy="">
-                    {n.checks.map((c) => (
-                      <li
-                        data-spt-legacy=""
-                        key={c.name}
-                        className={`check-${c.status}`}
-                      >
-                        <strong data-spt-legacy="">{c.name}</strong>{" "}
-                        {c.status.toUpperCase()} · {c.message}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </details>
+                <Accordion.Item value="section">
+                  <Accordion.Control>
+                    {n.host} failed{n.message ? `: ${n.message}` : ""}
+                  </Accordion.Control>
+                  <Accordion.Panel>
+                    {n.checks.length > 0 && (
+                      <ul className="mt-compact pl-comfortable text-secondary leading-code">
+                        {n.checks.map((c) => (
+                          <Text
+                            component="li"
+                            key={c.name}
+                            size="sm"
+                            lh="code"
+                            c={
+                              c.status === "fail"
+                                ? "var(--spt-threshold-failure)"
+                                : "var(--spt-text-secondary)"
+                            }
+                          >
+                            <strong data-spt-legacy="">{c.name}</strong>{" "}
+                            {c.status.toUpperCase()} · {c.message}
+                          </Text>
+                        ))}
+                      </ul>
+                    )}
+                  </Accordion.Panel>
+                </Accordion.Item>
+              </Accordion>
             ))}
         </>
       )}

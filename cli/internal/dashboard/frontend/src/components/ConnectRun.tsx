@@ -1,4 +1,4 @@
-import { Alert, Button, NativeSelect, Text, Title } from "@mantine/core";
+import { Alert, Button, NativeSelect, Paper, Text, Title } from "@mantine/core";
 import { useState } from "react";
 import type { State } from "../types";
 import { useAttachRun, useDetachRun } from "../api/mutations";
@@ -70,7 +70,10 @@ export function ConnectRun({
           )}
         </Alert>
       )}
-      <section data-spt-legacy="" className="panel connect-panel">
+      <Paper
+        component="section"
+        className="connect-panel mb-panel max-w-[880px] p-wide [@media(max-width:760px)]:p-[17px]"
+      >
         {attached ? (
           <>
             <span data-spt-legacy="" className="eyebrow">
@@ -153,7 +156,7 @@ export function ConnectRun({
             </div>
           </>
         )}
-      </section>
+      </Paper>
     </>
   );
 }

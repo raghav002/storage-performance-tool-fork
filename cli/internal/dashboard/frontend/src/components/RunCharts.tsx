@@ -3,6 +3,7 @@ import {
   Button,
   Checkbox,
   NativeSelect,
+  Paper,
   Text,
   Title,
 } from "@mantine/core";
@@ -99,7 +100,10 @@ export function Charts({
     (r) => cleanup || phaseCode(r.phase) !== "DELETE",
   );
   return (
-    <section data-spt-legacy="" className="panel fleet">
+    <Paper
+      component="section"
+      className="fleet mb-panel p-panel [@media(max-width:760px)]:p-[17px] min-w-0"
+    >
       <div data-spt-legacy="" className="section-heading">
         <div data-spt-legacy="">
           <Title order={2}>Measured performance</Title>
@@ -320,6 +324,6 @@ export function Charts({
           </Text>
         </>
       )}
-    </section>
+    </Paper>
   );
 }

@@ -702,7 +702,10 @@ function Dashboard({
         </Alert>
       )}
       {!job && !m ? (
-        <section data-spt-legacy="" className="panel empty-state">
+        <Paper
+          component="section"
+          className="empty-state mb-panel px-section py-[64px] text-center"
+        >
           <Paper
             radius="xl"
             bg="var(--spt-surface-selected)"
@@ -726,7 +729,7 @@ function Dashboard({
           <Button variant="filled" onClick={onConfigure}>
             Configure a run
           </Button>
-        </section>
+        </Paper>
       ) : (
         <>
           <section
@@ -771,7 +774,10 @@ function Dashboard({
               )}
             </div>
           </section>
-          <section data-spt-legacy="" className="panel outcome">
+          <Paper
+            component="section"
+            className="outcome mb-panel p-panel [@media(max-width:760px)]:p-[17px] flex items-center justify-between gap-section [@media(max-width:1150px)]:flex-col [@media(max-width:1150px)]:items-start"
+          >
             <div data-spt-legacy="">
               <span data-spt-legacy="" className="eyebrow">
                 RUN OUTCOME
@@ -798,8 +804,9 @@ function Dashboard({
                 <small data-spt-legacy="">Reported interval measurements</small>
               </span>
             </div>
-          </section>
+          </Paper>
           <RunWarnings warnings={m?.warnings} />
+
           {m && (
             <>
               <div data-spt-legacy="" className="scope-bar">

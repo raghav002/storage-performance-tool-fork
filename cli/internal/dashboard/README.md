@@ -61,7 +61,7 @@ The server listens on `127.0.0.1:8000` by default. For remote access, use SSH po
 
 The dashboard enforces bounded workload choices and allows one dashboard-managed run at a time. Run results are stored on the host in SPT's results directory.
 
-**Stop run** on the live dashboard ends a run early. It calls `POST /api/runs/{id}/stop` for the run on screen, which sends SPT one interrupt (SIGINT, or Ctrl+Break on Windows), the same signal the dashboard sends on Ctrl+C. SPT then stops the engine test, removes its containers and finalizes results, and the run is recorded as `stopped` (a Ctrl+C shutdown of the dashboard records `interrupted` instead). Stop run never force-kills SPT. If the dashboard restarted during the run, it no longer holds the process and cannot stop it.
+**Stop run** on the live dashboard asks SPT to end the run early. It calls `POST /api/runs/{id}/stop` for the run on screen, which sends SPT one interrupt (SIGINT, or Ctrl+Break on Windows), the same signal the dashboard sends on Ctrl+C. SPT then tries to stop the engine test, remove its containers and collect results within its own time limits (about 2 minutes); none of that is guaranteed. The run is recorded as `stopped` (a Ctrl+C shutdown of the dashboard records `interrupted` instead). Stop run never force-kills SPT: if SPT hasn't exited 3 minutes after the request, the page asks you to check the VM. A stop names its run, so a page that is out of date gets `409` instead of stopping a newer run. If the dashboard restarted during the run, it no longer holds the SPT process, so the button is hidden and the run can't be stopped from the UI.
 
 ### Saved history and console logs
 

@@ -1,13 +1,15 @@
 import {
   Accordion,
+  Alert,
   Button,
+  Code,
   Fieldset,
   Input,
   NativeSelect,
   Radio,
   Text,
-  Textarea,
   TextInput,
+  Textarea,
   Title,
 } from "@mantine/core";
 import { useState } from "react";
@@ -614,11 +616,16 @@ function ExpertWorkspace({
           <Accordion.Item value="section">
             <Accordion.Control>Preview CLI settings</Accordion.Control>
             <Accordion.Panel>
-              <pre data-spt-legacy="">
+              <Code
+                block
+                className="whitespace-pre-wrap wrap-anywhere"
+                p="sm"
+                fz="xs"
+              >
                 {valid
                   ? expertCommand(draft, driver)
                   : "Correct the settings to generate a command preview."}
-              </pre>
+              </Code>
               <small data-spt-legacy="">
                 {driver === "mock"
                   ? "The Go backend adds the client machines, safe flags and the results directory. No storage credentials are passed."
@@ -720,10 +727,10 @@ export function Configure({
         the run’s objects.
       </Text>
       {state?.job?.status === "running" && (
-        <div data-spt-legacy="" className="notice">
+        <Alert role="note">
           A run is already in progress. Its results are available in Live
           dashboard.
-        </div>
+        </Alert>
       )}
       <section data-spt-legacy="" className="panel">
         <span data-spt-legacy="" className="eyebrow">
@@ -768,16 +775,16 @@ export function Configure({
           </div>
         </Radio.Group>
         {!verified && (
-          <div data-spt-legacy="" className="notice">
+          <Alert role="note">
             {driver === "mock"
               ? "Verify the client machines to unlock workload settings. The S3 endpoint check is not needed for a mock run."
               : "Verify the storage configuration to unlock workload settings."}
-          </div>
+          </Alert>
         )}
         {driver === "mock" && !!state?.target.mock_reasons?.length && (
-          <div data-spt-legacy="" className="notice notice-warn">
+          <Alert color="yellow" role="note">
             {state.target.mock_reasons.join(" ")}
-          </div>
+          </Alert>
         )}
         <Fieldset disabled={!verified}>
           {review ? (
@@ -821,7 +828,14 @@ export function Configure({
                 {mode === "expert" && (
                   <div data-spt-legacy="" className="expert-reviewed-command">
                     <strong data-spt-legacy="">CLI settings preview</strong>
-                    <pre data-spt-legacy="">{expertCommand(draft, driver)}</pre>
+                    <Code
+                      block
+                      className="whitespace-pre-wrap wrap-anywhere"
+                      p="sm"
+                      fz="xs"
+                    >
+                      {expertCommand(draft, driver)}
+                    </Code>
                     <small data-spt-legacy="">
                       The server generates the complete command and validates
                       all options.
@@ -850,7 +864,6 @@ export function Configure({
             </>
           ) : (
             <form
-              data-spt-legacy=""
               noValidate
               onSubmit={(e) => {
                 e.preventDefault();
@@ -880,18 +893,20 @@ export function Configure({
                   limits={limits}
                 />
               )}
-              <div
-                data-spt-legacy=""
-                className={`notice ${totalBytes > limits.expert.max_total_bytes * 0.8 ? "notice-warn" : ""}`}
+              <Alert
+                color={
+                  totalBytes > limits.expert.max_total_bytes * 0.8
+                    ? "yellow"
+                    : "spt"
+                }
+                role="note"
               >
                 Maximum test data:{" "}
-                <strong data-spt-legacy="">
-                  {fmt(totalBytes / 1048576, 2)} MiB
-                </strong>
+                <strong>{fmt(totalBytes / 1048576, 2)} MiB</strong>
                 {mode === "expert" &&
                   ` of ${formatBytes(limits.expert.max_total_bytes)} allowed`}{" "}
                 · Unique prefix · Best effort cleanup
-              </div>
+              </Alert>
               <Button variant="filled" type="submit" disabled={!valid}>
                 Review run
               </Button>
@@ -899,9 +914,9 @@ export function Configure({
           )}
         </Fieldset>
         {error && (
-          <div data-spt-legacy="" className="error run-error" role="alert">
+          <Alert color="red" role="alert" mt="lg">
             {error}
-          </div>
+          </Alert>
         )}
       </section>
     </div>

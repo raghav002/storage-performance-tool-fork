@@ -1,5 +1,7 @@
+import { Plus } from "lucide-react";
 import {
   Accordion,
+  Alert,
   Button,
   Code,
   Fieldset,
@@ -98,12 +100,9 @@ export function StorageConfiguration({
         <Status status={target.ready ? "ready" : "needs setup"} />
       </div>
       {!!target.reasons?.length && (
-        <div data-spt-legacy="" className="notice">
-          {target.reasons.join(" ")}
-        </div>
+        <Alert role="note">{target.reasons.join(" ")}</Alert>
       )}
       <form
-        data-spt-legacy=""
         onSubmit={(e) => {
           e.preventDefault();
           void verify();
@@ -152,11 +151,12 @@ export function StorageConfiguration({
             ))}
           </ul>
           <Button
+            leftSection={<Plus size={16} aria-hidden="true" />}
             type="button"
             disabled={form.hosts.length >= saved.max_hosts}
             onClick={() => setForm({ ...form, hosts: [...form.hosts, ""] })}
           >
-            ＋ Add machine
+            Add machine
           </Button>
           <Text
             component="span"
@@ -207,9 +207,9 @@ export function StorageConfiguration({
         </div>
       </form>
       {error && (
-        <div data-spt-legacy="" className="error run-error" role="alert">
+        <Alert color="red" role="alert" mt="lg">
           {error}
-        </div>
+        </Alert>
       )}
       {v.status !== "idle" && !dirty && (
         <>

@@ -1,4 +1,4 @@
-import { Button, NativeSelect, Text, Title } from "@mantine/core";
+import { Alert, Button, NativeSelect, Text, Title } from "@mantine/core";
 import { useState } from "react";
 import type { State } from "../types";
 import { useAttachRun, useDetachRun } from "../api/mutations";
@@ -54,8 +54,8 @@ export function ConnectRun({
         </div>
       </div>
       {error && (
-        <div data-spt-legacy="" className="error" role="alert">
-          <strong data-spt-legacy="">Could not connect. </strong>
+        <Alert color="red" role="alert">
+          <strong>Could not connect. </strong>
           {error}
           {hosts.includes(host) && (
             <div
@@ -68,7 +68,7 @@ export function ConnectRun({
               </Button>
             </div>
           )}
-        </div>
+        </Alert>
       )}
       <section data-spt-legacy="" className="panel connect-panel">
         {attached ? (

@@ -1,3 +1,4 @@
+import { Check, X } from "lucide-react";
 import type { CheckStatus, Verification } from "../types";
 
 const fill: Record<CheckStatus, string> = {
@@ -24,11 +25,11 @@ function Node({
   label: string;
   status: CheckStatus;
 }) {
+  const Icon = status === "passed" ? Check : X;
   return (
-    <g data-spt-legacy="">
-      <title data-spt-legacy="">{`${label}: ${word[status]}`}</title>
+    <g>
+      <title>{`${label}: ${word[status]}`}</title>
       <circle
-        data-spt-legacy=""
         cx={x}
         cy={y}
         r="13"
@@ -37,15 +38,14 @@ function Node({
         strokeWidth="2"
       />
       {status !== "pending" && (
-        <text
-          data-spt-legacy=""
-          x={x}
-          y={y + 4}
-          textAnchor="middle"
-          className="graph-mark"
-        >
-          {status === "passed" ? "✓" : "✕"}
-        </text>
+        <Icon
+          x={x - 8}
+          y={y - 8}
+          size={16}
+          strokeWidth={3}
+          color="var(--spt-text-inverse)"
+          aria-hidden="true"
+        />
       )}
       <text
         data-spt-legacy=""
@@ -91,7 +91,7 @@ export function ConnectionGraph({
         aria-label={`Connection check: ${passed} of ${v.nodes.length} client machines passed; S3 endpoint ${word[v.endpoint.status].toLowerCase()}`}
       >
         {v.nodes.map((n, i) => (
-          <g data-spt-legacy="" key={n.host} className="graph-line">
+          <g key={n.host} className="graph-line">
             <line
               data-spt-legacy=""
               x1={left}
@@ -108,10 +108,9 @@ export function ConnectionGraph({
             />
           </g>
         ))}
-        <g data-spt-legacy="">
-          <title data-spt-legacy="">Dashboard host</title>
+        <g>
+          <title>Dashboard host</title>
           <circle
-            data-spt-legacy=""
             cx={left}
             cy={middle}
             r="13"

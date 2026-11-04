@@ -1,4 +1,5 @@
 import {
+  Alert,
   Badge,
   Button,
   NativeSelect,
@@ -102,9 +103,9 @@ export function Compare({
         </div>
       </div>
       {error && (
-        <div data-spt-legacy="" className="error" role="alert">
+        <Alert color="red" role="alert">
           {error}
-        </div>
+        </Alert>
       )}
       {!data ? (
         !error && (
@@ -186,25 +187,21 @@ export function Compare({
           {Object.entries(data.settings_differences ?? {}).some(
             ([, d]) => d.length,
           ) && (
-            <section
-              data-spt-legacy=""
-              className="notice notice-warn"
-              aria-label="Settings differences"
-            >
-              <strong data-spt-legacy="">
+            <Alert color="yellow" role="note" aria-label="Settings differences">
+              <strong>
                 Settings differ from the baseline; deltas may reflect
                 configuration, not storage.
               </strong>
-              <ul data-spt-legacy="">
+              <ul>
                 {Object.entries(data.settings_differences).map(([id, diffs]) =>
                   diffs.map((d) => (
-                    <li data-spt-legacy="" key={id + d}>
+                    <li key={id + d}>
                       {id}: {d}
                     </li>
                   )),
                 )}
               </ul>
-            </section>
+            </Alert>
           )}
           <section data-spt-legacy="" className="panel">
             <div data-spt-legacy="" className="run-log-heading">
@@ -344,7 +341,6 @@ export function OverlayChart({
             segments(l.points, metric).map((seg, i) =>
               seg.length === 1 ? (
                 <circle
-                  data-spt-legacy=""
                   key={l.id + i}
                   cx={x(seg[0].t)}
                   cy={y(seg[0][metric] as number)}

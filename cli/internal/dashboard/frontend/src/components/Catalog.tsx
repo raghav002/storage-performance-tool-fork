@@ -1,4 +1,5 @@
 import {
+  Alert,
   Button,
   Checkbox,
   NativeSelect,
@@ -152,14 +153,14 @@ export function Catalog({
         </Text>
       </Paper>
       {error && (
-        <div data-spt-legacy="" className="error" role="alert">
+        <Alert color="red" role="alert">
           {error}
-        </div>
+        </Alert>
       )}
       {data?.truncated && (
-        <div data-spt-legacy="" className="notice notice-warn">
+        <Alert color="yellow" role="note">
           The results folder is large; only part of it was scanned.
-        </div>
+        </Alert>
       )}
       <Paper component="section" className="mb-panel">
         {loading && !data ? (
@@ -495,9 +496,9 @@ function RunArtifacts({ runId }: { runId: string }) {
         dashboard recognizes are listed.
       </Text>
       {error && (
-        <div data-spt-legacy="" className="error" role="alert">
+        <Alert color="red" role="alert">
           {error}
-        </div>
+        </Alert>
       )}
       {items === undefined && !error ? (
         <Text size="xs" c="var(--spt-text-subtle)">

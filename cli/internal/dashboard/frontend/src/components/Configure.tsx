@@ -1,19 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Driver, HistoryRun, Options, RunMode, State } from "../types";
 import { defaults } from "../config";
 import { StorageConfiguration } from "./StorageConfiguration";
 import { Status } from "./Status";
 import { formatNumber as fmt } from "../utils/metrics";
 import { driverReadiness } from "../utils/driver";
-import {
-  buildSptCommand,
-  CommandError,
-  parseSptCommand,
-} from "../flags/command";
+import { buildSptCommand } from "../flags/command";
 import {
   advancedDefaults,
   driverForWorkload,
-  findFlag,
   workloadForDriver,
   type FlagValue,
   type Workload,
@@ -25,8 +20,12 @@ import {
   type ExpertProfile,
 } from "../flags/profiles";
 import { changedFlags, ExpertFlagGroups } from "./ExpertFlagGroups";
-
-type AdvancedValues = Record<string, FlagValue>;
+import {
+  CommandPrompt,
+  looksLikeSptCommand,
+  reviewCommand,
+  type CommandReview,
+} from "./CommandPrompt";
 import {
   fallbackLimits,
   readJSON,
@@ -39,6 +38,8 @@ import {
   type OptionErrors,
   type SizeUnit,
 } from "../utils/validation";
+
+type AdvancedValues = Record<string, FlagValue>;
 
 type ExpertDraft = {
   object_count: string;
@@ -158,9 +159,11 @@ function ExpertWorkspace({
   const [previousID, setPreviousID] = useState("");
   const [historyMessage, setHistoryMessage] = useState("");
   const [commandText, setCommandText] = useState("");
-  const [commandMessage, setCommandMessage] = useState("");
-  const [commandProblems, setCommandProblems] = useState<string[]>([]);
-  const [importError, setImportError] = useState(false);
+  const [commandReview, setCommandReview] = useState<CommandReview | null>(
+    null,
+  );
+  const [appliedNote, setAppliedNote] = useState("");
+  const workspaceRef = useRef<HTMLDivElement>(null);
   const options = fromDraft(draft);
   const valid = Object.keys(errors).length === 0;
   const changed = [
@@ -241,48 +244,44 @@ function ExpertWorkspace({
     }
   }
 
-  // The whole command is rejected if any part of it cannot be imported.
-  function importCommand() {
-    try {
-      const parsed = parseSptCommand(commandText);
-      const result: Options = { ...options, ...parsed.core, mode: "expert" };
-      const limitError = Object.values(validateOptions(result, limits)).find(
-        Boolean,
-      );
-      if (limitError) throw new CommandError([limitError]);
-      setDriver(driverForWorkload(parsed.workload));
-      setDraft(toDraft(result));
-      setAdvanced(parsed.workload, parsed.advanced);
-      const previewed = parsed.flags.filter(
-        (f) => !findFlag(parsed.workload, f)?.core,
-      ).length;
-      const name =
-        parsed.workload === "mock" ? "Mock driver" : "Write + verify";
-      setCommandMessage(
-        previewed
-          ? `${name} settings imported, including ${previewed} preview-only flag${previewed === 1 ? "" : "s"}. Review the groups below.`
-          : `${name} settings imported. Review the fields and host limits below.`,
-      );
-      setCommandProblems([]);
-      setImportError(false);
-    } catch (e) {
-      if (e instanceof CommandError) {
-        setCommandMessage(
-          "This command can't be imported. Nothing was changed:",
-        );
-        setCommandProblems(e.problems);
-      } else {
-        setCommandMessage(
-          e instanceof Error ? e.message : "Command could not be parsed.",
-        );
-        setCommandProblems([]);
-      }
-      setImportError(true);
+  // Pasting an spt run command anywhere in expert mode asks whether to apply
+  // it. Pastes into fields outside the workspace (e.g. storage settings) are
+  // left alone; pastes into workspace fields do not land in the field.
+  useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      const text = e.clipboardData?.getData("text") ?? "";
+      if (!looksLikeSptCommand(text)) return;
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      const inside = !!target && !!workspaceRef.current?.contains(target);
+      const editable =
+        !!target &&
+        (target.isContentEditable ||
+          ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+      if (!inside && editable) return;
+      if (target?.id !== "expert-cli-input") e.preventDefault();
+      setCommandReview((open) => open ?? reviewCommand(text, limits));
     }
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [limits]);
+
+  // The command replaces the whole expert configuration: workload, core
+  // settings and every flag, with unmentioned settings back at their defaults.
+  function applyCommand() {
+    if (commandReview?.kind !== "apply") return;
+    const { workload: next, options: core, advanced: flags } = commandReview;
+    setDriver(driverForWorkload(next));
+    setDraft(toDraft(core));
+    setAdvanced(next, flags);
+    const count = commandReview.settings.length;
+    setAppliedNote(
+      `Command applied: ${next === "mock" ? "Mock driver" : "Write + verify"}${count ? ` with ${count} flag${count === 1 ? "" : "s"}` : ""}. Settings not in the command were reset to their defaults.`,
+    );
+    setCommandReview(null);
   }
 
   return (
-    <div className="expert-workspace">
+    <div className="expert-workspace" ref={workspaceRef}>
       <div className="expert-workspace-main">
         <div className="expert-area-heading">
           <strong>Start from</strong>
@@ -433,36 +432,28 @@ function ExpertWorkspace({
                 onChange={(e) => setCommandText(e.target.value)}
               />
               <div className="expert-inline">
-                <button type="button" onClick={importCommand}>
-                  Import supported settings
+                <button
+                  type="button"
+                  disabled={!commandText.trim()}
+                  onClick={() =>
+                    setCommandReview(reviewCommand(commandText, limits))
+                  }
+                >
+                  Import command
                 </button>
                 <span className="expert-muted">
-                  Import only; commands are never executed. Write-verify and
-                  mock commands are supported.
+                  Commands are only read, never executed. Write-verify and mock
+                  are supported. Tip: paste a command anywhere in Expert mode.
                 </span>
               </div>
-              {commandMessage && (
-                <div
-                  className={
-                    importError
-                      ? "expert-feedback-error"
-                      : "expert-feedback-good"
-                  }
-                  role="status"
-                >
-                  <p>{commandMessage}</p>
-                  {commandProblems.length > 0 && (
-                    <ul>
-                      {commandProblems.map((problem) => (
-                        <li key={problem}>{problem}</li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
             </div>
           )}
         </div>
+        {appliedNote && (
+          <p className="expert-feedback-good" role="status">
+            {appliedNote}
+          </p>
+        )}
 
         <div className="expert-area-heading expert-essentials-heading">
           <strong>{workloadName} · SPT flags</strong>
@@ -615,6 +606,14 @@ function ExpertWorkspace({
           {saveMessage && <small role="status">{saveMessage}</small>}
         </div>
       </aside>
+      {commandReview && (
+        <CommandPrompt
+          review={commandReview}
+          currentWorkload={workload}
+          onApply={applyCommand}
+          onClose={() => setCommandReview(null)}
+        />
+      )}
     </div>
   );
 }

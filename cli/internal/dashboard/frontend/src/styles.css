@@ -2404,26 +2404,65 @@ details.run-log[open] > summary {
     monospace;
   resize: vertical;
 }
-.expert-feedback-error {
-  color: #b73a2b;
-  font-size: 11px;
-  margin-top: 9px;
-}
 .expert-feedback-good {
   color: #23754e;
   font-size: 11px;
   margin-top: 9px;
 }
-.expert-feedback-error p,
-.expert-feedback-good p {
-  margin: 0;
+.command-prompt-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(20, 32, 51, 0.35);
 }
-.expert-feedback-error ul {
-  margin: 4px 0 0;
+.command-prompt {
+  width: min(460px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #dce3ed;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(20, 32, 51, 0.2);
+  padding: 20px 22px;
+  color: #203047;
+  font-size: 12px;
+}
+.command-prompt h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+.command-prompt p {
+  margin: 8px 0;
+}
+.command-prompt-flags,
+.command-prompt-problems {
+  margin: 6px 0 10px;
   padding-left: 18px;
 }
-.expert-feedback-error li + li {
-  margin-top: 2px;
+.command-prompt-flags li + li,
+.command-prompt-problems li + li {
+  margin-top: 4px;
+}
+.command-prompt-flags code {
+  font-size: 11px;
+  color: #1766c1;
+}
+.command-prompt-problems li {
+  color: #b73a2b;
+}
+.command-prompt-note {
+  color: #65768c;
+  font-size: 11px;
+}
+.command-prompt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
 }
 .expert-reviewed-command {
   margin-top: 14px;

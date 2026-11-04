@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -58,6 +59,18 @@ function renderExpert() {
     />,
   );
   return { posts, onStarted };
+}
+
+// Dispatches a paste event carrying text, as a browser does.
+function paste(target: Element, text: string): Event {
+  const event = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", {
+    value: { getData: () => text },
+  });
+  act(() => {
+    target.dispatchEvent(event);
+  });
+  return event;
 }
 
 const group = (title: string) =>
@@ -124,20 +137,27 @@ describe("expert flag groups", () => {
     });
   });
 
-  it("imports a mock command into its workload's groups", () => {
+  it("imports a mock command through the prompt", () => {
     renderExpert();
     fireEvent.click(screen.getByRole("button", { name: /CLI command/ }));
     fireEvent.change(screen.getByLabelText("Paste an SPT command"), {
       target: { value: "spt run mock --threads 4 --cleanup --min-hosts 1" },
     });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Import supported settings" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Import command" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Apply this command?")).toBeTruthy();
+    expect(dialog.textContent).toMatch(/switches from Write \+ verify/);
+    expect(
+      within(dialog)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual(["--threads 4", "--cleanup", "--min-hosts 1"]);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(
       (screen.getByRole("radio", { name: /Mock driver/ }) as HTMLInputElement)
         .checked,
     ).toBe(true);
-    expect(screen.getByText(/including 2 preview-only flags/)).toBeTruthy();
     expect(
       (screen.getByLabelText(/^Add a delete phase/) as HTMLInputElement)
         .checked,
@@ -147,18 +167,67 @@ describe("expert flag groups", () => {
         .value,
     ).toBe("1");
     expect(screen.queryByText("Object data")).toBeNull();
+    expect(
+      screen.getByText(/Command applied: Mock driver with 3 flags/),
+    ).toBeTruthy();
   });
 
-  it("changes nothing when a command is rejected", () => {
+  it("opens the prompt for a command pasted anywhere and resets the rest", () => {
     renderExpert();
-    fireEvent.click(screen.getByRole("button", { name: /CLI command/ }));
-    fireEvent.change(screen.getByLabelText("Paste an SPT command"), {
-      target: { value: "spt run mock --threads 4 --access-key AKIA" },
+    fireEvent.change(screen.getByLabelText(/^Parallel threads/), {
+      target: { value: "8" },
     });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Import supported settings" }),
+    fireEvent.click(screen.getByLabelText(/^Save item list/));
+    const event = paste(
+      document.body,
+      "./spt run write-verify --object-count 500",
     );
-    expect(screen.getByText(/Nothing was changed/)).toBeTruthy();
+    expect(event.defaultPrevented).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(
+      (screen.getByLabelText(/^Maximum objects/) as HTMLInputElement).value,
+    ).toBe("500");
+    // Settings the command leaves out return to their defaults.
+    expect(
+      (screen.getByLabelText(/^Parallel threads/) as HTMLInputElement).value,
+    ).toBe("1");
+    expect(
+      (screen.getByLabelText(/^Save item list/) as HTMLInputElement).checked,
+    ).toBe(false);
+  });
+
+  it("keeps a pasted command out of the workspace field it lands on", () => {
+    renderExpert();
+    const threads = screen.getByLabelText(/^Parallel threads/);
+    expect(paste(threads, "spt run mock").defaultPrevented).toBe(true);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("ignores other text and pastes into fields outside the workspace", () => {
+    renderExpert();
+    const outside = document.createElement("input");
+    document.body.appendChild(outside);
+    try {
+      expect(paste(outside, "spt run mock").defaultPrevented).toBe(false);
+      expect(paste(document.body, "hello world").defaultPrevented).toBe(false);
+      expect(screen.queryByRole("dialog")).toBeNull();
+    } finally {
+      outside.remove();
+    }
+  });
+
+  it("explains a rejected command and changes nothing", () => {
+    renderExpert();
+    paste(document.body, "spt run mock --threads 4 --access-key AKIAEXAMPLE");
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByText("This command can't be applied"),
+    ).toBeTruthy();
+    expect(dialog.textContent).toMatch(/--access-key: Credentials come only/);
+    expect(dialog.textContent).not.toMatch(/AKIAEXAMPLE/);
+    expect(within(dialog).queryByRole("button", { name: "Apply" })).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "OK" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(
       (screen.getByRole("radio", { name: /S3 write/ }) as HTMLInputElement)
         .checked,
@@ -166,6 +235,17 @@ describe("expert flag groups", () => {
     expect(
       (screen.getByLabelText(/^Parallel threads/) as HTMLInputElement).value,
     ).toBe("1");
+  });
+
+  it("closes the prompt on Escape without applying", () => {
+    renderExpert();
+    paste(document.body, "spt run mock --threads 4");
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      (screen.getByRole("radio", { name: /S3 write/ }) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
   });
 
   it("saves and reloads a profile with its workload and flags", () => {

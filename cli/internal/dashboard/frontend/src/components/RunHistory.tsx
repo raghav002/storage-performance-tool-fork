@@ -29,9 +29,9 @@ export function RunHistory({
   };
   return (
     <>
-      <div data-spt-legacy="" className="page-heading">
-        <div data-spt-legacy="">
-          <span data-spt-legacy="" className="eyebrow">
+      <div className="flex justify-between items-center mb-[26px] gap-md [@media(max-width:760px)]:items-start [@media(max-width:760px)]:flex-col">
+        <div className="min-w-0">
+          <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-compact">
             SAVED BENCHMARKS
           </span>
           <Title order={1}>Run history</Title>
@@ -39,7 +39,7 @@ export function RunHistory({
             SPT result folders saved on the project VM.
           </Text>
         </div>
-        <div data-spt-legacy="" className="actions">
+        <div className="flex flex-wrap items-center gap-compact [@media(max-width:760px)]:w-full">
           <Button
             onClick={() => {
               onRefresh();
@@ -139,7 +139,7 @@ export function RunHistory({
             </Table>
           </Table.ScrollContainer>
         ) : (
-          <div data-spt-legacy="" className="history-empty">
+          <div className="px-section py-xxl text-center">
             <Title order={2}>No saved benchmark runs</Title>
             <Text className="mt-xs">
               Completed and partial SPT results will appear here.

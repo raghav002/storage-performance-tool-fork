@@ -23,7 +23,7 @@ export function MetricCard({
   return (
     <Paper
       component="article"
-      className="relative overflow-hidden p-[21px] [@media(max-width:1150px)]:p-md [@media(max-width:760px)]:p-comfortable"
+      className="relative min-w-0 overflow-hidden p-[21px] [@media(max-width:1150px)]:p-md [@media(max-width:760px)]:p-comfortable"
     >
       <Box
         component="span"
@@ -42,20 +42,22 @@ export function MetricCard({
       <Text
         component="div"
         fw="var(--mantine-font-weight-heading)"
-        className="mt-[14px] mb-[11px] text-metric tracking-[-1px] whitespace-nowrap tabular-nums [@media(min-width:1500px)]:text-metric-wide [@media(max-width:1150px)]:text-metric-compact [@media(max-width:760px)]:text-metric-mobile [@media(max-width:760px)]:whitespace-normal"
+        className="mt-[14px] mb-[11px] text-metric tracking-[-1px] wrap-anywhere tabular-nums [@media(min-width:1500px)]:text-metric-wide [@media(max-width:1150px)]:text-metric-compact [@media(max-width:760px)]:text-metric-mobile"
         c="var(--spt-text-primary)"
         lh="normal"
       >
         {value}
-        <Text
-          component="small"
-          size="sm"
-          c="var(--spt-text-subtle)"
-          className="ml-[7px]"
-          lh="normal"
-        >
-          {unit}
-        </Text>
+        {unit && (
+          <Text
+            component="small"
+            size="sm"
+            c="var(--spt-text-subtle)"
+            className="ml-[7px]"
+            lh="normal"
+          >
+            {unit}
+          </Text>
+        )}
       </Text>
       <Text size="xs" className="[@media(max-width:760px)]:text-caption">
         {detail}

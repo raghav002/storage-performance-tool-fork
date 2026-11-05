@@ -1,6 +1,6 @@
 # SPT dashboard frontend
 
-React UI adapted from the project branch identified in `UPSTREAM.md`. The production output is a single `../server/index.html`, embedded by the shared Go server.
+React UI using Mantine, Tailwind CSS, Apache ECharts, and TanStack Query. The production output is a single `../server/index.html`, embedded by the shared Go server.
 
 ## Build
 
@@ -20,7 +20,7 @@ Rebuild the Go executable after updating the HTML, because `go:embed` captures i
 
 ```sh
 cd cli
-go run ./cmd/spt dashboard
+go run . dashboard
 ```
 
 Open `http://127.0.0.1:8000` directly or through an SSH tunnel. See `../README.md` for server setup.

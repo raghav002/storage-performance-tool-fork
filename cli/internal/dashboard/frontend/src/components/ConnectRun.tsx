@@ -41,9 +41,9 @@ export function ConnectRun({
 
   return (
     <>
-      <div data-spt-legacy="" className="page-heading">
-        <div data-spt-legacy="">
-          <span data-spt-legacy="" className="eyebrow">
+      <div className="flex justify-between items-center mb-[26px] gap-md [@media(max-width:760px)]:items-start [@media(max-width:760px)]:flex-col">
+        <div className="min-w-0">
+          <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-compact">
             READ ONLY MONITORING
           </span>
           <Title order={1}>Connect to an active run</Title>
@@ -58,11 +58,7 @@ export function ConnectRun({
           <strong>Could not connect. </strong>
           {error}
           {hosts.includes(host) && (
-            <div
-              data-spt-legacy=""
-              className="actions"
-              style={{ marginTop: 12 }}
-            >
+            <div className="mt-sm flex flex-wrap items-center gap-compact">
               <Button onClick={() => void connect()} disabled={busy || offline}>
                 Retry connection
               </Button>
@@ -72,11 +68,11 @@ export function ConnectRun({
       )}
       <Paper
         component="section"
-        className="connect-panel mb-panel max-w-[880px] p-wide [@media(max-width:760px)]:p-[17px]"
+        className="mb-panel max-w-[880px] p-wide [@media(max-width:760px)]:p-[17px]"
       >
         {attached ? (
           <>
-            <span data-spt-legacy="" className="eyebrow">
+            <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-compact">
               CURRENT CONNECTION
             </span>
             <Title order={2} className="mt-compact">
@@ -86,12 +82,12 @@ export function ConnectRun({
               Run {state?.connection?.run_id ?? "—"} · Updates with the SPT
               status API and live metrics endpoint on port 9999.
             </Text>
-            <div data-spt-legacy="" className="connect-actions">
-              <span data-spt-legacy="" className="connection-state">
-                <i data-spt-legacy="" className="source-dot connected" />{" "}
+            <div className="flex items-center justify-between gap-md mt-wide [@media(max-width:620px)]:items-stretch [@media(max-width:620px)]:flex-col">
+              <span className="inline-flex items-center gap-xs text-[#356c58] text-sm/[inherit]">
+                <i className="inline-block w-[7px] h-[7px] bg-[#188a82] rounded-full mr-xs" />{" "}
                 Connected · read only
               </span>
-              <div data-spt-legacy="" className="actions">
+              <div className="flex flex-wrap items-center gap-compact">
                 {offline && (
                   <Button onClick={() => void connect()} disabled={busy}>
                     Retry connection
@@ -105,7 +101,7 @@ export function ConnectRun({
           </>
         ) : (
           <>
-            <span data-spt-legacy="" className="eyebrow">
+            <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-compact">
               EXISTING SPT RUN
             </span>
             <Title order={2} className="mt-compact">
@@ -131,18 +127,16 @@ export function ConnectRun({
                 ))}
               </NativeSelect>
             ) : (
-              <div data-spt-legacy="" className="review">
-                <strong data-spt-legacy="">
-                  No client machines are configured yet.
-                </strong>
+              <div className="p-lg bg-surface-review rounded-md mb-lg">
+                <strong>No client machines are configured yet.</strong>
                 <Text size="sm" className="mt-xs">
                   Add the SPT entry machine in Configure run → Storage
                   configuration, then return here.
                 </Text>
               </div>
             )}
-            <div data-spt-legacy="" className="connect-actions">
-              <span data-spt-legacy="" className="subtle">
+            <div className="flex items-center justify-between gap-md mt-wide [@media(max-width:620px)]:items-stretch [@media(max-width:620px)]:flex-col">
+              <span className="text-subtle text-xs/[inherit]">
                 The run must already be active on the selected machine.
               </span>
               <Button

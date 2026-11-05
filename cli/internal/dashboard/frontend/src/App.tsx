@@ -443,7 +443,7 @@ export default function App() {
           ) : (
             <>
               {mode === "expert" && (
-                <div data-spt-legacy="" className="expert-edit">
+                <div className="flex justify-end mb-comfortable">
                   <Button type="button" onClick={() => setCustomizing(true)}>
                     Customize view
                   </Button>
@@ -654,9 +654,9 @@ function Dashboard({
   const has = (key: string) => selected.includes(key);
   return (
     <>
-      <div data-spt-legacy="" className="page-heading">
-        <div data-spt-legacy="">
-          <span data-spt-legacy="" className="eyebrow">
+      <div className="flex justify-between items-center mb-[26px] gap-md [@media(max-width:760px)]:items-start [@media(max-width:760px)]:flex-col">
+        <div className="min-w-0">
+          <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-compact">
             {job?.status === "running" ? "LIVE BENCHMARK" : "BENCHMARK RESULTS"}
           </span>
           <Title order={1}>
@@ -670,7 +670,7 @@ function Dashboard({
               "Configure a run to measure your storage target."}
           </Text>
         </div>
-        <div data-spt-legacy="" className="actions">
+        <div className="flex flex-wrap items-center gap-compact [@media(max-width:760px)]:w-full">
           {historical && (
             <Button onClick={onBackHistory}>Back to run history</Button>
           )}
@@ -712,7 +712,7 @@ function Dashboard({
       {!job && !m ? (
         <Paper
           component="section"
-          className="empty-state mb-panel px-section py-[64px] text-center"
+          className="mb-panel px-section py-[64px] text-center"
         >
           <Paper
             radius="xl"
@@ -741,36 +741,43 @@ function Dashboard({
       ) : (
         <>
           <section
-            data-spt-legacy=""
-            className="run-strip"
+            className="px-panel py-comfortable flex items-center gap-xl border border-border rounded-lg bg-panel mb-panel [@media(max-width:1150px)]:gap-comfortable [@media(max-width:760px)]:p-md [@media(max-width:760px)]:flex-wrap"
             aria-label="Run status"
           >
-            <div data-spt-legacy="">
-              <span data-spt-legacy="">Status</span>
+            <div className="grid gap-[7px]">
+              <span className="text-caption/[inherit] text-subtle">Status</span>
               <Status status={job?.status ?? "recorded"} />
             </div>
-            <div data-spt-legacy="">
-              <span data-spt-legacy="">Elapsed</span>
-              <strong data-spt-legacy="">
+            <div className="grid gap-[7px]">
+              <span className="text-caption/[inherit] text-subtle">
+                Elapsed
+              </span>
+              <strong className="text-sm/[inherit] font-semibold">
                 {elapsed(job?.elapsed_seconds)}
               </strong>
             </div>
-            <div data-spt-legacy="">
-              <span data-spt-legacy="">Current phase</span>
-              <strong data-spt-legacy="">
+            <div className="grid gap-[7px]">
+              <span className="text-caption/[inherit] text-subtle">
+                Current phase
+              </span>
+              <strong className="text-sm/[inherit] font-semibold">
                 {job?.phase || phaseName(m?.phase)}
               </strong>
             </div>
-            <div data-spt-legacy="">
-              <span data-spt-legacy="">Workload</span>
-              <strong data-spt-legacy="">
+            <div className="grid gap-[7px]">
+              <span className="text-caption/[inherit] text-subtle">
+                Workload
+              </span>
+              <strong className="text-sm/[inherit] font-semibold">
                 {workloadLabel(runWorkloadType(m, job))}
               </strong>
             </div>
-            <div data-spt-legacy="" className="progress">
-              <div data-spt-legacy="">
-                <span data-spt-legacy="">Reported phase progress</span>
-                <strong data-spt-legacy="">
+            <div className="flex-1 min-w-[140px] grid gap-[7px] [@media(max-width:760px)]:basis-full">
+              <div className="flex justify-between gap-[15px]">
+                <span className="text-caption/[inherit] text-subtle">
+                  Reported phase progress
+                </span>
+                <strong className="text-sm/[inherit] font-semibold">
                   {progress === null ? "Not reported" : `${fmt(progress, 1)}%`}
                 </strong>
               </div>
@@ -784,10 +791,10 @@ function Dashboard({
           </section>
           <Paper
             component="section"
-            className="outcome mb-panel p-panel [@media(max-width:760px)]:p-[17px] flex items-center justify-between gap-section [@media(max-width:1150px)]:flex-col [@media(max-width:1150px)]:items-start"
+            className="mb-panel p-panel [@media(max-width:760px)]:p-[17px] flex items-center justify-between gap-section [@media(max-width:1150px)]:flex-col [@media(max-width:1150px)]:items-start"
           >
-            <div data-spt-legacy="">
-              <span data-spt-legacy="" className="eyebrow">
+            <div>
+              <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-[7px]">
                 RUN OUTCOME
               </span>
               <Title order={2}>{outcome}</Title>
@@ -796,27 +803,33 @@ function Dashboard({
                   "SPT measurements from the configured storage target."}
               </Text>
             </div>
-            <div data-spt-legacy="" className="outcome-facts">
-              <span data-spt-legacy="">
+            <div className="flex flex-wrap gap-wide shrink-0 [@media(max-width:760px)]:gap-panel">
+              <span className="grid gap-[7px] text-muted text-xs/[inherit]">
                 Failed operations
-                <strong data-spt-legacy="">{fmt(failureCount)}</strong>
-                <small data-spt-legacy="">
+                <strong className="text-foreground text-lg/[inherit]">
+                  {fmt(failureCount)}
+                </strong>
+                <small className="font-normal max-w-[150px] text-xs/[inherit]">
                   {numeric(m?.total_failed) !== null
                     ? "Across all recorded phases"
                     : `In ${phaseName(selectedPhase).toLowerCase()} phase`}
                 </small>
               </span>
-              <span data-spt-legacy="">
+              <span className="grid gap-[7px] text-muted text-xs/[inherit]">
                 History captured
-                <strong data-spt-legacy="">{history.length} samples</strong>
-                <small data-spt-legacy="">Reported interval measurements</small>
+                <strong className="text-foreground text-lg/[inherit]">
+                  {history.length} samples
+                </strong>
+                <small className="font-normal max-w-[150px] text-xs/[inherit]">
+                  Reported interval measurements
+                </small>
               </span>
             </div>
           </Paper>
           <RunWarnings warnings={m?.warnings} />
           {m && (
             <>
-              <div data-spt-legacy="" className="scope-bar">
+              <div className="flex flex-wrap gap-lg items-center mb-comfortable">
                 <NativeSelect
                   label="Inspect phase"
                   value={selectedPhase}
@@ -835,7 +848,7 @@ function Dashboard({
                 </Text>
               </div>
               {has("cards") && (
-                <div data-spt-legacy="" className="metrics-grid">
+                <div className="grid grid-cols-4 gap-md mb-panel [@media(max-width:760px)]:grid-cols-2 [@media(max-width:760px)]:gap-sm">
                   <MetricCard
                     label={`${phaseName(selectedPhase)} IOPS`}
                     value={formatMetric(
@@ -925,47 +938,59 @@ function Dashboard({
               <Accordion.Item value="section">
                 <Accordion.Control>Run record and settings</Accordion.Control>
                 <Accordion.Panel>
-                  <div data-spt-legacy="" className="detail-strip">
-                    <span data-spt-legacy="">
-                      Started: {utc(job?.started_at)}
-                    </span>
-                    <span data-spt-legacy="">
-                      Finished: {utc(job?.finished_at)}
-                    </span>
-                    <span data-spt-legacy="">
-                      Exit code: {fmt(job?.returncode)}
-                    </span>
+                  <div className="mx-0 my-panel flex flex-wrap gap-panel text-caption/[inherit] text-muted">
+                    <span>Started: {utc(job?.started_at)}</span>
+                    <span>Finished: {utc(job?.finished_at)}</span>
+                    <span>Exit code: {fmt(job?.returncode)}</span>
                   </div>
-                  <dl data-spt-legacy="" className="record-grid">
-                    <div data-spt-legacy="">
-                      <dt data-spt-legacy="">Objects</dt>
-                      <dd data-spt-legacy="">
+                  <dl className="grid grid-cols-2 gap-lg [@media(max-width:760px)]:grid-cols-1">
+                    <div>
+                      <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                        Objects
+                      </dt>
+                      <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
                         {fmt(job?.options?.object_count)}
                       </dd>
                     </div>
-                    <div data-spt-legacy="">
-                      <dt data-spt-legacy="">Object size</dt>
-                      <dd data-spt-legacy="">
+                    <div>
+                      <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                        Object size
+                      </dt>
+                      <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
                         {job?.options?.object_size ?? "—"}
                       </dd>
                     </div>
-                    <div data-spt-legacy="">
-                      <dt data-spt-legacy="">Threads</dt>
-                      <dd data-spt-legacy="">{fmt(job?.options?.threads)}</dd>
+                    <div>
+                      <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                        Threads
+                      </dt>
+                      <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                        {fmt(job?.options?.threads)}
+                      </dd>
                     </div>
-                    <div data-spt-legacy="">
-                      <dt data-spt-legacy="">Safety time limit</dt>
-                      <dd data-spt-legacy="">
+                    <div>
+                      <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                        Safety time limit
+                      </dt>
+                      <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
                         {elapsed(job?.options?.max_runtime_seconds)}
                       </dd>
                     </div>
-                    <div data-spt-legacy="">
-                      <dt data-spt-legacy="">Run prefix</dt>
-                      <dd data-spt-legacy="">{job?.prefix ?? "—"}</dd>
+                    <div>
+                      <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                        Run prefix
+                      </dt>
+                      <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                        {job?.prefix ?? "—"}
+                      </dd>
                     </div>
-                    <div data-spt-legacy="">
-                      <dt data-spt-legacy="">Source</dt>
-                      <dd data-spt-legacy="">{m?.source_file ?? "—"}</dd>
+                    <div>
+                      <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                        Source
+                      </dt>
+                      <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                        {m?.source_file ?? "—"}
+                      </dd>
                     </div>
                   </dl>
                 </Accordion.Panel>

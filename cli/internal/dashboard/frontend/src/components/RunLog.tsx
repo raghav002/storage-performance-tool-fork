@@ -101,7 +101,7 @@ function LogContents({
   const files = [...new Set(data?.lines.map((l) => l.file) ?? [])];
   return (
     <>
-      <div data-spt-legacy="" className="run-log-heading">
+      <div className="flex flex-wrap gap-sm items-center">
         {!collapsed && (
           <Title order={3} className="flex-auto">
             {title}
@@ -147,12 +147,20 @@ function LogContents({
             : `No ${level === "warn" ? "warning or error" : "error"} lines recorded.`}
         </Text>
       ) : (
-        <pre data-spt-legacy="" className="log-lines" tabIndex={0}>
+        <pre
+          className="p-sm max-h-[360px] overflow-auto bg-[#101827] text-[#dbe4f0] rounded-md text-sm/help whitespace-pre-wrap wrap-anywhere"
+          tabIndex={0}
+        >
           {data.lines.map((l, i) => (
             <span
-              data-spt-legacy=""
               key={i}
-              className={`log-line log-${l.level}`}
+              className={
+                l.level === "warn"
+                  ? "text-[#f5c46b]"
+                  : l.level === "error"
+                    ? "text-[#ff8a80]"
+                    : undefined
+              }
             >
               {l.text}
               {"\n"}

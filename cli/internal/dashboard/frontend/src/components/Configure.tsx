@@ -240,7 +240,7 @@ function PreviousRunPicker({
         Duplicate settings
       </Button>
       {historyMessage && (
-        <span data-spt-legacy="" role="status" className="expert-muted">
+        <span role="status" className="text-caption/[inherit] text-[#738198]">
           {historyMessage}
         </span>
       )}
@@ -333,11 +333,13 @@ function ExpertWorkspace({
   }
 
   return (
-    <div data-spt-legacy="" className="expert-workspace">
-      <div data-spt-legacy="" className="expert-workspace-main">
-        <div data-spt-legacy="" className="expert-area-heading">
-          <strong data-spt-legacy="">Start from</strong>
-          <span data-spt-legacy="">
+    <div className="grid grid-cols-[minmax(0,1fr)_275px] items-start gap-[25px] mt-panel [@media(max-width:1000px)]:grid-cols-1">
+      <div className="min-w-0">
+        <div className="flex flex-col gap-[5px]">
+          <strong className="text-base/[inherit] text-foreground">
+            Start from
+          </strong>
+          <span className="text-[#6b7b90] text-sm/[inherit]">
             Reuse a known configuration or start with the defaults.
           </span>
         </div>
@@ -377,7 +379,7 @@ function ExpertWorkspace({
             </Button>
           ))}
         </div>
-        <div data-spt-legacy="" className="expert-starter">
+        <div className="p-[14px] bg-surface-subtle border border-border rounded-md">
           {start === "new" && (
             <div className="flex flex-wrap items-end gap-compact">
               <NativeSelect
@@ -398,7 +400,7 @@ function ExpertWorkspace({
                   </option>
                 ))}
               </NativeSelect>
-              <span data-spt-legacy="" className="expert-muted">
+              <span className="text-caption/[inherit] text-[#738198]">
                 Adjust any setting below before reviewing.
               </span>
             </div>
@@ -432,7 +434,7 @@ function ExpertWorkspace({
                 Load profile
               </Button>
               {!profiles.length && (
-                <span data-spt-legacy="" className="expert-muted">
+                <span className="text-caption/[inherit] text-[#738198]">
                   No saved profiles yet. Save one in the summary panel.
                 </span>
               )}
@@ -464,7 +466,7 @@ function ExpertWorkspace({
                 <Button size="xs" type="button" onClick={importCommand}>
                   Import supported settings
                 </Button>
-                <span data-spt-legacy="" className="expert-muted">
+                <span className="text-caption/[inherit] text-[#738198]">
                   Import only; commands are never executed. Four flags
                   supported.
                 </span>
@@ -483,14 +485,11 @@ function ExpertWorkspace({
           )}
         </div>
 
-        <div
-          data-spt-legacy=""
-          className="expert-area-heading expert-essentials-heading"
-        >
-          <strong data-spt-legacy="">
+        <div className="flex flex-col gap-[5px] mt-[23px]">
+          <strong className="text-base/[inherit] text-foreground">
             {workloadName} · Essential settings
           </strong>
-          <span data-spt-legacy="">
+          <span className="text-[#6b7b90] text-sm/[inherit]">
             The current dashboard API supports this workload and these four run
             settings.
           </span>
@@ -502,7 +501,7 @@ function ExpertWorkspace({
           limits={limits}
           showPresets={false}
         />
-        <Accordion className="expert-limits">
+        <Accordion>
           <Accordion.Item value="section">
             <Accordion.Control>
               Host limits &amp; advanced settings
@@ -512,32 +511,34 @@ function ExpertWorkspace({
                 Other SPT CLI flags are not available through this version of
                 the Dashboard API. Defaults are enforced by the Go server.
               </Text>
-              <dl data-spt-legacy="">
-                <div data-spt-legacy="">
-                  <dt data-spt-legacy="">Maximum objects</dt>
-                  <dd data-spt-legacy="">
+              <dl className="mx-0 mt-compact mb-0">
+                <div className="px-0 py-xs flex justify-between gap-sm border-b border-b-[#e7edf5] text-caption/[inherit]">
+                  <dt className="text-muted">Maximum objects</dt>
+                  <dd className="m-0 font-heading text-right wrap-anywhere">
                     {limits.expert.object_count.max.toLocaleString("en-US")}
                   </dd>
                 </div>
-                <div data-spt-legacy="">
-                  <dt data-spt-legacy="">Maximum threads / client</dt>
-                  <dd data-spt-legacy="">{limits.expert.threads.max}</dd>
+                <div className="px-0 py-xs flex justify-between gap-sm border-b border-b-[#e7edf5] text-caption/[inherit]">
+                  <dt className="text-muted">Maximum threads / client</dt>
+                  <dd className="m-0 font-heading text-right wrap-anywhere">
+                    {limits.expert.threads.max}
+                  </dd>
                 </div>
-                <div data-spt-legacy="">
-                  <dt data-spt-legacy="">Maximum object size</dt>
-                  <dd data-spt-legacy="">
+                <div className="px-0 py-xs flex justify-between gap-sm border-b border-b-[#e7edf5] text-caption/[inherit]">
+                  <dt className="text-muted">Maximum object size</dt>
+                  <dd className="m-0 font-heading text-right wrap-anywhere">
                     {formatBytes(limits.expert.object_size_bytes.max)}
                   </dd>
                 </div>
-                <div data-spt-legacy="">
-                  <dt data-spt-legacy="">Maximum runtime</dt>
-                  <dd data-spt-legacy="">
+                <div className="px-0 py-xs flex justify-between gap-sm border-b border-b-[#e7edf5] text-caption/[inherit]">
+                  <dt className="text-muted">Maximum runtime</dt>
+                  <dd className="m-0 font-heading text-right wrap-anywhere">
                     {limits.expert.max_runtime_seconds.max}s
                   </dd>
                 </div>
-                <div data-spt-legacy="">
-                  <dt data-spt-legacy="">Maximum data</dt>
-                  <dd data-spt-legacy="">
+                <div className="px-0 py-xs flex justify-between gap-sm border-b border-b-[#e7edf5] text-caption/[inherit]">
+                  <dt className="text-muted">Maximum data</dt>
+                  <dd className="m-0 font-heading text-right wrap-anywhere">
                     {formatBytes(limits.expert.max_total_bytes)}
                   </dd>
                 </div>
@@ -547,17 +548,16 @@ function ExpertWorkspace({
         </Accordion>
       </div>
       <aside
-        data-spt-legacy=""
-        className="expert-summary"
+        className="p-lg border border-[#dbe5f0] rounded-lg bg-[#f7fafe] sticky top-[20px] min-w-0 [@media(max-width:1000px)]:static"
         aria-label="Expert configuration summary"
       >
-        <span data-spt-legacy="" className="eyebrow">
+        <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-[9px]">
           CONFIGURATION SUMMARY
         </span>
         <Title order={3} size="lg" className="mb-[3px]">
           {workloadName}
         </Title>
-        <span data-spt-legacy="" className="expert-summary-sub">
+        <span className="text-[#697c93] text-caption/[inherit]">
           {clients} client machine{clients === 1 ? "" : "s"} ·{" "}
           {driver === "mock"
             ? "No storage used"
@@ -565,55 +565,62 @@ function ExpertWorkspace({
               ? "Storage verified"
               : "Storage not verified"}
         </span>
-        <dl data-spt-legacy="">
-          <div data-spt-legacy="">
-            <dt data-spt-legacy="">Maximum objects</dt>
-            <dd data-spt-legacy="">{draft.object_count || "—"}</dd>
+        <dl className="mx-0 mt-compact mb-0">
+          <div className="px-0 py-xs flex justify-between gap-sm border-b border-b-[#e7edf5] text-caption/[inherit]">
+            <dt className="text-muted">Maximum objects</dt>
+            <dd className="m-0 font-heading text-right wrap-anywhere">
+              {draft.object_count || "—"}
+            </dd>
           </div>
-          <div data-spt-legacy="">
-            <dt data-spt-legacy="">Object size</dt>
-            <dd data-spt-legacy="">
+          <div className="px-0 py-xs flex justify-between gap-sm border-b border-b-[#e7edf5] text-caption/[inherit]">
+            <dt className="text-muted">Object size</dt>
+            <dd className="m-0 font-heading text-right wrap-anywhere">
               {draft.size_amount
                 ? `${draft.size_amount} ${draft.size_unit}`
                 : "—"}
             </dd>
           </div>
-          <div data-spt-legacy="">
-            <dt data-spt-legacy="">Threads / client</dt>
-            <dd data-spt-legacy="">{draft.threads || "—"}</dd>
+          <div className="px-0 py-xs flex justify-between gap-sm border-b border-b-[#e7edf5] text-caption/[inherit]">
+            <dt className="text-muted">Threads / client</dt>
+            <dd className="m-0 font-heading text-right wrap-anywhere">
+              {draft.threads || "—"}
+            </dd>
           </div>
-          <div data-spt-legacy="">
-            <dt data-spt-legacy="">Safety limit</dt>
-            <dd data-spt-legacy="">
+          <div className="px-0 py-xs flex justify-between gap-sm border-b border-b-[#e7edf5] text-caption/[inherit]">
+            <dt className="text-muted">Safety limit</dt>
+            <dd className="m-0 font-heading text-right wrap-anywhere">
               {draft.max_runtime_seconds
                 ? `${draft.max_runtime_seconds}s`
                 : "—"}
             </dd>
           </div>
         </dl>
-        <div data-spt-legacy="" className="expert-data-footprint">
-          <strong data-spt-legacy="">Maximum test data</strong>
-          <span data-spt-legacy="">
+        <div className="p-sm flex flex-col gap-[5px] mt-[14px] bg-[var(--mantine-color-spt-1)] rounded-control text-caption/[inherit]">
+          <strong>Maximum test data</strong>
+          <span className="text-emphasis/[inherit] font-bold text-[#176aca]">
             {Number.isFinite(volume) ? formatBytes(volume) : "—"}
           </span>
         </div>
-        <div data-spt-legacy="" className="expert-changes">
-          <strong data-spt-legacy="">Modified from defaults</strong>
-          <div data-spt-legacy="" className="expert-chips">
+        <div className="mx-0 my-md text-caption/[inherit]">
+          <strong>Modified from defaults</strong>
+          <div className="flex gap-[5px] flex-wrap mt-[9px]">
             {changed.length ? (
               changed.map(([, label]) => (
-                <span data-spt-legacy="" key={label}>
+                <span
+                  className="px-[7px] py-xxs rounded-chip bg-[#e4effe] text-[var(--mantine-color-spt-7)] text-xs/[inherit]"
+                  key={label}
+                >
                   {label}
                 </span>
               ))
             ) : (
-              <span data-spt-legacy="" className="quiet">
+              <span className="px-[7px] py-xxs rounded-chip bg-[#e8edf3] text-muted text-xs/[inherit]">
                 Using defaults
               </span>
             )}
           </div>
         </div>
-        <Accordion mt="md" className="expert-cli-preview">
+        <Accordion mt="md">
           <Accordion.Item value="section">
             <Accordion.Control>Preview CLI settings</Accordion.Control>
             <Accordion.Panel>
@@ -627,7 +634,7 @@ function ExpertWorkspace({
                   ? expertCommand(draft, driver)
                   : "Correct the settings to generate a command preview."}
               </Code>
-              <small data-spt-legacy="">
+              <small className="font-normal text-[#738198] text-xs/[inherit]">
                 {driver === "mock"
                   ? "The Go backend adds the client machines, safe flags and the results directory. No storage credentials are passed."
                   : "The Go backend adds storage credentials, safe flags and the results directory."}
@@ -635,7 +642,7 @@ function ExpertWorkspace({
             </Accordion.Panel>
           </Accordion.Item>
         </Accordion>
-        <div data-spt-legacy="" className="expert-save">
+        <div className="grid gap-xs mt-comfortable pt-[15px] border-t border-t-border">
           <TextInput
             label="Save this configuration"
             id="expert-profile-name"
@@ -653,7 +660,10 @@ function ExpertWorkspace({
             Save profile
           </Button>
           {saveMessage && (
-            <small data-spt-legacy="" role="status">
+            <small
+              className="font-normal text-muted text-xs/[inherit]"
+              role="status"
+            >
               {saveMessage}
             </small>
           )}
@@ -716,10 +726,9 @@ export function Configure({
   }
   return (
     <div
-      data-spt-legacy=""
-      className={`configure ${mode === "expert" ? "configure--expert" : ""}`}
+      className={`mx-auto my-[15px] ${mode === "expert" ? "max-w-[1210px]" : "max-w-[800px]"}`}
     >
-      <span data-spt-legacy="" className="eyebrow">
+      <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-compact">
         NEW BENCHMARK
       </span>
       <Title order={1}>Configure a run</Title>
@@ -737,7 +746,7 @@ export function Configure({
         component="section"
         className="mb-panel p-panel [@media(max-width:760px)]:p-[17px]"
       >
-        <span data-spt-legacy="" className="eyebrow">
+        <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-compact">
           STEP 1
         </span>
         <Title order={2}>Storage configuration</Title>
@@ -751,7 +760,7 @@ export function Configure({
         component="section"
         className="mb-panel p-panel [@media(max-width:760px)]:p-[17px]"
       >
-        <span data-spt-legacy="" className="eyebrow">
+        <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-compact">
           STEP 2
         </span>
         <Title order={2}>
@@ -796,29 +805,45 @@ export function Configure({
         <Fieldset disabled={!verified}>
           {review ? (
             <>
-              <div data-spt-legacy="" className="review">
+              <div className="p-lg bg-surface-review rounded-md mb-lg">
                 <Title order={2}>
                   {driver === "mock" ? "Mock driver" : "Write + verify"} ·{" "}
                   {mode === "expert" ? "Expert" : "Guided"} · {clients} client
                   machine
                   {clients === 1 ? "" : "s"}
                 </Title>
-                <dl data-spt-legacy="" className="review-grid">
-                  <div data-spt-legacy="">
-                    <dt data-spt-legacy="">Maximum objects</dt>
-                    <dd data-spt-legacy="">{config.object_count}</dd>
+                <dl className="grid grid-cols-2 gap-lg [@media(max-width:760px)]:grid-cols-1">
+                  <div>
+                    <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                      Maximum objects
+                    </dt>
+                    <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                      {config.object_count}
+                    </dd>
                   </div>
-                  <div data-spt-legacy="">
-                    <dt data-spt-legacy="">Object size</dt>
-                    <dd data-spt-legacy="">{config.object_size}</dd>
+                  <div>
+                    <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                      Object size
+                    </dt>
+                    <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                      {config.object_size}
+                    </dd>
                   </div>
-                  <div data-spt-legacy="">
-                    <dt data-spt-legacy="">Parallel threads</dt>
-                    <dd data-spt-legacy="">{config.threads}</dd>
+                  <div>
+                    <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                      Parallel threads
+                    </dt>
+                    <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                      {config.threads}
+                    </dd>
                   </div>
-                  <div data-spt-legacy="">
-                    <dt data-spt-legacy="">Safety time limit</dt>
-                    <dd data-spt-legacy="">{config.max_runtime_seconds}s</dd>
+                  <div>
+                    <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                      Safety time limit
+                    </dt>
+                    <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                      {config.max_runtime_seconds}s
+                    </dd>
                   </div>
                 </dl>
                 {driver === "mock" ? (
@@ -833,8 +858,10 @@ export function Configure({
                   </Text>
                 )}
                 {mode === "expert" && (
-                  <div data-spt-legacy="" className="expert-reviewed-command">
-                    <strong data-spt-legacy="">CLI settings preview</strong>
+                  <div className="mt-[14px]">
+                    <strong className="text-sm/[inherit]">
+                      CLI settings preview
+                    </strong>
                     <Code
                       block
                       className="whitespace-pre-wrap wrap-anywhere"
@@ -843,14 +870,14 @@ export function Configure({
                     >
                       {expertCommand(draft, driver)}
                     </Code>
-                    <small data-spt-legacy="">
+                    <small className="font-normal text-[#738198] text-xs/[inherit]">
                       The server generates the complete command and validates
                       all options.
                     </small>
                   </div>
                 )}
               </div>
-              <div data-spt-legacy="" className="actions">
+              <div className="flex flex-wrap items-center gap-compact">
                 <Button disabled={busy} onClick={() => setReview(false)}>
                   Edit settings
                 </Button>

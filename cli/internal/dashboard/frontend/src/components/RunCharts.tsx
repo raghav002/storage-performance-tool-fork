@@ -208,7 +208,7 @@ export function Charts({
   return (
     <Paper
       component="section"
-      className="fleet mb-panel p-panel [@media(max-width:760px)]:p-[17px] min-w-0"
+      className="mb-panel p-panel [@media(max-width:760px)]:p-[17px] min-w-0"
       onKeyDown={(event) => {
         if (event.key === "Escape") setInspection(null);
       }}

@@ -141,7 +141,7 @@ export function OverlayChart({
       aria-label={`${phase} comparison`}
     >
       <div className="flex flex-wrap items-baseline justify-between gap-sm">
-        <Title order={3} size="lg">
+        <Title order={3} size="lg" className="min-w-0 wrap-anywhere">
           {phase}
         </Title>
         <Text size="caption">

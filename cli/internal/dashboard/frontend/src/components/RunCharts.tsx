@@ -85,12 +85,23 @@ const graphs = [
 type TimeWindow = { duration: number | null; end: number | null };
 
 function timeBounds(window: TimeWindow, first: number, last: number) {
-  const width = Math.min(last - first, window.duration ?? last - first);
+  // Match the millisecond precision of parsed timestamps before calculating bounds.
+  const firstMs = Math.round(first * 1000),
+    lastMs = Math.round(last * 1000);
+  const width = Math.min(
+    lastMs - firstMs,
+    window.duration === null
+      ? lastMs - firstMs
+      : Math.round(window.duration * 1000),
+  );
   const end =
     window.end === null
-      ? last
-      : Math.min(last, Math.max(first + width, window.end));
-  return [width >= last - first ? first : end - width, end] as const;
+      ? lastMs
+      : Math.min(
+          lastMs,
+          Math.max(firstMs + width, Math.round(window.end * 1000)),
+        );
+  return [(end - width) / 1000, end / 1000] as const;
 }
 
 export function Charts({
@@ -198,6 +209,9 @@ export function Charts({
     <Paper
       component="section"
       className="fleet mb-panel p-panel [@media(max-width:760px)]:p-[17px] min-w-0"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") setInspection(null);
+      }}
     >
       <div className="mb-comfortable flex flex-wrap items-start justify-between gap-sm">
         <div className="min-w-0">
@@ -404,7 +418,7 @@ export function Charts({
           </Paper>
           {!samples.length && (
             <Alert role="note">
-              No interval history recorded for this phase. Final phase averages
+              No interval history recorded for this phase. Phase summaries
               appear once SPT reports them.
             </Alert>
           )}
@@ -429,15 +443,7 @@ export function Charts({
               />
             ))}
           </div>
-          <Paper
-            p="md"
-            radius="md"
-            bg="var(--spt-surface-subtle)"
-            mt="md"
-            onKeyDown={(event) => {
-              if (event.key === "Escape") setInspection(null);
-            }}
-          >
+          <Paper p="md" radius="md" bg="var(--spt-surface-subtle)" mt="md">
             <div className="mb-md flex flex-wrap items-center justify-between gap-sm">
               <Text
                 size="sm"

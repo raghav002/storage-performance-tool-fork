@@ -785,7 +785,7 @@ function Dashboard({
                 />
                 <Text size="caption">
                   {!m.is_active && final
-                    ? "Final phase averages"
+                    ? "Final phase summary"
                     : "Latest measured phase snapshot"}{" "}
                   · Missing values appear as —
                 </Text>

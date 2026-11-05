@@ -55,11 +55,15 @@ export function OverlayChart({
   const [selectedTime, setSelectedTime] = useState<number | null>(null);
   const active = Math.max(0, times.indexOf(selectedTime ?? times[0]));
   const time = times[active];
+  const { maxT, maxV, count } = useMemo(
+    () =>
+      overlayExtent(
+        data.map((line) => line.points),
+        metric,
+      ),
+    [data, metric],
+  );
   const option = useMemo<ChartOption>(() => {
-    const { maxT, maxV } = overlayExtent(
-      data.map((line) => line.points),
-      metric,
-    );
     return {
       grid: { left: 68, right: 20, top: 18, bottom: 38 },
       tooltip: {
@@ -114,7 +118,7 @@ export function OverlayChart({
         emphasis: { focus: "series", scale: false },
       })),
     };
-  }, [data, metric, unit, baseline, theme.fontSizes.sm]);
+  }, [data, metric, unit, baseline, theme.fontSizes.sm, maxT, maxV]);
   const inspect = useCallback(
     (chart: EChartsType) => {
       if (selectedTime === null || time === undefined) return;
@@ -126,9 +130,6 @@ export function OverlayChart({
       });
     },
     [selectedTime, time],
-  );
-  const hasValues = data.some((line) =>
-    line.points.some((p) => numeric(p[metric]) !== null),
   );
 
   return (
@@ -150,7 +151,7 @@ export function OverlayChart({
       <Text size="caption" className="mt-xs">
         Seconds since each run’s first phase sample
       </Text>
-      {hasValues ? (
+      {count > 0 ? (
         <EChart
           option={option}
           label={`${phase} ${title} over elapsed seconds for ${lines.length} runs, in ${unit}. Baseline: ${baseline}. Exact values are available in the sample inspector below.`}

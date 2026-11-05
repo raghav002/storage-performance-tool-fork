@@ -3,9 +3,7 @@ import { BarChart, LineChart } from "echarts/charts";
 import {
   AriaComponent,
   AxisPointerComponent,
-  DataZoomComponent,
   GridComponent,
-  LegendComponent,
   TooltipComponent,
 } from "echarts/components";
 import { init, use as registerCharts } from "echarts/core";
@@ -16,9 +14,7 @@ registerCharts([
   BarChart,
   GridComponent,
   TooltipComponent,
-  LegendComponent,
   AxisPointerComponent,
-  DataZoomComponent,
   AriaComponent,
   CanvasRenderer,
 ]);
@@ -45,11 +41,7 @@ export function createChartTheme(theme: MantineTheme) {
       color: text.secondary,
     },
     valueAxis: axis,
-    timeAxis: axis,
     categoryAxis: { ...axis, splitLine: { show: false } },
-    legend: {
-      textStyle: { color: text.secondary, fontSize: px(theme.fontSizes.sm) },
-    },
     tooltip: {
       confine: true,
       renderMode: "richText",

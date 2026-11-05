@@ -161,6 +161,7 @@ export function TrendChart({
   return (
     <section
       aria-label={`${title} trend`}
+      tabIndex={-1}
       className="min-w-0 border-t border-subtle-border pt-lg"
     >
       <div className="flex flex-wrap items-center justify-between gap-sm">

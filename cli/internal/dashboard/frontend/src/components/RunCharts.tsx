@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import type { Metrics, Sample } from "../types";
 import { TrendChart } from "./TrendChart";
+import { PhaseSummaryChart } from "./PhaseSummaryChart";
 import { dashboardTokens } from "../theme";
 import {
   elapsed,
@@ -37,7 +38,7 @@ import {
 const graphs = [
   {
     key: "throughput" as const,
-    field: "interval_iops" as const,
+    summaryField: "iops" as const,
     label: "IOPS",
     unit: "ops/s",
     series: [
@@ -50,7 +51,7 @@ const graphs = [
   },
   {
     key: "bandwidth" as const,
-    field: "bandwidth_mib_s" as const,
+    summaryField: "bandwidth_mib_s" as const,
     label: "Bandwidth",
     unit: "MiB/s",
     series: [
@@ -63,7 +64,7 @@ const graphs = [
   },
   {
     key: "p50" as const,
-    field: "p50_latency_us" as const,
+    summaryField: "p50_latency_us" as const,
     label: "Latency",
     unit: "µs",
     series: [
@@ -506,49 +507,29 @@ export function Charts({
             checked={cleanup}
             onChange={(e) => setCleanup(e.target.checked)}
           />
-          <div data-spt-legacy="" className="comparison-grid">
-            {graphs.map((g) => {
-              const field = g.key === "throughput" ? "iops" : g.field;
-              const max = Math.max(
-                1,
-                ...summaries.map((r) => numeric(r[field]) ?? 0),
-              );
-              return (
-                <article data-spt-legacy="" className="comparison" key={g.key}>
-                  <Title order={3}>
-                    {g.label} <span data-spt-legacy="">{g.unit}</span>
-                  </Title>
-                  {summaries.map((r) => {
-                    const v = numeric(r[field]);
-                    return (
-                      <div
-                        data-spt-legacy=""
-                        className="comparison-row"
-                        key={r.phase}
-                      >
-                        <span data-spt-legacy="">{phaseName(r.phase)}</span>
-                        <div data-spt-legacy="">
-                          {v !== null && (
-                            <i
-                              data-spt-legacy=""
-                              style={{
-                                width: `${(v / max) * 100}%`,
-                                background: g.series[0].color,
-                              }}
-                            />
-                          )}
-                        </div>
-                        <strong data-spt-legacy="">{fmt(v, 2)}</strong>
-                      </div>
-                    );
-                  })}
-                </article>
-              );
-            })}
-          </div>
+          {summaries.length ? (
+            <div className="my-lg grid grid-cols-1 gap-md min-[1500px]:grid-cols-3">
+              {graphs.map((graph) => (
+                <PhaseSummaryChart
+                  key={graph.key}
+                  summaries={summaries}
+                  field={graph.summaryField}
+                  title={graph.key === "p50" ? "P50 latency" : graph.label}
+                  unit={graph.unit}
+                  color={graph.series[0].color}
+                />
+              ))}
+            </div>
+          ) : (
+            <Alert role="note" my="md">
+              No phase summaries available for this selection.
+            </Alert>
+          )}
           <Text size="xs" c="var(--spt-text-subtle)" className="tabular-nums">
-            These bars show phase rates and P50 latency, not interval history.
-            Cleanup normally transfers no object payload.
+            Each chart uses its own scale. Hover for full values; “Not reported”
+            means missing data, not zero. P50 is a latency percentile. These are
+            phase summaries, not interval history. Cleanup normally transfers no
+            object payload.
           </Text>
         </>
       )}

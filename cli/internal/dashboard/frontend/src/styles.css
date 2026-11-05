@@ -441,54 +441,11 @@ small:where([data-spt-legacy]) {
   margin-left: var(--mantine-spacing-sm);
   color: var(--spt-text-muted);
 }
-.comparison-grid:where([data-spt-legacy]) {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--mantine-spacing-section);
-  margin: var(--mantine-spacing-section) 0;
-}
-.comparison h3 span:where([data-spt-legacy]) {
-  display: block;
-  font-weight: var(--mantine-font-weight-regular);
-  font-size: var(--mantine-font-size-xs);
-  color: var(--spt-text-muted);
-  margin-top: 5px;
-}
-.comparison-row:where([data-spt-legacy]) {
-  display: grid;
-  grid-template-columns: 45px minmax(20px, 1fr) 52px;
-  gap: 9px;
-  align-items: center;
-  margin-top: var(--mantine-spacing-comfortable);
-  font-size: var(--mantine-font-size-xs);
-  color: var(--spt-text-muted);
-}
-.comparison-row > div:where([data-spt-legacy]) {
-  height: 6px;
-  background: var(--spt-surface-track);
-  border-radius: var(--mantine-radius-xs);
-  overflow: hidden;
-}
-.comparison-row i:where([data-spt-legacy]) {
-  display: block;
-  height: 6px;
-  min-width: 0;
-}
-.comparison-row strong:where([data-spt-legacy]) {
-  color: var(--spt-text-primary);
-  text-align: right;
-}
 .timing dd:where([data-spt-legacy]) {
   text-align: right;
   overflow-wrap: anywhere;
   max-width: 62%;
   font-variant-numeric: tabular-nums;
-}
-@media (max-width: 1150px) {
-  .comparison-grid:where([data-spt-legacy]) {
-    grid-template-columns: 1fr;
-    gap: var(--mantine-spacing-wide);
-  }
 }
 @media (max-width: 760px) {
   .page-heading:where([data-spt-legacy]) {

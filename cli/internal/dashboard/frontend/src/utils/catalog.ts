@@ -101,7 +101,7 @@ export function phasesOf(
 export type OverlayMetric =
   "iops" | "bandwidth_mib_s" | "p50_latency_us" | "p99_latency_us";
 
-/** Extent of all non-null values across the overlaid runs, for a shared axis. */
+/** Shared elapsed extent, including gaps, and range of reported values. */
 export function overlayExtent(
   lines: SeriesPoint[][],
   metric: OverlayMetric,
@@ -111,30 +111,14 @@ export function overlayExtent(
     count = 0;
   for (const line of lines)
     for (const p of line) {
+      if (!Number.isFinite(p.t) || p.t < 0) continue;
+      maxT = Math.max(maxT, p.t);
       const v = p[metric];
       if (v === null || !Number.isFinite(v)) continue;
       count++;
-      maxT = Math.max(maxT, p.t);
       maxV = Math.max(maxV, v);
     }
   return { maxT, maxV, count };
-}
-
-/** Split a series into runs of consecutive non-null values so gaps stay visible. */
-export function segments(
-  points: SeriesPoint[],
-  metric: OverlayMetric,
-): SeriesPoint[][] {
-  const out: SeriesPoint[][] = [];
-  let part: SeriesPoint[] = [];
-  for (const p of points) {
-    if (p[metric] === null || !Number.isFinite(p[metric] as number)) {
-      if (part.length) out.push(part);
-      part = [];
-    } else part.push(p);
-  }
-  if (part.length) out.push(part);
-  return out;
 }
 
 export function runSettings(run: CatalogRun): string {

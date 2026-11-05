@@ -542,7 +542,8 @@ export default function App() {
           size="xs"
           c="var(--spt-text-subtle)"
           lh="normal"
-          className="px-xxl pb-[25px] [@media(max-width:760px)]:px-md [@media(max-width:760px)]:pb-lg"
+          ta="center"
+          className="mx-auto max-w-[1550px] px-xxl pb-[25px] [@media(max-width:1150px)]:px-section [@media(max-width:760px)]:px-md [@media(max-width:760px)]:pb-lg"
         >
           {state?.branding?.product_name ?? "Storage Performance Tool"} ·{" "}
           {received

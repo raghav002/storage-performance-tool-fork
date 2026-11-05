@@ -3,7 +3,11 @@ import { useCallback, useMemo } from "react";
 import type { ElementEvent } from "echarts/core";
 import type { ChartOption, EChartsType } from "../charts/echarts";
 import type { Sample } from "../types";
-import { elapsed, formatChartValue } from "../utils/metrics";
+import {
+  elapsed,
+  formatChartAxisValue,
+  formatChartValue,
+} from "../utils/metrics";
 import { EChart } from "./EChart";
 
 type Props = {
@@ -21,15 +25,6 @@ type Props = {
   pinned: boolean;
   onInspect: (index: number | null, pinned?: boolean) => void;
 };
-
-function axisNumber(value: number) {
-  return value !== 0 && Math.abs(value) < 0.001
-    ? value.toExponential(1)
-    : new Intl.NumberFormat("en-US", {
-        notation: "compact",
-        maximumSignificantDigits: 3,
-      }).format(value);
-}
 
 export function TrendChart({
   samples,
@@ -83,7 +78,7 @@ export function TrendChart({
         min: 0,
         splitNumber: 4,
         axisLine: { show: false },
-        axisLabel: { formatter: axisNumber, hideOverlap: true },
+        axisLabel: { formatter: formatChartAxisValue, hideOverlap: true },
       },
       series: series.map((line) => ({
         id: line.key,

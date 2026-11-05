@@ -520,51 +520,6 @@ small:where([data-spt-legacy]) {
   color: #9a4b16;
   font-size: var(--mantine-font-size-sm);
 }
-.compare-legend:where([data-spt-legacy]) {
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--mantine-spacing-md);
-  padding: 0;
-  margin: var(--mantine-spacing-sm) 0;
-  font-size: var(--mantine-font-size-sm);
-}
-.compare-legend i:where([data-spt-legacy]) {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border-radius: var(--mantine-radius-xs);
-  margin-right: 6px;
-  vertical-align: -1px;
-}
-.compare-charts:where([data-spt-legacy]) {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
-  gap: var(--mantine-spacing-md);
-}
-.overlay-chart:where([data-spt-legacy]) {
-  margin: 0;
-  border: 1px solid var(--spt-border-panel);
-  border-radius: var(--mantine-radius-md);
-  padding: var(--mantine-spacing-compact);
-  background: var(--spt-surface-panel);
-}
-.overlay-chart figcaption:where([data-spt-legacy]) {
-  font-weight: var(--mantine-font-weight-semibold);
-  font-size: var(--mantine-font-size-sm);
-  margin-bottom: 6px;
-}
-.overlay-chart svg:where([data-spt-legacy]) {
-  width: 100%;
-  height: auto;
-}
-.overlay-chart .axis:where([data-spt-legacy]) {
-  stroke: #c7d1de;
-}
-.overlay-chart .tick:where([data-spt-legacy]) {
-  font-size: var(--mantine-font-size-xs);
-  fill: var(--spt-text-muted);
-}
 .run-log-heading:where([data-spt-legacy]) {
   display: flex;
   flex-wrap: wrap;

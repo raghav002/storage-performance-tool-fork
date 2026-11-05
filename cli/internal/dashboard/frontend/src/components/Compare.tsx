@@ -2,16 +2,16 @@ import {
   Alert,
   Badge,
   Button,
+  Checkbox,
   NativeSelect,
   Paper,
-  SegmentedControl,
   Table,
   Text,
   TextInput,
   Title,
 } from "@mantine/core";
 import { useState } from "react";
-import type { CompareDelta, CompareResult, SeriesPoint } from "../types";
+import type { CompareDelta, CompareResult } from "../types";
 import { useComparison, useLastSuccessfulData } from "../api/queries";
 import { dashboardTokens } from "../theme";
 import { formatNumber as fmt } from "../utils/metrics";
@@ -19,20 +19,20 @@ import {
   deltaText,
   flagText,
   groupDeltas,
-  overlayExtent,
   phasesOf,
   regressionCount,
-  segments,
   type OverlayMetric,
   type RuleOverrides,
 } from "../utils/catalog";
 
+import { OverlayChart } from "./OverlayChart";
+
 const palette = dashboardTokens.charts.comparison;
-const metrics: { key: OverlayMetric; label: string }[] = [
-  { key: "iops", label: "IOPS" },
-  { key: "bandwidth_mib_s", label: "Bandwidth (MiB/s)" },
-  { key: "p50_latency_us", label: "P50 latency (µs)" },
-  { key: "p99_latency_us", label: "P99 latency (µs)" },
+const metrics: { key: OverlayMetric; label: string; unit: string }[] = [
+  { key: "iops", label: "IOPS", unit: "ops/s" },
+  { key: "bandwidth_mib_s", label: "Bandwidth", unit: "MiB/s" },
+  { key: "p50_latency_us", label: "P50 latency", unit: "µs" },
+  { key: "p99_latency_us", label: "P99 latency", unit: "µs" },
 ];
 
 export function Compare({
@@ -51,6 +51,7 @@ export function Compare({
   const data = useLastSuccessfulData(comparison.data);
   const error = comparison.error?.message ?? "";
   const [metric, setMetric] = useState<OverlayMetric>("iops");
+  const [hiddenRuns, setHiddenRuns] = useState<string[]>([]);
   const [draftRule, setDraftRule] = useState<CompareResult["rule"] | null>(
     null,
   );
@@ -81,9 +82,12 @@ export function Compare({
         <Button onClick={onBack}>Open results catalog</Button>
       </div>
     );
-  const runIDs = data?.runs.map((r) => r.id) ?? ids;
   const color = (id: string) =>
-    palette[Math.max(0, runIDs.indexOf(id)) % palette.length];
+    palette[Math.max(0, ids.indexOf(id)) % palette.length];
+  const runLabel = (id: string) => `Run ${Math.max(0, ids.indexOf(id)) + 1}`;
+  const visibleRuns =
+    data?.runs.filter((run) => !hiddenRuns.includes(run.id)) ?? [];
+  const selectedMetric = metrics.find((m) => m.key === metric) ?? metrics[0];
   const regressions = data ? regressionCount(data.deltas) : 0;
   return (
     <>
@@ -207,166 +211,99 @@ export function Compare({
             component="section"
             className="mb-panel p-panel [@media(max-width:760px)]:p-[17px]"
           >
-            <div data-spt-legacy="" className="run-log-heading">
-              <Title order={2} className="flex-auto">
-                Time series
-              </Title>
-              <SegmentedControl<OverlayMetric>
+            <div className="flex flex-wrap items-end justify-between gap-md">
+              <div className="min-w-0">
+                <Title order={2}>Time series</Title>
+                <Text size="caption" className="mt-xs">
+                  Compare the same phase across runs. The baseline uses a
+                  thicker line.
+                </Text>
+              </div>
+              <NativeSelect
+                label="Metric"
                 aria-label="Comparison metric"
+                className="max-w-full"
                 value={metric}
-                onChange={setMetric}
-                data={metrics.map((m) => ({ value: m.key, label: m.label }))}
-                className="max-w-full flex-wrap"
-              />
+                onChange={(event) =>
+                  setMetric(event.target.value as OverlayMetric)
+                }
+              >
+                {metrics.map((m) => (
+                  <option key={m.key} value={m.key}>
+                    {m.label} ({m.unit})
+                  </option>
+                ))}
+              </NativeSelect>
             </div>
-            <ul data-spt-legacy="" className="compare-legend">
-              {data.runs.map((r) => (
-                <li data-spt-legacy="" key={r.id}>
-                  <i data-spt-legacy="" style={{ background: color(r.id) }} />
-                  {r.id}
-                  {r.id === data.baseline ? " (baseline)" : ""}
-                </li>
-              ))}
-            </ul>
-            <div data-spt-legacy="" className="compare-charts">
-              {phasesOf(data.series).map((phase) => (
-                <OverlayChart
-                  key={phase}
-                  phase={phase}
-                  metric={metric}
-                  unit={metrics.find((m) => m.key === metric)?.label ?? ""}
-                  lines={data.runs.map((r) => ({
-                    id: r.id,
-                    color: color(r.id),
-                    points: data.series[r.id]?.[phase] ?? [],
-                  }))}
+            <div
+              role="group"
+              aria-label="Visible comparison runs"
+              className="my-lg grid gap-sm"
+            >
+              {data.runs.map((run) => (
+                <Checkbox
+                  key={run.id}
+                  color={color(run.id)}
+                  checked={!hiddenRuns.includes(run.id)}
+                  onChange={(event) => {
+                    const visible = event.currentTarget.checked;
+                    setHiddenRuns((current) =>
+                      visible
+                        ? current.filter((id) => id !== run.id)
+                        : [...current, run.id],
+                    );
+                  }}
+                  label={
+                    <span className="wrap-anywhere">
+                      {runLabel(run.id)} · {run.id}
+                      {run.id === data.baseline && (
+                        <Badge component="span" size="sm" ml="xs">
+                          Baseline
+                        </Badge>
+                      )}
+                    </span>
+                  }
                 />
               ))}
-              {phasesOf(data.series).length === 0 && (
-                <Text size="xs" c="var(--spt-text-subtle)">
-                  None of the selected runs recorded interval metrics.
-                </Text>
-              )}
             </div>
+            {visibleRuns.length ? (
+              <div className="grid min-w-0 gap-md">
+                {phasesOf(data.series).map((phase) => (
+                  <OverlayChart
+                    key={phase}
+                    phase={phase}
+                    metric={metric}
+                    title={selectedMetric.label}
+                    unit={selectedMetric.unit}
+                    baseline={data.baseline}
+                    lines={visibleRuns.map((run) => ({
+                      id: run.id,
+                      label: runLabel(run.id),
+                      color: color(run.id),
+                      points: data.series[run.id]?.[phase] ?? [],
+                    }))}
+                  />
+                ))}
+                {phasesOf(data.series).length === 0 && (
+                  <Text size="sm">
+                    None of the selected runs recorded interval metrics.
+                  </Text>
+                )}
+              </div>
+            ) : (
+              <Alert role="note">
+                Select a run above to show its time series.
+              </Alert>
+            )}
+            <Text size="xs" c="var(--spt-text-subtle)" className="mt-md">
+              Missing values remain gaps. Each phase uses its own scale. Long
+              histories may be averaged.
+            </Text>
           </Paper>
           <DeltaTable deltas={data.deltas} baseline={data.baseline} />
         </>
       )}
     </>
-  );
-}
-
-export function OverlayChart({
-  phase,
-  metric,
-  unit,
-  lines,
-}: {
-  phase: string;
-  metric: OverlayMetric;
-  unit: string;
-  lines: { id: string; color: string; points: SeriesPoint[] }[];
-}) {
-  const { maxT, maxV, count } = overlayExtent(
-    lines.map((l) => l.points),
-    metric,
-  );
-  const W = 520,
-    H = 180,
-    left = 52,
-    right = 12,
-    top = 12,
-    bottom = 28;
-  const x = (t: number) =>
-    left + (maxT > 0 ? t / maxT : 0.5) * (W - left - right);
-  const yMax = (maxV || 1) * 1.1;
-  const y = (v: number) => H - bottom - (v / yMax) * (H - top - bottom);
-  return (
-    <figure data-spt-legacy="" className="overlay-chart">
-      <figcaption data-spt-legacy="">
-        {phase} · {unit}
-      </figcaption>
-      {count === 0 ? (
-        <Text size="xs" c="var(--spt-text-subtle)">
-          No samples for this metric.
-        </Text>
-      ) : (
-        <svg
-          data-spt-legacy=""
-          viewBox={`0 0 ${W} ${H}`}
-          role="img"
-          aria-label={`${phase} ${unit} over elapsed seconds for ${lines.length} runs`}
-        >
-          <line
-            data-spt-legacy=""
-            x1={left}
-            y1={H - bottom}
-            x2={W - right}
-            y2={H - bottom}
-            className="axis"
-          />
-          <line
-            data-spt-legacy=""
-            x1={left}
-            y1={top}
-            x2={left}
-            y2={H - bottom}
-            className="axis"
-          />
-          <text
-            data-spt-legacy=""
-            x={left - 6}
-            y={top + 8}
-            textAnchor="end"
-            className="tick"
-          >
-            {fmt(yMax, yMax < 10 ? 1 : 0)}
-          </text>
-          <text
-            data-spt-legacy=""
-            x={left - 6}
-            y={H - bottom}
-            textAnchor="end"
-            className="tick"
-          >
-            0
-          </text>
-          <text
-            data-spt-legacy=""
-            x={W - right}
-            y={H - 8}
-            textAnchor="end"
-            className="tick"
-          >
-            {fmt(maxT, 0)} s
-          </text>
-          {lines.map((l) =>
-            segments(l.points, metric).map((seg, i) =>
-              seg.length === 1 ? (
-                <circle
-                  key={l.id + i}
-                  cx={x(seg[0].t)}
-                  cy={y(seg[0][metric] as number)}
-                  r={3}
-                  fill={l.color}
-                />
-              ) : (
-                <polyline
-                  data-spt-legacy=""
-                  key={l.id + i}
-                  fill="none"
-                  stroke={l.color}
-                  strokeWidth={2}
-                  points={seg
-                    .map((p) => `${x(p.t)},${y(p[metric] as number)}`)
-                    .join(" ")}
-                />
-              ),
-            ),
-          )}
-        </svg>
-      )}
-    </figure>
   );
 }
 

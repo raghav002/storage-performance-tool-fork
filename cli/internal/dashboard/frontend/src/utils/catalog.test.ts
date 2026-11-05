@@ -14,7 +14,6 @@ import {
   regressionCount,
   runSettings,
   sameRunShape,
-  segments,
   toggleSelection,
   workloadLabel,
 } from "./catalog";
@@ -104,19 +103,24 @@ describe("series helpers", () => {
       phasesOf({ a: { DELETE: [], READ: [] }, b: { CREATE: [], ZZZ: [] } }),
     ).toEqual(["CREATE", "READ", "DELETE", "ZZZ"]);
   });
-  it("ignores nulls in the shared extent", () => {
+  it("keeps missing sample times in the shared elapsed extent", () => {
     expect(
       overlayExtent([[pt(0, 5), pt(4, null)], [pt(2, 9)]], "iops"),
     ).toEqual({
-      maxT: 2,
+      maxT: 4,
       maxV: 9,
       count: 2,
     });
     expect(overlayExtent([[pt(0, null)]], "iops").count).toBe(0);
   });
-  it("splits series at gaps", () => {
-    const s = segments([pt(0, 1), pt(1, 2), pt(2, null), pt(3, 4)], "iops");
-    expect(s.map((p) => p.length)).toEqual([2, 1]);
+  it("counts zero as measured and ignores invalid sample times", () => {
+    expect(
+      overlayExtent([[pt(0, 0), pt(1, null), pt(Number.NaN, 10)]], "iops"),
+    ).toEqual({
+      maxT: 1,
+      maxV: 0,
+      count: 1,
+    });
   });
 });
 

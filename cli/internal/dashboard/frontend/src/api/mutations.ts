@@ -1,6 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "./queryKeys";
-import { attachRun, detachRun, startRun, verifyStorage } from "./requests";
+import {
+  attachRun,
+  detachRun,
+  startRun,
+  stopRun,
+  verifyStorage,
+} from "./requests";
 
 export function useVerifyStorage() {
   const client = useQueryClient();
@@ -29,6 +35,20 @@ export function useAttachRun() {
   return useMutation({
     mutationFn: attachRun,
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.state }),
+  });
+}
+
+export function useStopRun() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: stopRun,
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.state }),
+        client.invalidateQueries({ queryKey: queryKeys.runs }),
+        client.invalidateQueries({ queryKey: queryKeys.catalogRoot }),
+      ]);
+    },
   });
 }
 

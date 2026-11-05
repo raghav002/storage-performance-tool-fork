@@ -1,3 +1,5 @@
+import type { DataStatus } from "../types";
+
 export function numeric(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -25,6 +27,19 @@ export function formatChartAxisValue(value: number): string {
         notation: "compact",
         maximumSignificantDigits: 3,
       }).format(value);
+}
+/** AC1: missing/delayed telemetry must not look like a measured zero. */
+export function formatMetric(
+  value: unknown,
+  digits = 0,
+  status?: DataStatus,
+): string {
+  if (status === "no_data") return "No data";
+  if (status === "delayed" && numeric(value) === null) return "Delayed";
+  if (status === "delayed" && numeric(value) !== null) {
+    return `${formatNumber(value, digits)} (delayed)`;
+  }
+  return formatNumber(value, digits);
 }
 export function elapsed(value: unknown): string {
   const n = numeric(value);

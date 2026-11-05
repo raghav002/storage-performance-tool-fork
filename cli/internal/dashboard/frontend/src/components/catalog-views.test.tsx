@@ -29,6 +29,7 @@ import { OverlayChart } from "./OverlayChart";
 import { Charts } from "./RunCharts";
 import { RunLog } from "./RunLog";
 import { NodeTable } from "./NodeTable";
+import { RunWarnings } from "./RunWarnings";
 
 const originalAdapter = apiClient.defaults.adapter;
 const clients: QueryClient[] = [];
@@ -530,22 +531,38 @@ describe("RunLog", () => {
 });
 
 describe("NodeTable", () => {
-  it("renders reporting and unavailable machines", () => {
+  it("renders reporting and distinguishes no-data from measured zero", () => {
     render(
       <NodeTable
         nodes={[
           {
             host: "node-a",
             status: "reporting",
-            iops: 12.5,
+            data_status: "present",
+            iops: 0,
+            failed_ops: 0,
             op_type: "CREATE",
           },
-          { host: "node-b", status: "unavailable" },
+          {
+            host: "node-b",
+            status: "unavailable",
+            data_status: "no_data",
+          },
+          {
+            host: "node-c",
+            status: "reporting",
+            data_status: "delayed",
+            iops: 3,
+            sample_ts: "2026-10-30T12:00:00Z",
+          },
         ]}
       />,
     );
     expect(screen.getByText("Reporting")).toBeTruthy();
-    expect(screen.getByText("Unavailable")).toBeTruthy();
+    expect(screen.getAllByText("No data").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Delayed").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("0").length).toBeGreaterThan(0); // measured zero on node-a
+    expect(screen.getByText("3 (delayed)")).toBeTruthy();
   });
   it("renders nothing without nodes", () => {
     const { container } = render(<NodeTable nodes={[]} />);
@@ -582,5 +599,41 @@ describe("NodeTable", () => {
       screen.getByRole("button", { name: "Compare with previous" }),
     );
     expect(onCompare).toHaveBeenCalledWith(["newer", "older"], "older");
+  });
+});
+
+describe("RunWarnings", () => {
+  it("lists observed warnings with host when known", () => {
+    render(
+      <RunWarnings
+        warnings={[
+          {
+            code: "fleet_partial",
+            severity: "warn",
+            observed:
+              "SPT fleet metrics report partial=true (aggregate incomplete or contributor evidence inconsistent).",
+            source: "fleet_metrics",
+            metric: "fleet_aggregate",
+          },
+          {
+            code: "node_no_data",
+            severity: "warn",
+            observed:
+              "Client machine node-b: SPT /metrics/json did not return a usable live sample in this poll.",
+            host: "node-b",
+            source: "node_metrics",
+            metric: "node_sample",
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText("Incomplete fleet aggregate")).toBeTruthy();
+    expect(screen.getByText("Client metrics unavailable")).toBeTruthy();
+    expect(screen.getByText("node-b")).toBeTruthy();
+    expect(screen.getByText(/partial=true/, { exact: false })).toBeTruthy();
+  });
+  it("renders nothing without warnings", () => {
+    const { container } = render(<RunWarnings warnings={[]} />);
+    expect(container.innerHTML).toBe("");
   });
 });

@@ -169,27 +169,75 @@ func (a *app) savedLiveSamples(runID string) []map[string]any {
 	}
 	path := filepath.Join(a.stateDir, runID+".samples.json")
 	info, e := os.Stat(path)
-	if e != nil || info.Size() > maxSamplesBytes {
+	if e != nil || !info.Mode().IsRegular() || info.Size() > maxSamplesBytes {
 		return nil
 	}
-	b, e := os.ReadFile(path) // #nosec G304 -- runID matches runPattern above, so path stays inside the state directory
+	f, e := os.Open(path) // #nosec G304 -- runID matches runPattern above, so path stays inside the state directory
 	if e != nil {
 		return nil
 	}
-	var list []map[string]any
+	defer func() { _ = f.Close() }()
+	// The file may grow after Stat; bound the read as well as the initial size.
+	b, e := io.ReadAll(io.LimitReader(f, maxSamplesBytes+1))
+	if e != nil || len(b) > maxSamplesBytes {
+		return nil
+	}
+	var list []json.RawMessage
 	if json.Unmarshal(b, &list) != nil {
 		return nil
 	}
-	if len(list) > maxSamples {
-		list = list[len(list)-maxSamples:]
-	}
 	out := []map[string]any{}
-	for _, m := range list {
-		if _, ok := m[keyTimestamp].(string); ok {
-			out = append(out, m)
+	for _, raw := range list {
+		var sample map[string]any
+		if json.Unmarshal(raw, &sample) == nil {
+			if _, ok := encodeHistorySample(sample); ok {
+				out = append(out, sample)
+			}
 		}
 	}
-	return out
+	return boundedHistory(out)
+}
+
+// A snapshot is best-effort: one damaged or oversized row must not make the
+// remaining measurements unreadable or replace a good snapshot with empty data.
+func encodeHistorySample(sample map[string]any) ([]byte, bool) {
+	stamp, ok := sample[keyTimestamp].(string)
+	if !ok {
+		return nil, false
+	}
+	if _, err := parseTimestamp(stamp); err != nil {
+		return nil, false
+	}
+	b, err := json.Marshal(sample)
+	return b, err == nil && len(b)+2 <= maxSamplesBytes
+}
+
+// Keep the newest samples within both the count and encoded-byte limits. All
+// callers validate rows first. Copying the retained slice releases old rows.
+func boundedHistory(samples []map[string]any) []map[string]any {
+	first, size := len(samples), 2 // JSON array brackets.
+	for i := len(samples) - 1; i >= max(0, len(samples)-maxSamples); i-- {
+		b, _ := json.Marshal(samples[i])
+		additional := len(b)
+		if first < len(samples) {
+			additional++ // Comma between rows.
+		}
+		if size+additional > maxSamplesBytes {
+			break
+		}
+		first, size = i, size+additional
+	}
+	return append([]map[string]any{}, samples[first:]...)
+}
+
+func historySampleSignature(sample map[string]any) string {
+	keys := []string{keyStepID, keyCumulativeOps, keyCountFailed, keyIntervalIOPS, metricBandwidth, metricP50Latency}
+	values := make([]any, 0, len(keys))
+	for _, key := range keys {
+		values = append(values, sample[key])
+	}
+	b, _ := json.Marshal(values) // Rows have already passed encodeHistorySample.
+	return string(b)
 }
 
 func (a *app) rememberLive(metrics map[string]any) map[string]any {
@@ -198,38 +246,48 @@ func (a *app) rememberLive(metrics map[string]any) map[string]any {
 		a.liveRunID = runID
 		a.liveSamples = a.savedLiveSamples(runID)
 		a.liveSignature = ""
+		if len(a.liveSamples) > 0 {
+			a.liveSignature = historySampleSignature(a.liveSamples[len(a.liveSamples)-1])
+		}
+		a.liveDirty = false
 	}
 	changed := false
 	for _, raw := range metrics[keySamples].([]map[string]any) {
-		keys := []string{keyStepID, keyCumulativeOps, keyCountFailed, keyIntervalIOPS, metricBandwidth, metricP50Latency}
-		vals := make([]any, 0, len(keys))
-		for _, k := range keys {
-			vals = append(vals, raw[k])
+		if _, ok := encodeHistorySample(raw); !ok {
+			continue
 		}
-		b, _ := json.Marshal(vals)
-		sig := string(b)
+		sig := historySampleSignature(raw)
 		if sig != a.liveSignature {
 			a.liveSamples = append(a.liveSamples, raw)
-			if len(a.liveSamples) > maxSamples {
-				a.liveSamples = a.liveSamples[len(a.liveSamples)-maxSamples:]
-			}
 			a.liveSignature = sig
+			a.liveDirty = true
 			changed = true
 		}
 	}
-	if changed && runPattern.MatchString(runID) {
-		b, _ := json.Marshal(a.liveSamples)
-		tmp := filepath.Join(a.stateDir, runID+".samples.tmp")
-		path := filepath.Join(a.stateDir, runID+".samples.json")
-		if os.WriteFile(tmp, b, 0600) == nil {
-			_ = os.Chmod(tmp, 0600)
-			_ = os.Rename(tmp, path)
-		}
+	if changed {
+		a.liveSamples = boundedHistory(a.liveSamples)
 	}
+	a.savePendingLiveHistory(runID)
 	out := cloneMap(metrics)
 	out[keySamples] = latestSample(a.liveSamples)
 	out[keyChartSamples] = append([]map[string]any(nil), a.liveSamples...)
 	return out
+}
+
+// savePendingLiveHistory retries a snapshot write even without fresh metrics.
+// Callers hold a.mu; only the requested run's buffered history may be saved.
+func (a *app) savePendingLiveHistory(runID string) {
+	if !a.liveDirty || a.liveRunID != runID || !runPattern.MatchString(runID) {
+		return
+	}
+	b, _ := json.Marshal(a.liveSamples)
+	tmp := filepath.Join(a.stateDir, runID+".samples.tmp")
+	path := filepath.Join(a.stateDir, runID+".samples.json")
+	if os.WriteFile(tmp, b, 0600) == nil {
+		if os.Chmod(tmp, 0600) == nil && os.Rename(tmp, path) == nil {
+			a.liveDirty = false
+		}
+	}
 }
 
 // latestSample keeps the full live history out of "samples"; "chart_samples" already carries it.
@@ -241,21 +299,25 @@ func latestSample(samples []map[string]any) []map[string]any {
 }
 
 func (a *app) liveMetrics(state map[string]any) map[string]any {
-	if a.metricsURL != "" {
-		return a.liveMetricsAt(state, a.metricsURL)
-	}
-	hosts := a.storageSnapshot().Hosts
 	var out map[string]any
-	if len(hosts) > 1 {
-		// With several client machines the entry's /metrics/json is only its own slice;
-		// /metrics/cluster/json is SPT's merged fleet view (see METRICS.md).
-		out = a.liveMetricsAt(state, a.clusterMetricsEndpoint())
+	if a.metricsURL != "" {
+		out = a.liveMetricsAt(state, a.metricsURL)
+	} else {
+		hosts := a.storageSnapshot().Hosts
+		if len(hosts) > 1 {
+			// With several client machines the entry's /metrics/json is only its own slice;
+			// /metrics/cluster/json is SPT's merged fleet view (see METRICS.md).
+			out = a.liveMetricsAt(state, a.clusterMetricsEndpoint())
+		}
+		if out == nil {
+			out = a.liveMetricsAt(state, a.metricsEndpoint())
+		}
+		if out != nil && len(hosts) > 1 {
+			out["nodes"] = a.liveNodes(state, hosts)
+		}
 	}
-	if out == nil {
-		out = a.liveMetricsAt(state, a.metricsEndpoint())
-	}
-	if out != nil && len(hosts) > 1 {
-		out["nodes"] = a.liveNodes(state, hosts)
+	if out != nil {
+		out = a.attachWarnings(out, time.Now())
 	}
 	return out
 }
@@ -391,6 +453,7 @@ func (a *app) liveMetricsAt(state map[string]any, metricsURL string) map[string]
 	if partial, ok := entry["partial"].(bool); ok {
 		out["fleet_partial"] = partial
 	}
+	copyFleetCompleteness(entry, out)
 	if !has {
 		return out
 	}
@@ -401,6 +464,19 @@ func (a *app) liveMetricsAt(state map[string]any, metricsURL string) map[string]
 // clusterMetricsEndpoint is the entry node's merged fleet view.
 func (a *app) clusterMetricsEndpoint() string {
 	return strings.TrimSuffix(a.metricsEndpoint(), "/metrics/json") + "/metrics/cluster/json"
+}
+
+// copyFleetCompleteness copies METRICS.md completeness fields used by SCRUM-21 warnings.
+func copyFleetCompleteness(entry, out map[string]any) {
+	if n, ok := num(entry, keyNodesCount); ok {
+		out[keyNodesCount] = n
+	}
+	if present := stringList(entry[keyNodesPresent]); len(present) > 0 {
+		out[keyNodesPresent] = present
+	}
+	if contrib := stringList(entry[keyContributors]); len(contrib) > 0 {
+		out[keyContributors] = contrib
+	}
 }
 
 // liveNodes reads each client machine's own /metrics/json so the UI can show per-node
@@ -420,7 +496,7 @@ func (a *app) liveNodes(state map[string]any, hosts []string) []map[string]any {
 			} else {
 				url = "http://" + net.JoinHostPort(hostAddress(host), strconv.Itoa(constants.SptAPIPortInt)) + "/metrics/json"
 			}
-			row := map[string]any{keyHost: hostAddress(host), keyStatus: "unavailable"}
+			row := map[string]any{keyHost: hostAddress(host), keyStatus: nodeStatusUnavailable}
 			entries, ok := fetchMetricEntries(client, url)
 			if ok {
 				for _, m := range freshEntries(entries, started) {
@@ -428,10 +504,11 @@ func (a *app) liveNodes(state map[string]any, hosts []string) []map[string]any {
 						continue
 					}
 					r := entryRates(m)
-					row = map[string]any{keyHost: hostAddress(host), "node_id": str(m["node_id"]), "role": str(m["role"]), keyStatus: "reporting", keyOpType: str(m[keyOpType]), keySampleTS: str(m[keySampleTS]), keySuccessfulOps: r["success"], metricFailed: r[keyFailed], metricCorrupt: r["corrupt"], metricIOPS: r[metricIOPS], metricBandwidth: r[metricBandwidth], metricP50Latency: r[metricP50Latency], metricP99Latency: r[metricP99Latency]}
+					row = map[string]any{keyHost: hostAddress(host), "node_id": str(m["node_id"]), "role": str(m["role"]), keyStatus: nodeStatusReporting, keyOpType: str(m[keyOpType]), keySampleTS: str(m[keySampleTS]), keySuccessfulOps: r["success"], metricFailed: r[keyFailed], metricCorrupt: r["corrupt"], metricIOPS: r[metricIOPS], metricBandwidth: r[metricBandwidth], metricP50Latency: r[metricP50Latency], metricP99Latency: r[metricP99Latency]}
 					break
 				}
 			}
+			annotateNodeDataStatus(row, time.Now())
 			rows[i] = row
 		}(i, host)
 	}
@@ -467,13 +544,16 @@ func (a *app) collectLiveHistory(runID string) {
 		}
 		state := cloneMap(a.activeJob)
 		a.mu.Unlock()
-		if metrics := a.liveMetrics(state); metrics != nil {
-			a.mu.Lock()
-			if a.activeJob != nil && a.activeJob[keyRunID] == runID {
+		metrics := a.liveMetrics(state)
+		a.mu.Lock()
+		if a.activeJob != nil && a.activeJob[keyRunID] == runID {
+			if metrics != nil {
 				_ = a.rememberLive(metrics)
+			} else {
+				a.savePendingLiveHistory(runID)
 			}
-			a.mu.Unlock()
 		}
+		a.mu.Unlock()
 		<-ticker.C
 	}
 }

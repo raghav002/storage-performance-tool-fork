@@ -8,6 +8,7 @@ import type {
   Options,
   RunHistoryResponse,
   StartRunResponse,
+  StopRunResponse,
   State,
   Storage,
   VerifyStorageResponse,
@@ -99,6 +100,12 @@ export const attachRun = (host: string) =>
   request<State>(
     { url: "/api/attach", method: "POST", data: { host } },
     "Could not connect to the SPT run.",
+  );
+
+export const stopRun = () =>
+  request<StopRunResponse>(
+    { url: "/api/runs/stop", method: "POST" },
+    "Stop request failed.",
   );
 
 export const detachRun = () =>

@@ -22,10 +22,12 @@ import {
   LayoutDashboard,
   ListFilter,
   Plus,
+  Square,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Row, RunMode, State } from "./types";
 import { useSavedRun, useServerState } from "./api/queries";
+import { useStopRun } from "./api/mutations";
 import { MetricCard } from "./components/MetricCard";
 import { Configure } from "./components/Configure";
 import { Status } from "./components/Status";
@@ -37,10 +39,12 @@ import { ConnectRun } from "./components/ConnectRun";
 import { Catalog } from "./components/Catalog";
 import { Compare } from "./components/Compare";
 import { NodeTable } from "./components/NodeTable";
+import { RunWarnings } from "./components/RunWarnings";
 import { RunLog } from "./components/RunLog";
 import { runWorkloadType, workloadLabel } from "./utils/catalog";
 import {
   elapsed,
+  formatMetric,
   formatNumber as fmt,
   numeric,
   phaseCode,
@@ -571,6 +575,24 @@ function Dashboard({
 }) {
   const m = state?.metrics,
     job = state?.job;
+  const stopping = useStopRun();
+  const stopError = stopping.error?.message;
+  // An attached CLI run is monitored read-only, so it cannot be stopped here.
+  const canStop =
+    !historical &&
+    job?.status === "running" &&
+    state?.connection?.mode !== "attached";
+  const stopPending = stopping.isPending || !!job?.stop_requested;
+  function stop() {
+    if (!canStop || stopPending) return;
+    if (
+      window.confirm(
+        "Stop this run? It ends now and won't finish its remaining phases.",
+      )
+    ) {
+      stopping.mutate();
+    }
+  }
   const summaries = m?.phase_summaries ?? [];
   const history =
     m?.chart_samples ?? (m?.is_aggregate ? [] : (m?.samples ?? []));
@@ -612,19 +634,23 @@ function Dashboard({
   const outcome =
     job?.status === "failed"
       ? "Run failed"
-      : job?.status === "interrupted"
-        ? "Run interrupted"
-        : job?.status === "unknown"
-          ? "Run outcome needs review"
-          : failureCount !== null && failureCount > 0
-            ? "Failed operations reported"
-            : job?.status === "running"
-              ? "Benchmark in progress"
-              : job?.status === "completed"
-                ? "Run completed"
-                : m
-                  ? "Recorded SPT results"
-                  : "Ready for your first benchmark";
+      : job?.status === "stopped"
+        ? "Run stopped"
+        : job?.status === "running" && job.stop_requested
+          ? "Stopping run…"
+          : job?.status === "interrupted"
+            ? "Run interrupted"
+            : job?.status === "unknown"
+              ? "Run outcome needs review"
+              : failureCount !== null && failureCount > 0
+                ? "Failed operations reported"
+                : job?.status === "running"
+                  ? "Benchmark in progress"
+                  : job?.status === "completed"
+                    ? "Run completed"
+                    : m
+                      ? "Recorded SPT results"
+                      : "Ready for your first benchmark";
   const has = (key: string) => selected.includes(key);
   return (
     <>
@@ -657,6 +683,18 @@ function Dashboard({
               Download CSV report
             </Button>
           )}
+          {canStop && (
+            <Button
+              color="red"
+              variant="light"
+              onClick={stop}
+              disabled={stopPending}
+              loading={stopPending}
+              leftSection={<Square size={14} aria-hidden="true" />}
+            >
+              {stopPending ? "Stopping…" : "Stop run"}
+            </Button>
+          )}
           <Button
             variant="filled"
             onClick={onConfigure}
@@ -666,6 +704,11 @@ function Dashboard({
           </Button>
         </div>
       </div>
+      {stopError && (
+        <Alert color="red" role="alert">
+          {stopError}
+        </Alert>
+      )}
       {!job && !m ? (
         <Paper
           component="section"
@@ -770,6 +813,7 @@ function Dashboard({
               </span>
             </div>
           </Paper>
+          <RunWarnings warnings={m?.warnings} />
           {m && (
             <>
               <div data-spt-legacy="" className="scope-bar">
@@ -794,32 +838,50 @@ function Dashboard({
                 <div data-spt-legacy="" className="metrics-grid">
                   <MetricCard
                     label={`${phaseName(selectedPhase)} IOPS`}
-                    value={fmt(row?.interval_iops, 2)}
+                    value={formatMetric(
+                      row?.interval_iops,
+                      2,
+                      m.is_active ? m.data_status : undefined,
+                    )}
                     unit="ops/s"
                     detail={
                       !m.is_active && final
                         ? "Average successful operations per second"
-                        : "Latest reported rate of successful operations"
+                        : !row && m.data_status === "no_data"
+                          ? "No live sample yet — not a measured zero"
+                          : "Latest reported rate of successful operations"
                     }
                   />
                   <MetricCard
                     label="Bandwidth"
-                    value={fmt(row?.bandwidth_mib_s, 2)}
+                    value={formatMetric(
+                      row?.bandwidth_mib_s,
+                      2,
+                      m.is_active ? m.data_status : undefined,
+                    )}
                     unit="MiB/s"
                     detail="Data transferred per second"
                     accent="teal"
                   />
                   <MetricCard
                     label="P50 latency"
-                    value={fmt(row?.p50_latency_us, 1)}
+                    value={formatMetric(
+                      row?.p50_latency_us,
+                      1,
+                      m.is_active ? m.data_status : undefined,
+                    )}
                     unit="µs"
                     detail="Half of measured operations were faster"
                     accent="purple"
                   />
                   <MetricCard
                     label="Successful operations"
-                    value={fmt(row?.cumulative_ops)}
-                    detail={`In ${phaseName(selectedPhase).toLowerCase()} phase · ${fmt(row?.count_failed)} failed`}
+                    value={formatMetric(
+                      row?.cumulative_ops,
+                      0,
+                      m.is_active ? m.data_status : undefined,
+                    )}
+                    detail={`In ${phaseName(selectedPhase).toLowerCase()} phase · ${formatMetric(row?.count_failed, 0, m.is_active ? m.data_status : undefined)} failed`}
                     accent="orange"
                   />
                 </div>

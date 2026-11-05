@@ -39,7 +39,7 @@ func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 403, map[string]any{keyError: "Run requests must come from this dashboard through its SSH tunnel."})
 		return
 	}
-	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/json") {
+	if !isJSONRequest(r) {
 		writeJSON(w, 415, map[string]any{keyError: "Send JSON dashboard settings."})
 		return
 	}
@@ -87,6 +87,13 @@ func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 409, map[string]any{keyError: "Storage verification is in progress. Wait for it to finish before starting a run."})
 		return
 	}
+	operation, err := a.lockOperation()
+	if err != nil {
+		a.mu.Unlock()
+		writeJSON(w, 409, map[string]any{keyError: "An SPT run or storage verification is already in progress. Wait for it to finish before starting a run."})
+		return
+	}
+	defer unlockClose(operation)
 	lock, err := a.lockRun()
 	if err != nil {
 		a.mu.Unlock()
@@ -161,6 +168,45 @@ func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 	go a.watchProcess(runID, cmd, lock, drained)
 	go a.collectLiveHistory(runID)
 	writeJSON(w, 202, map[string]any{keyJob: publicJob(job), keyMessage: "SPT run started on the VM."})
+}
+
+// handleStop asks the running SPT process to shut down gracefully. SPT handles
+// the interrupt by stopping the engine test, removing its containers and
+// finalizing results, so the dashboard never force-kills it.
+func (a *app) handleStop(w http.ResponseWriter, r *http.Request) {
+	if r.URL.RawQuery != "" {
+		writeJSON(w, 404, map[string]any{keyError: msgEndpointNotFound})
+		return
+	}
+	if !a.sameOrigin(r) {
+		writeJSON(w, 403, map[string]any{keyError: "Stop requests must come from this dashboard through its SSH tunnel."})
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.activeCmd == nil && a.attachedRunID != "" {
+		// An attached CLI run is monitored read-only; the dashboard never
+		// signals a process it did not start.
+		writeJSON(w, 409, map[string]any{keyError: "This dashboard is only monitoring the attached SPT run and will not stop it. Stop it from the terminal that started it."})
+		return
+	}
+	if a.activeCmd == nil || a.activeCmd.Process == nil || a.activeJob == nil || a.activeJob[keyStatus] != jobRunning {
+		writeJSON(w, 409, map[string]any{keyError: "No dashboard run is in progress."})
+		return
+	}
+	if a.activeJob[keyStopRequested] == true {
+		writeJSON(w, 202, map[string]any{keyJob: publicJob(a.activeJob), keyMessage: "Stop already requested."})
+		return
+	}
+	if err := interruptProcess(a.activeCmd.Process); err != nil {
+		writeJSON(w, 500, map[string]any{keyError: "Could not ask SPT to stop: " + err.Error()})
+		return
+	}
+	a.activeJob = cloneMap(a.activeJob)
+	a.activeJob[keyStopRequested] = true
+	a.activeJob[keyMessage] = "Stopping SPT gracefully…"
+	_ = a.writeState(a.activeJob)
+	writeJSON(w, 202, map[string]any{keyJob: publicJob(a.activeJob), keyMessage: "Stop requested."})
 }
 
 func ensureEOF(dec *json.Decoder) error {
@@ -249,7 +295,18 @@ func randomHex4() string {
 }
 
 func (a *app) lockRun() (*os.File, error) {
-	f, err := os.OpenFile(a.lockFile, os.O_CREATE|os.O_RDWR, 0600)
+	return acquireFileLock(a.lockFile)
+}
+
+// The operation guard covers all of verification and only run startup. Once
+// started, a child holds the existing job lock, including if its dashboard exits.
+// Keeping these separate lets state polling identify running jobs correctly.
+func (a *app) lockOperation() (*os.File, error) {
+	return acquireFileLock(a.lockFile + ".operation")
+}
+
+func acquireFileLock(path string) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600) // #nosec G304 -- server-selected lock paths under the dashboard state directory
 	if err != nil {
 		return nil, err
 	}

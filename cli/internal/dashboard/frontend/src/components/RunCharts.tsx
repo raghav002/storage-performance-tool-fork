@@ -5,11 +5,22 @@ import {
   Checkbox,
   NativeSelect,
   Paper,
+  RangeSlider,
   Slider,
   Text,
   Title,
 } from "@mantine/core";
 import { useCallback, useMemo, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Download,
+  Maximize2,
+  Pause,
+  Play,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import type { Metrics, Sample } from "../types";
 import { TrendChart } from "./TrendChart";
 import { dashboardTokens } from "../theme";
@@ -70,6 +81,17 @@ const graphs = [
   },
 ];
 
+type TimeWindow = { duration: number | null; end: number | null };
+
+function timeBounds(window: TimeWindow, first: number, last: number) {
+  const width = Math.min(last - first, window.duration ?? last - first);
+  const end =
+    window.end === null
+      ? last
+      : Math.min(last, Math.max(first + width, window.end));
+  return [width >= last - first ? first : end - width, end] as const;
+}
+
 export function Charts({
   metrics: m,
   phase,
@@ -111,11 +133,16 @@ export function Charts({
     } | null>(null);
   const first = samples[0]?.elapsed ?? 0,
     last = samples.at(-1)?.elapsed ?? first;
-  const [windowSize, setWindowSize] = useState<number | null>(null),
-    [position, setPosition] = useState<number | null>(null);
-  const width = windowSize ?? Math.max(1, last - first),
-    end = position === null ? last : Math.min(last, Math.max(first, position)),
-    start = Math.max(first, end - width);
+  const [timeWindow, setTimeWindow] = useState<TimeWindow>({
+    duration: null,
+    end: null,
+  });
+  const [start, end] = timeBounds(timeWindow, first, last);
+  const width = end - start,
+    span = last - first,
+    minimumWindow = Math.min(1, span),
+    canAdjust = span > 0,
+    following = timeWindow.end === null;
   const shown = useMemo(
     () => samples.filter((s) => s.elapsed >= start && s.elapsed <= end),
     [samples, start, end],
@@ -140,10 +167,29 @@ export function Charts({
           ? current
           : { timestamp: sample.timestamp, pinned };
       });
-      if (sample && pinned && windowSize !== null) setPosition(end);
+      if (sample && pinned && canAdjust)
+        setTimeWindow({ duration: width, end });
     },
-    [shown, end, windowSize],
+    [shown, end, width, canAdjust],
   );
+  function changeWindow(next: TimeWindow) {
+    const [left, right] = timeBounds(next, first, last);
+    setTimeWindow(next);
+    setInspection((current) => {
+      if (!current?.pinned) return null;
+      const sample = samples.find((s) => s.timestamp === current.timestamp);
+      return sample && sample.elapsed >= left && sample.elapsed <= right
+        ? current
+        : null;
+    });
+  }
+  function zoomWindow(factor: number) {
+    const duration = Math.min(span, Math.max(minimumWindow, width * factor));
+    changeWindow({
+      duration: following && duration >= span ? null : duration,
+      end: following ? null : (start + end + duration) / 2,
+    });
+  }
   const summaries = (m.phase_summaries ?? []).filter(
     (r) => cleanup || phaseCode(r.phase) !== "DELETE",
   );
@@ -182,114 +228,179 @@ export function Charts({
       </div>
       {display === "timeline" ? (
         <>
-          <div data-spt-legacy="" className="fleet-toolbar">
-            <NativeSelect
-              label="Time window"
-              aria-label="Time window"
-              value={windowSize ?? "all"}
-              onChange={(e) => {
-                setWindowSize(
-                  e.target.value === "all" ? null : Number(e.target.value),
-                );
-                setPosition(null);
-              }}
-            >
-              {[
-                ["all", "Entire phase"],
-                ["60", "1 minute"],
-                ["300", "5 minutes"],
-                ["3600", "1 hour"],
-                ["86400", "1 day"],
-              ].map(([v, label]) => (
-                <option key={v} value={v}>
-                  {label}
-                </option>
-              ))}
-              {windowSize !== null &&
-                ![60, 300, 3600, 86400].includes(windowSize) && (
-                  <option value={windowSize}>
-                    Custom · {elapsed(windowSize)}
+          <Paper p="md" radius="md" bg="var(--spt-surface-subtle)">
+            <div className="flex flex-wrap items-end gap-md">
+              <NativeSelect
+                label="Time window"
+                className="w-[160px] max-w-full"
+                value={timeWindow.duration ?? "all"}
+                disabled={!canAdjust}
+                onChange={(event) => {
+                  changeWindow({
+                    duration:
+                      event.target.value === "all"
+                        ? null
+                        : Number(event.target.value),
+                    end: null,
+                  });
+                  setInspection(null);
+                }}
+              >
+                {[
+                  ["all", "Entire phase"],
+                  ["60", "1 minute"],
+                  ["300", "5 minutes"],
+                  ["3600", "1 hour"],
+                  ["86400", "1 day"],
+                ].map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
                   </option>
-                )}
-            </NativeSelect>
-            <div data-spt-legacy="" className="button-group">
-              <Button
-                size="compact-sm"
-                fz="caption"
-                disabled={samples.length < 2}
-                onClick={() => {
-                  setWindowSize(Math.max(1, width / 2));
-                  setInspection(null);
-                }}
-              >
-                Zoom in
-              </Button>
-              <Button
-                size="compact-sm"
-                fz="caption"
-                disabled={windowSize === null}
-                onClick={() => {
-                  setWindowSize(width * 2 >= last - first ? null : width * 2);
-                  setInspection(null);
-                }}
-              >
-                Zoom out
-              </Button>
-              <Button
-                size="compact-sm"
-                fz="caption"
-                onClick={() => {
-                  setWindowSize(null);
-                  setPosition(null);
-                  setInspection(null);
-                }}
-              >
-                Fit phase
-              </Button>
-              <Button
-                size="compact-sm"
-                fz="caption"
-                disabled={position === null}
-                onClick={() => {
-                  setPosition(null);
-                  setInspection(null);
-                }}
-              >
-                Follow latest
-              </Button>
+                ))}
+                {timeWindow.duration !== null &&
+                  ![60, 300, 3600, 86400].includes(timeWindow.duration) && (
+                    <option value={timeWindow.duration}>
+                      Custom · {elapsed(timeWindow.duration)}
+                    </option>
+                  )}
+              </NativeSelect>
+              <div className="flex flex-wrap gap-xs">
+                <Button
+                  size="compact-sm"
+                  variant="default"
+                  leftSection={<ZoomIn size={14} aria-hidden="true" />}
+                  disabled={!canAdjust || width <= minimumWindow}
+                  onClick={() => zoomWindow(0.5)}
+                >
+                  Zoom in
+                </Button>
+                <Button
+                  size="compact-sm"
+                  variant="default"
+                  leftSection={<ZoomOut size={14} aria-hidden="true" />}
+                  disabled={!canAdjust || width >= span}
+                  onClick={() => zoomWindow(2)}
+                >
+                  Zoom out
+                </Button>
+                <Button
+                  size="compact-sm"
+                  variant="default"
+                  leftSection={<Maximize2 size={14} aria-hidden="true" />}
+                  disabled={!canAdjust}
+                  onClick={() => {
+                    changeWindow({ duration: null, end: null });
+                    setInspection(null);
+                  }}
+                >
+                  Fit phase
+                </Button>
+              </div>
+              {(m.is_active || !following) && (
+                <Button
+                  size="compact-sm"
+                  variant={following ? "default" : "light"}
+                  leftSection={
+                    following ? (
+                      <Pause size={14} aria-hidden="true" />
+                    ) : (
+                      <Play size={14} aria-hidden="true" />
+                    )
+                  }
+                  disabled={!canAdjust}
+                  onClick={() => {
+                    changeWindow({
+                      duration: following ? width : timeWindow.duration,
+                      end: following ? end : null,
+                    });
+                    if (!following) setInspection(null);
+                  }}
+                >
+                  {following ? "Pause window" : "Follow latest"}
+                </Button>
+              )}
+              {!m.is_active && shown.length > 0 && (
+                <Button
+                  component="a"
+                  size="compact-sm"
+                  variant="light"
+                  leftSection={<Download size={14} aria-hidden="true" />}
+                  href={`/api/runs/${encodeURIComponent(m.run_id)}/csv?kind=window&phase=${phase}&start=${start}&end=${end}`}
+                  download
+                >
+                  Export window CSV
+                </Button>
+              )}
             </div>
-            {!m.is_active && shown.length > 0 && (
-              <Button
-                component="a"
-                href={`/api/runs/${encodeURIComponent(m.run_id)}/csv?kind=window&phase=${phase}&start=${start}&end=${end}`}
-                download
-              >
-                Export window CSV
-              </Button>
-            )}
-          </div>
-          {samples.length > 1 && (
-            <label data-spt-legacy="" className="timeline-pan">
-              Move time window
-              <input
-                data-spt-legacy=""
-                aria-label="Move time window"
-                type="range"
-                min={Math.min(last, first + width)}
-                max={last}
-                step="any"
-                disabled={windowSize === null || width >= last - first}
-                value={end}
-                onChange={(e) => {
-                  setPosition(Number(e.target.value));
-                  setInspection(null);
-                }}
+            <div className="mt-lg flex flex-wrap items-center justify-between gap-sm">
+              <Text size="sm" fw="var(--mantine-font-weight-semibold)">
+                Visible time range
+              </Text>
+              <Badge variant="light" color={following ? "spt" : "gray"}>
+                {following
+                  ? m.is_active
+                    ? "Following latest"
+                    : "Latest window"
+                  : m.is_active
+                    ? "Paused window"
+                    : "Fixed window"}
+              </Badge>
+            </div>
+            <Text size="caption" className="mt-xs tabular-nums">
+              {elapsed(start)} – {elapsed(end)} {timeOriginLabel} ·{" "}
+              {shown.length} visible samples
+            </Text>
+            <div className="mt-md px-xs">
+              <RangeSlider
+                min={first}
+                max={canAdjust ? last : first + 1}
+                step={Math.min(1, Math.max(0.001, span / 100))}
+                precision={3}
+                minRange={minimumWindow}
+                pushOnOverlap={false}
+                value={[start, end]}
+                disabled={!canAdjust}
+                thumbFromLabel="Visible window start"
+                thumbToLabel="Visible window end"
+                thumbValueText={(value) =>
+                  `${fmt(value, 3)} seconds ${timeOriginLabel}`
+                }
+                label={(value) => `${fmt(value, 3)}s`}
+                onChange={([left, right]) =>
+                  changeWindow({ duration: right - left, end: right })
+                }
               />
-              <span data-spt-legacy="">
-                {elapsed(start)} – {elapsed(end)} {timeOriginLabel}
-              </span>
-            </label>
-          )}
+            </div>
+            <div className="mt-md flex flex-wrap items-center justify-between gap-sm">
+              <div className="flex flex-wrap gap-xs">
+                <Button
+                  size="compact-xs"
+                  variant="default"
+                  leftSection={<ArrowLeft size={14} aria-hidden="true" />}
+                  disabled={!canAdjust || start <= first}
+                  onClick={() =>
+                    changeWindow({ duration: width, end: end - width / 2 })
+                  }
+                >
+                  Earlier
+                </Button>
+                <Button
+                  size="compact-xs"
+                  variant="default"
+                  rightSection={<ArrowRight size={14} aria-hidden="true" />}
+                  disabled={!canAdjust || end >= last}
+                  onClick={() =>
+                    changeWindow({ duration: width, end: end + width / 2 })
+                  }
+                >
+                  Later
+                </Button>
+              </div>
+              <Text size="xs" c="var(--spt-text-subtle)">
+                Drag either handle or use arrow keys to adjust the range.
+              </Text>
+            </div>
+          </Paper>
           {!samples.length && (
             <Alert role="note">
               No interval history recorded for this phase. Final phase averages

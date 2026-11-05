@@ -223,63 +223,6 @@ small:where([data-spt-legacy]) {
   gap: 15px;
   margin-bottom: var(--mantine-spacing-comfortable);
 }
-.chart + .chart:where([data-spt-legacy]) {
-  border-top: 1px solid var(--spt-border-subtle);
-  padding-top: var(--mantine-spacing-comfortable);
-  margin-top: var(--mantine-spacing-sm);
-}
-.chart-heading:where([data-spt-legacy]) {
-  display: flex;
-  justify-content: space-between;
-  color: #8290a2;
-  font-size: var(--mantine-font-size-xs);
-}
-.legend:where([data-spt-legacy]) {
-  display: flex;
-  gap: var(--mantine-spacing-lg);
-  font-size: var(--mantine-font-size-xs);
-  color: #748299;
-  margin-top: var(--mantine-spacing-compact);
-}
-.legend strong:where([data-spt-legacy]) {
-  font-size: var(--mantine-font-size-caption);
-  color: var(--spt-text-secondary);
-  margin-left: 5px;
-}
-.legend i:where([data-spt-legacy]) {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  margin-right: 5px;
-}
-.chart svg:where([data-spt-legacy]) {
-  width: 100%;
-  display: block;
-  margin-top: var(--mantine-spacing-xxs);
-  touch-action: pan-y;
-}
-.chart svg text:where([data-spt-legacy]) {
-  fill: var(--spt-chart-axis);
-  font-size: var(--mantine-font-size-xs);
-}
-.chart-grid-line:where([data-spt-legacy]) {
-  stroke: var(--spt-chart-grid);
-  stroke-width: 1;
-}
-.chart-inspector:where([data-spt-legacy]) {
-  display: flex;
-  align-items: center;
-  gap: var(--mantine-spacing-sm);
-  font-size: var(--mantine-font-size-xs);
-  color: var(--spt-chart-axis);
-}
-.chart-inspector input:where([data-spt-legacy]) {
-  flex: 1;
-  height: 14px;
-  padding: 0;
-  accent-color: var(--mantine-color-spt-5);
-}
 .subtle:where([data-spt-legacy]) {
   color: var(--spt-text-subtle);
   font-size: var(--mantine-font-size-xs);
@@ -347,13 +290,6 @@ small:where([data-spt-legacy]) {
     flex-direction: column;
   }
 }
-.empty-chart:where([data-spt-legacy]) {
-  height: 120px;
-  display: grid;
-  place-items: center;
-  color: var(--spt-text-subtle);
-  font-size: var(--mantine-font-size-sm);
-}
 @media (max-width: 1150px) {
   .run-strip:where([data-spt-legacy]) {
     gap: var(--mantine-spacing-comfortable);
@@ -373,9 +309,6 @@ small:where([data-spt-legacy]) {
   }
   .section-heading:where([data-spt-legacy]) {
     align-items: flex-start;
-  }
-  .legend:where([data-spt-legacy]) {
-    gap: var(--mantine-spacing-sm);
   }
 }
 .fleet-toolbar:where([data-spt-legacy]) {

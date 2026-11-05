@@ -1,17 +1,21 @@
 import {
   Alert,
+  Badge,
   Button,
   Checkbox,
   NativeSelect,
   Paper,
+  Slider,
   Text,
   Title,
 } from "@mantine/core";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { Metrics, Sample } from "../types";
 import { TrendChart } from "./TrendChart";
+import { dashboardTokens } from "../theme";
 import {
   elapsed,
+  formatChartValue,
   formatNumber as fmt,
   numeric,
   phaseCode,
@@ -25,21 +29,44 @@ const graphs = [
     field: "interval_iops" as const,
     label: "IOPS",
     unit: "ops/s",
-    color: "#347bd1",
+    series: [
+      {
+        key: "throughput" as const,
+        label: "IOPS",
+        color: dashboardTokens.charts.throughput,
+      },
+    ],
   },
   {
     key: "bandwidth" as const,
     field: "bandwidth_mib_s" as const,
     label: "Bandwidth",
     unit: "MiB/s",
-    color: "#188a82",
+    series: [
+      {
+        key: "bandwidth" as const,
+        label: "Bandwidth",
+        color: dashboardTokens.charts.bandwidth,
+      },
+    ],
   },
   {
     key: "p50" as const,
     field: "p50_latency_us" as const,
     label: "Latency",
     unit: "µs",
-    color: "#7a63ce",
+    series: [
+      {
+        key: "p50" as const,
+        label: "P50",
+        color: dashboardTokens.charts.latencyP50,
+      },
+      {
+        key: "p99" as const,
+        label: "P99",
+        color: dashboardTokens.charts.latencyP99,
+      },
+    ],
   },
 ];
 
@@ -78,7 +105,10 @@ export function Charts({
   }, [m.chart_samples, m.is_aggregate, m.samples, phase, startedAt]);
   const [mode, setMode] = useState<"timeline" | "summary">("timeline"),
     [cleanup, setCleanup] = useState(false),
-    [active, setActive] = useState<number | null>(null);
+    [inspection, setInspection] = useState<{
+      timestamp: string;
+      pinned: boolean;
+    } | null>(null);
   const first = samples[0]?.elapsed ?? 0,
     last = samples.at(-1)?.elapsed ?? first;
   const [windowSize, setWindowSize] = useState<number | null>(null),
@@ -86,16 +116,34 @@ export function Charts({
   const width = windowSize ?? Math.max(1, last - first),
     end = position === null ? last : Math.min(last, Math.max(first, position)),
     start = Math.max(first, end - width);
-  const shown = samples.filter((s) => s.elapsed >= start && s.elapsed <= end);
+  const shown = useMemo(
+    () => samples.filter((s) => s.elapsed >= start && s.elapsed <= end),
+    [samples, start, end],
+  );
   const display =
     !samples.length && (m.phase_summaries?.length ?? 0) > 0 ? "summary" : mode;
-  const inspected = shown[active ?? shown.length - 1];
-  const inspectionWindow = `${phase}:${start}:${end}:${shown.length}`;
-  const [previousWindow, setPreviousWindow] = useState(inspectionWindow);
-  if (inspectionWindow !== previousWindow) {
-    setPreviousWindow(inspectionWindow);
-    setActive(null);
-  }
+  const active = inspection
+    ? shown.findIndex((sample) => sample.timestamp === inspection.timestamp)
+    : -1;
+  const inspected = inspection ? shown[active] : shown.at(-1);
+  const timeOriginLabel = Number.isFinite(Date.parse(startedAt ?? ""))
+    ? "from run start"
+    : "from first available phase sample";
+  const inspect = useCallback(
+    (index: number | null, pinned = false) => {
+      const sample = index === null ? undefined : shown[index];
+      setInspection((current) => {
+        if (current?.pinned && !pinned) return current;
+        if (!sample) return null;
+        return current?.timestamp === sample.timestamp &&
+          current.pinned === pinned
+          ? current
+          : { timestamp: sample.timestamp, pinned };
+      });
+      if (sample && pinned && windowSize !== null) setPosition(end);
+    },
+    [shown, end, windowSize],
+  );
   const summaries = (m.phase_summaries ?? []).filter(
     (r) => cleanup || phaseCode(r.phase) !== "DELETE",
   );
@@ -104,21 +152,24 @@ export function Charts({
       component="section"
       className="fleet mb-panel p-panel [@media(max-width:760px)]:p-[17px] min-w-0"
     >
-      <div data-spt-legacy="" className="section-heading">
-        <div data-spt-legacy="">
-          <Title order={2}>Measured performance</Title>
+      <div className="mb-comfortable flex flex-wrap items-start justify-between gap-sm">
+        <div className="min-w-0">
+          <Title order={2} size="xl">
+            Measured performance
+          </Title>
           <Text size="caption" className="mt-[5px] max-[760px]:max-w-[250px]">
             {display === "timeline"
               ? `${phaseName(phase)} phase · ${samples.length} recorded samples`
-              : "Final averages by phase"}
+              : "Phase summary"}
           </Text>
         </div>
         <NativeSelect
           aria-label="Chart view"
+          className="max-w-full"
           value={display}
           onChange={(e) => {
             setMode(e.target.value as "timeline" | "summary");
-            setActive(null);
+            setInspection(null);
           }}
         >
           <option value="timeline" disabled={!samples.length}>
@@ -166,7 +217,10 @@ export function Charts({
                 size="compact-sm"
                 fz="caption"
                 disabled={samples.length < 2}
-                onClick={() => setWindowSize(Math.max(1, width / 2))}
+                onClick={() => {
+                  setWindowSize(Math.max(1, width / 2));
+                  setInspection(null);
+                }}
               >
                 Zoom in
               </Button>
@@ -174,9 +228,10 @@ export function Charts({
                 size="compact-sm"
                 fz="caption"
                 disabled={windowSize === null}
-                onClick={() =>
-                  setWindowSize(width * 2 >= last - first ? null : width * 2)
-                }
+                onClick={() => {
+                  setWindowSize(width * 2 >= last - first ? null : width * 2);
+                  setInspection(null);
+                }}
               >
                 Zoom out
               </Button>
@@ -186,6 +241,7 @@ export function Charts({
                 onClick={() => {
                   setWindowSize(null);
                   setPosition(null);
+                  setInspection(null);
                 }}
               >
                 Fit phase
@@ -194,7 +250,10 @@ export function Charts({
                 size="compact-sm"
                 fz="caption"
                 disabled={position === null}
-                onClick={() => setPosition(null)}
+                onClick={() => {
+                  setPosition(null);
+                  setInspection(null);
+                }}
               >
                 Follow latest
               </Button>
@@ -221,10 +280,13 @@ export function Charts({
                 step="any"
                 disabled={windowSize === null || width >= last - first}
                 value={end}
-                onChange={(e) => setPosition(Number(e.target.value))}
+                onChange={(e) => {
+                  setPosition(Number(e.target.value));
+                  setInspection(null);
+                }}
               />
               <span data-spt-legacy="">
-                {elapsed(start)} – {elapsed(end)} from run start
+                {elapsed(start)} – {elapsed(end)} {timeOriginLabel}
               </span>
             </label>
           )}
@@ -239,37 +301,92 @@ export function Charts({
               One measured point is available. It cannot establish a trend.
             </Alert>
           )}
-          {graphs.map((g) => (
-            <TrendChart
-              key={g.key}
-              samples={shown}
-              title={g.label}
-              unit={g.unit}
-              series={
-                g.key === "p50"
-                  ? [
-                      { key: "p50", label: "P50", color: g.color },
-                      { key: "p99", label: "P99", color: "#b096e7" },
-                    ]
-                  : [{ key: g.key, label: g.label, color: g.color }]
-              }
-              active={active !== null && active < shown.length ? active : null}
-              onInspect={setActive}
-            />
-          ))}
-          <Text
-            size="caption"
-            className="mt-comfortable mb-xs border-t border-subtle-border pt-[14px] tabular-nums"
-            aria-live="polite"
+          <div className="mt-lg grid gap-lg">
+            {graphs.map((g) => (
+              <TrendChart
+                key={g.key}
+                samples={shown}
+                title={g.label}
+                unit={g.unit}
+                series={g.series}
+                start={start}
+                end={end}
+                active={inspection ? active : null}
+                pinned={inspection?.pinned ?? false}
+                onInspect={inspect}
+              />
+            ))}
+          </div>
+          <Paper
+            p="md"
+            radius="md"
+            bg="var(--spt-surface-subtle)"
+            mt="md"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setInspection(null);
+            }}
           >
-            {inspected
-              ? `${elapsed(inspected.elapsed)} · ${utc(inspected.timestamp)} · IOPS ${fmt(inspected.throughput, 2)} ops/s · bandwidth ${fmt(inspected.bandwidth, 2)} MiB/s · P50 ${fmt(inspected.p50, 1)} µs`
-              : "Waiting for measured samples in this time window."}
-          </Text>
-          <Text size="xs" c="var(--spt-text-subtle)" className="tabular-nums">
-            All three graphs share the time window and inspector. Each uses its
-            own scale. Missing measurements are shown as gaps.
-          </Text>
+            <div className="mb-md flex flex-wrap items-center justify-between gap-sm">
+              <Text
+                size="sm"
+                c="var(--spt-text-primary)"
+                fw="var(--mantine-font-weight-semibold)"
+              >
+                Inspect time
+              </Text>
+              {inspection?.pinned && <Badge>Selected sample</Badge>}
+              {inspection && (
+                <Button
+                  size="compact-xs"
+                  variant="subtle"
+                  onClick={() => setInspection(null)}
+                >
+                  Clear selection
+                </Button>
+              )}
+            </div>
+            <Slider
+              min={0}
+              max={Math.max(1, shown.length - 1)}
+              step={1}
+              value={active < 0 ? Math.max(0, shown.length - 1) : active}
+              disabled={shown.length < 2}
+              thumbLabel="Inspect chart sample"
+              thumbValueText={(index) =>
+                `${elapsed(shown[index]?.elapsed)} ${timeOriginLabel}`
+              }
+              label={(index) => elapsed(shown[index]?.elapsed)}
+              onChange={(index) => inspect(index, true)}
+            />
+            <Text
+              size="caption"
+              className="mt-md tabular-nums"
+              aria-live={inspection ? "polite" : "off"}
+            >
+              {inspected ? (
+                <>
+                  {elapsed(inspected.elapsed)} {timeOriginLabel} ·{" "}
+                  {utc(inspected.timestamp)}
+                  <span className="sr-only">
+                    {" "}
+                    · IOPS {formatChartValue(inspected.throughput)} ops/s ·
+                    bandwidth {formatChartValue(inspected.bandwidth)} MiB/s ·
+                    P50 {formatChartValue(inspected.p50)} µs · P99{" "}
+                    {formatChartValue(inspected.p99)} µs
+                  </span>
+                </>
+              ) : inspection ? (
+                "The selected sample is no longer available in this window. Clear selection to inspect available measurements."
+              ) : (
+                "No measured samples in this time window."
+              )}
+            </Text>
+            <Text size="xs" c="var(--spt-text-subtle)" className="mt-xs">
+              Hover to inspect. Click a plot or use the slider to hold a sample;
+              Escape clears selection. All three plots share the time window and
+              cursor. Missing values remain gaps.
+            </Text>
+          </Paper>
         </>
       ) : (
         <>
@@ -305,7 +422,7 @@ export function Charts({
                               data-spt-legacy=""
                               style={{
                                 width: `${(v / max) * 100}%`,
-                                background: g.color,
+                                background: g.series[0].color,
                               }}
                             />
                           )}
@@ -319,8 +436,8 @@ export function Charts({
             })}
           </div>
           <Text size="xs" c="var(--spt-text-subtle)" className="tabular-nums">
-            These bars are final phase averages. They do not represent interval
-            history. Cleanup normally transfers no object payload.
+            These bars show phase rates and P50 latency, not interval history.
+            Cleanup normally transfers no object payload.
           </Text>
         </>
       )}

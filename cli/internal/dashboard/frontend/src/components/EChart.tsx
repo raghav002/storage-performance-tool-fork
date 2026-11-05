@@ -8,9 +8,10 @@ type Props = {
   option: ChartOption;
   label: string;
   className?: string;
+  onReady?: (chart: EChartsType) => void | (() => void);
 };
 
-export function EChart({ option, label, className }: Props) {
+export function EChart({ option, label, className, onReady }: Props) {
   const element = useRef<HTMLDivElement>(null);
   const chart = useRef<EChartsType | null>(null);
   const { ref: sizeRef, width, height } = useElementSize<HTMLDivElement>();
@@ -57,6 +58,10 @@ export function EChart({ option, label, className }: Props) {
   useEffect(() => {
     chart.current?.resize();
   }, [width, height]);
+
+  useEffect(() => {
+    if (chart.current) return onReady?.(chart.current);
+  }, [onReady, chartTheme, visible]);
 
   return (
     <div

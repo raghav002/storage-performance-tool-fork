@@ -26,6 +26,7 @@ import type { CatalogRun, CompareResult, LogResponse } from "../types";
 import { Catalog } from "./Catalog";
 import { Compare, DeltaTable } from "./Compare";
 import { OverlayChart } from "./OverlayChart";
+import { Charts } from "./RunCharts";
 import { RunLog } from "./RunLog";
 import { NodeTable } from "./NodeTable";
 import { RunWarnings } from "./RunWarnings";
@@ -370,6 +371,42 @@ describe("Catalog", () => {
     });
     await waitFor(() =>
       expect(calls.at(-1)).toBe("/api/catalog?source=dashboard"),
+    );
+  });
+});
+
+describe("Charts", () => {
+  it("includes a fractional-time sample exactly on the exported window boundary", () => {
+    const startedAt = "2026-11-04T12:00:00.000Z";
+    render(
+      <Charts
+        phase="CREATE"
+        startedAt={startedAt}
+        metrics={{
+          run_id: "boundary",
+          is_active: false,
+          is_aggregate: false,
+          samples: [],
+          chart_samples: [0, 2.2, 5, 62.2].map((time) => ({
+            timestamp: new Date(
+              Date.parse(startedAt) + time * 1000,
+            ).toISOString(),
+            op_type: "CREATE",
+            interval_iops: 1,
+          })),
+        }}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Time window"), {
+      target: { value: "60" },
+    });
+    expect(screen.getByText(/3 visible samples/)).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Export window CSV" })
+        .getAttribute("href"),
+    ).toBe(
+      "/api/runs/boundary/csv?kind=window&phase=CREATE&start=2.2&end=62.2",
     );
   });
 });

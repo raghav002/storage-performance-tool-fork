@@ -28,8 +28,8 @@ export function PhaseResults({
       component="section"
       className="mb-panel p-panel [@media(max-width:760px)]:p-[17px]"
     >
-      <div data-spt-legacy="" className="section-heading">
-        <div data-spt-legacy="">
+      <div className="flex justify-between items-center gap-[15px] mb-comfortable [@media(max-width:760px)]:items-start">
+        <div>
           <Title order={2}>Phase results</Title>
           <Text size="caption" className="mt-[5px] max-[760px]:max-w-[250px]">
             Each phase has its own counters and timing.
@@ -150,7 +150,7 @@ export function MeasuredDetails({
       <Accordion.Item value="section">
         <Accordion.Control>
           SPT measured details{" "}
-          <span data-spt-legacy="" className="summary-note">
+          <span className="text-xs/[inherit] font-normal ml-sm text-muted [@media(max-width:760px)]:block [@media(max-width:760px)]:mt-xs [@media(max-width:760px)]:mr-0 [@media(max-width:760px)]:mb-0 [@media(max-width:760px)]:ml-md">
             {phaseName(phase)} phase
           </span>
         </Accordion.Control>
@@ -169,15 +169,20 @@ export function MeasuredDetails({
               </Accordion.Item>
             </Accordion>
           )}
-          <div data-spt-legacy="" className="guided-core-grid">
+          <div className="grid grid-cols-3 gap-comfortable [@media(max-width:1150px)]:grid-cols-2 [@media(max-width:760px)]:grid-cols-1">
             {groups.map((g) => (
-              <section data-spt-legacy="" className="timing" key={g.title}>
+              <section className="p-md bg-[#f8fafc] rounded-md" key={g.title}>
                 <Title order={3}>{g.title}</Title>
-                <dl data-spt-legacy="">
+                <dl className="mb-0">
                   {g.values.map(([name, value]) => (
-                    <div data-spt-legacy="" key={name}>
-                      <dt data-spt-legacy="">{name}</dt>
-                      <dd data-spt-legacy="">{value}</dd>
+                    <div
+                      className="px-0 py-[7px] flex justify-between gap-compact border-b border-b-[#e8edf4] text-caption/[inherit]"
+                      key={name}
+                    >
+                      <dt className="text-[#748399] max-w-[60%]">{name}</dt>
+                      <dd className="m-0 text-right wrap-anywhere max-w-[62%] tabular-nums">
+                        {value}
+                      </dd>
                     </div>
                   ))}
                 </dl>
@@ -190,7 +195,7 @@ export function MeasuredDetails({
                 Source measurements and metadata
               </Accordion.Control>
               <Accordion.Panel>
-                <div data-spt-legacy="" className="actions">
+                <div className="flex flex-wrap items-center gap-compact">
                   <Button
                     component="a"
                     href={`/api/runs/${encodeURIComponent(m.run_id)}/csv?kind=samples`}

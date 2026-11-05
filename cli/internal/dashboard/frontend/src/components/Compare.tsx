@@ -84,7 +84,7 @@ export function Compare({
   };
   if (ids.length < 2)
     return (
-      <div data-spt-legacy="" className="history-empty">
+      <div className="px-section py-xxl text-center">
         <Title order={2}>Select runs to compare</Title>
         <Text className="mt-xs">
           Choose at least two runs in the results catalog.
@@ -98,9 +98,9 @@ export function Compare({
   const regressions = data ? regressionCount(data.deltas) : 0;
   return (
     <>
-      <div data-spt-legacy="" className="page-heading">
-        <div data-spt-legacy="">
-          <span data-spt-legacy="" className="eyebrow">
+      <div className="flex justify-between items-center mb-[26px] gap-md [@media(max-width:760px)]:items-start [@media(max-width:760px)]:flex-col">
+        <div className="min-w-0">
+          <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-compact">
             COMPARE · {ids.length} RUNS
           </span>
           <Title order={1}>Compare runs</Title>
@@ -109,7 +109,7 @@ export function Compare({
             baseline run.
           </Text>
         </div>
-        <div data-spt-legacy="" className="actions">
+        <div className="flex flex-wrap items-center gap-compact [@media(max-width:760px)]:w-full">
           <Button onClick={onBack}>Back to catalog</Button>
         </div>
       </div>
@@ -134,7 +134,7 @@ export function Compare({
             aria-label="Regression rule"
           >
             <div className="basis-full">
-              <strong data-spt-legacy="">{data.rule.label}</strong>
+              <strong>{data.rule.label}</strong>
               <Text size="sm" className="mt-xxs">
                 {data.rule.description}
               </Text>
@@ -186,7 +186,7 @@ export function Compare({
             <Text
               fw="var(--mantine-font-weight-semibold)"
               c={regressions ? "#b42318" : "#1f7a4d"}
-              className="basis-full"
+              className="min-w-0 basis-full wrap-anywhere"
               role="status"
             >
               {regressions
@@ -391,7 +391,9 @@ export function DeltaTable({
   const grouped = groupDeltas(deltas);
   return (
     <Paper component="section" className="mb-panel" aria-label="Delta table">
-      <Title order={2}>Deltas vs {baseline}</Title>
+      <Title order={2} className="wrap-anywhere">
+        Deltas vs {baseline}
+      </Title>
       {deltas.length === 0 ? (
         <Text size="xs" c="var(--spt-text-subtle)">
           No shared phases to compare.

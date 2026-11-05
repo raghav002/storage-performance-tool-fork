@@ -62,9 +62,9 @@ export function Catalog({
   const runs = data?.runs ?? [];
   return (
     <>
-      <div data-spt-legacy="" className="page-heading">
-        <div data-spt-legacy="">
-          <span data-spt-legacy="" className="eyebrow">
+      <div className="flex justify-between items-center mb-[26px] gap-md [@media(max-width:760px)]:items-start [@media(max-width:760px)]:flex-col">
+        <div className="min-w-0">
+          <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-compact">
             RESULTS CATALOG · READ ONLY
           </span>
           <Title order={1}>Results catalog</Title>
@@ -74,7 +74,7 @@ export function Catalog({
             deletes results.
           </Text>
         </div>
-        <div data-spt-legacy="" className="actions">
+        <div className="flex flex-wrap items-center gap-compact [@media(max-width:760px)]:w-full">
           <Button
             onClick={() => {
               void catalog.refetch();
@@ -216,7 +216,7 @@ export function Catalog({
             </Table>
           </Table.ScrollContainer>
         ) : (
-          <div data-spt-legacy="" className="history-empty">
+          <div className="px-section py-xxl text-center">
             <Title order={2}>No runs found</Title>
             <Text className="mt-xs">
               {filters.q || filters.source || filters.status
@@ -381,32 +381,44 @@ function CatalogRow({
             colSpan={8}
           >
             {run.issues.length > 0 && (
-              <ul data-spt-legacy="" className="catalog-issues">
+              <ul className="mx-0 mt-0 mb-sm text-[#9a4b16] text-sm/[inherit]">
                 {run.issues.map((i) => (
-                  <li data-spt-legacy="" key={i}>
-                    {i}
-                  </li>
+                  <li key={i}>{i}</li>
                 ))}
               </ul>
             )}
-            <dl data-spt-legacy="" className="record-grid">
-              <div data-spt-legacy="">
-                <dt data-spt-legacy="">Endpoint host</dt>
-                <dd data-spt-legacy="">{run.endpoint_host ?? "—"}</dd>
+            <dl className="grid grid-cols-2 gap-lg [@media(max-width:760px)]:grid-cols-1">
+              <div>
+                <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                  Endpoint host
+                </dt>
+                <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                  {run.endpoint_host ?? "—"}
+                </dd>
               </div>
-              <div data-spt-legacy="">
-                <dt data-spt-legacy="">S3 driver</dt>
-                <dd data-spt-legacy="">{run.s3_driver ?? "—"}</dd>
+              <div>
+                <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                  S3 driver
+                </dt>
+                <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                  {run.s3_driver ?? "—"}
+                </dd>
               </div>
-              <div data-spt-legacy="">
-                <dt data-spt-legacy="">CLI / engine</dt>
-                <dd data-spt-legacy="">
+              <div>
+                <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                  CLI / engine
+                </dt>
+                <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
                   {run.cli_version ?? "—"} / {run.engine_version ?? "—"}
                 </dd>
               </div>
-              <div data-spt-legacy="">
-                <dt data-spt-legacy="">Summary file</dt>
-                <dd data-spt-legacy="">{run.summary_file ?? "—"}</dd>
+              <div>
+                <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                  Summary file
+                </dt>
+                <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                  {run.summary_file ?? "—"}
+                </dd>
               </div>
             </dl>
             {run.phases.length > 0 && (
@@ -483,11 +495,7 @@ function RunArtifacts({ runId }: { runId: string }) {
   const items = artifacts.data?.artifacts;
   const error = artifacts.error?.message ?? "";
   return (
-    <section
-      data-spt-legacy=""
-      className="catalog-artifacts"
-      aria-label="Run artifacts"
-    >
+    <section className="mt-[1.25rem]" aria-label="Run artifacts">
       <Title order={3} size="md" className="mb-[5px]">
         Artifacts
       </Title>
@@ -505,10 +513,7 @@ function RunArtifacts({ runId }: { runId: string }) {
           Loading artifacts…
         </Text>
       ) : items && items.length === 0 ? (
-        <div
-          data-spt-legacy=""
-          className="history-empty catalog-artifacts-empty"
-        >
+        <div className="px-0 py-[0.75rem] text-center">
           <Title order={4} size="md">
             No downloadable artifacts
           </Title>
@@ -518,9 +523,12 @@ function RunArtifacts({ runId }: { runId: string }) {
           </Text>
         </div>
       ) : (
-        <ul data-spt-legacy="" className="artifact-list">
+        <ul className="mx-0 p-0 list-none mt-[0.75rem] mb-0 grid gap-[0.65rem]">
           {(items ?? []).map((a) => (
-            <li data-spt-legacy="" key={a.name}>
+            <li
+              className="flex flex-wrap items-center gap-[0.5rem_1rem]"
+              key={a.name}
+            >
               <Button
                 component="a"
                 href={`/api/catalog/artifact?id=${encodeURIComponent(runId)}&file=${encodeURIComponent(a.name)}`}
@@ -528,14 +536,12 @@ function RunArtifacts({ runId }: { runId: string }) {
               >
                 Download {a.type}
               </Button>
-              <span data-spt-legacy="" className="artifact-meta">
-                <span data-spt-legacy="" className="artifact-kind">
+              <span className="flex flex-wrap gap-[0.5rem_0.75rem] items-baseline">
+                <span className="px-[0.4rem] py-[0.1rem] text-[0.75rem]/[inherit] font-semibold tracking-[0.04em] rounded-[0.25rem] bg-[#e8eef9] text-[#1e3a8a]">
                   {a.kind.toUpperCase()}
                 </span>
-                <span data-spt-legacy="" className="subtle">
-                  {a.name}
-                </span>
-                <span data-spt-legacy="" className="subtle">
+                <span className="text-subtle text-xs/[inherit]">{a.name}</span>
+                <span className="text-subtle text-xs/[inherit]">
                   {formatBytes(a.size)}
                 </span>
               </span>

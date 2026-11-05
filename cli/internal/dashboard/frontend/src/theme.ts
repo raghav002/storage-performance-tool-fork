@@ -82,7 +82,6 @@ export const dashboardTokens = {
     latencyP50: "#7a63ce",
     latencyP99: "#b096e7",
     grid: "#eaf0f6",
-    axis: "#78899e",
     inspector: "#8393a8",
   },
   connectionGraph: {
@@ -540,18 +539,6 @@ export const cssVariablesResolver: CSSVariablesResolver = (theme) => {
       "--spt-chart-throughput": tokens.charts.throughput,
       "--spt-chart-bandwidth": tokens.charts.bandwidth,
       "--spt-chart-latency-p50": tokens.charts.latencyP50,
-      "--spt-chart-latency-p99": tokens.charts.latencyP99,
-      "--spt-chart-grid": tokens.charts.grid,
-      "--spt-chart-axis": tokens.charts.axis,
-      "--spt-chart-inspector": tokens.charts.inspector,
-      "--spt-connection-pending": tokens.connectionGraph.pending,
-      "--spt-connection-pending-border": tokens.connectionGraph.pendingBorder,
-      "--spt-connection-passed": tokens.connectionGraph.passed,
-      "--spt-connection-failed": tokens.connectionGraph.failed,
-      "--spt-connection-link": tokens.connectionGraph.link,
-      "--spt-connection-dashboard-fill": tokens.connectionGraph.dashboardFill,
-      "--spt-connection-dashboard-border":
-        tokens.connectionGraph.dashboardBorder,
     },
     dark: {},
   };

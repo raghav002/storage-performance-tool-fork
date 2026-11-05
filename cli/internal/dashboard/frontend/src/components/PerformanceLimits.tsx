@@ -107,7 +107,7 @@ function LimitsForm({
     <Accordion.Item value="limits">
       <Accordion.Control>
         Performance limits{" "}
-        <span data-spt-legacy="" className="summary-note">
+        <span className="text-xs/[inherit] font-normal ml-sm text-muted [@media(max-width:760px)]:block [@media(max-width:760px)]:mt-xs [@media(max-width:760px)]:mr-0 [@media(max-width:760px)]:mb-0 [@media(max-width:760px)]:ml-md">
           {phaseName(phase)} ·{" "}
           {checks.filter((c) => limits[c.key] !== null).length}/3 set
         </span>
@@ -161,7 +161,7 @@ function LimitsForm({
             );
           })}
         </div>
-        <div data-spt-legacy="" className="actions">
+        <div className="flex flex-wrap items-center gap-compact">
           <Button variant="filled" onClick={save}>
             Save limits
           </Button>
@@ -179,7 +179,7 @@ function LimitsForm({
           >
             Clear limits
           </Button>
-          <span data-spt-legacy="" className="subtle" role="status">
+          <span className="text-subtle text-xs/[inherit]" role="status">
             {message}
           </span>
         </div>

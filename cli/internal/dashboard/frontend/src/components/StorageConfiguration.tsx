@@ -86,16 +86,20 @@ export function StorageConfiguration({
 
   return (
     <>
-      <div data-spt-legacy="" className="target-summary">
-        <div data-spt-legacy="">
-          <span data-spt-legacy="">S3 endpoint in use</span>
-          <strong data-spt-legacy="">
+      <div className="mx-0 my-section p-comfortable flex gap-[26px] items-center flex-wrap bg-surface-subtle border border-border rounded-md [@media(max-width:760px)]:gap-comfortable">
+        <div className="grid gap-[7px] min-w-0">
+          <span className="text-xs/[inherit] text-muted">
+            S3 endpoint in use
+          </span>
+          <strong className="text-sm/[inherit] wrap-anywhere">
             {target.endpoint_label || "Not configured"}
           </strong>
         </div>
-        <div data-spt-legacy="">
-          <span data-spt-legacy="">Bucket</span>
-          <strong data-spt-legacy="">{target.bucket || "Not reported"}</strong>
+        <div className="grid gap-[7px] min-w-0">
+          <span className="text-xs/[inherit] text-muted">Bucket</span>
+          <strong className="text-sm/[inherit] wrap-anywhere">
+            {target.bucket || "Not reported"}
+          </strong>
         </div>
         <Status status={target.ready ? "ready" : "needs setup"} />
       </div>
@@ -184,7 +188,7 @@ export function StorageConfiguration({
             onChange={(e) => setForm({ ...form, endpoint: e.target.value })}
           />
         </Fieldset>
-        <div data-spt-legacy="" className="actions">
+        <div className="flex flex-wrap items-center gap-compact">
           <Button
             variant="filled"
             loading={locked}
@@ -195,7 +199,7 @@ export function StorageConfiguration({
           >
             {locked ? "Verifying…" : "Verify connection"}
           </Button>
-          <span data-spt-legacy="" className="subtle" role="status">
+          <span className="text-subtle text-xs/[inherit]" role="status">
             {running
               ? "Checking each machine. This can take a few minutes."
               : dirty
@@ -257,8 +261,8 @@ export function StorageConfiguration({
                                 : "var(--spt-text-secondary)"
                             }
                           >
-                            <strong data-spt-legacy="">{c.name}</strong>{" "}
-                            {c.status.toUpperCase()} · {c.message}
+                            <strong>{c.name}</strong> {c.status.toUpperCase()} ·{" "}
+                            {c.message}
                           </Text>
                         ))}
                       </ul>

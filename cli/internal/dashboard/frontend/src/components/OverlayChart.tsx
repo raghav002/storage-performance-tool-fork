@@ -11,12 +11,7 @@ import { useCallback, useMemo, useState } from "react";
 import type { ChartOption, EChartsType } from "../charts/echarts";
 import type { SeriesPoint } from "../types";
 import { overlayExtent, type OverlayMetric } from "../utils/catalog";
-import {
-  elapsed,
-  formatChartAxisValue,
-  formatChartValue,
-  numeric,
-} from "../utils/metrics";
+import { elapsed, formatChartValue, numeric } from "../utils/metrics";
 import { EChart } from "./EChart";
 
 type Props = {
@@ -65,7 +60,6 @@ export function OverlayChart({
   );
   const option = useMemo<ChartOption>(() => {
     return {
-      grid: { left: 68, right: 20, top: 18, bottom: 38 },
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "line" },
@@ -77,12 +71,10 @@ export function OverlayChart({
       },
       xAxis: {
         type: "value",
-        min: 0,
         max: maxT || 1,
-        splitNumber: 4,
         axisLine: { show: true },
         splitLine: { show: false },
-        axisLabel: { formatter: elapsed, hideOverlap: true },
+        axisLabel: { formatter: elapsed },
         axisPointer: {
           snap: false,
           label: { formatter: ({ value }) => `${formatChartValue(value)}s` },
@@ -90,11 +82,8 @@ export function OverlayChart({
       },
       yAxis: {
         type: "value",
-        min: 0,
         max: maxV === 0 ? 1 : undefined,
-        splitNumber: 4,
         axisLine: { show: false },
-        axisLabel: { formatter: formatChartAxisValue, hideOverlap: true },
       },
       series: data.map((line) => ({
         id: line.id,
@@ -102,10 +91,6 @@ export function OverlayChart({
         type: "line",
         data: line.points.map((point) => [point.t, numeric(point[metric])]),
         encode: { x: 0, y: 1, tooltip: [1] },
-        connectNulls: false,
-        smooth: false,
-        showSymbol: true,
-        symbol: "circle",
         symbolSize: (_value, { dataIndex: i }) =>
           numeric(line.points[i]?.[metric]) !== null &&
           (i === 0 || numeric(line.points[i - 1][metric]) === null) &&
@@ -115,7 +100,7 @@ export function OverlayChart({
             : 0,
         lineStyle: { color: line.color, width: line.id === baseline ? 3 : 2 },
         itemStyle: { color: line.color },
-        emphasis: { focus: "series", scale: false },
+        emphasis: { focus: "series" },
       })),
     };
   }, [data, metric, unit, baseline, theme.fontSizes.sm, maxT, maxV]);

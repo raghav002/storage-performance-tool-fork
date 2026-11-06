@@ -3,11 +3,7 @@ import { useCallback, useMemo } from "react";
 import type { ElementEvent } from "echarts/core";
 import type { ChartOption, EChartsType } from "../charts/echarts";
 import type { Sample } from "../types";
-import {
-  elapsed,
-  formatChartAxisValue,
-  formatChartValue,
-} from "../utils/metrics";
+import { elapsed, formatChartValue } from "../utils/metrics";
 import { EChart } from "./EChart";
 
 type Props = {
@@ -44,7 +40,6 @@ export function TrendChart({
   );
   const option = useMemo<ChartOption>(
     () => ({
-      grid: { left: 68, right: 20, top: 18, bottom: 38 },
       tooltip: {
         trigger: "axis",
         triggerOn: "none",
@@ -55,10 +50,9 @@ export function TrendChart({
         type: "value",
         min: start,
         max: end > start ? end : start + 1,
-        splitNumber: 4,
         axisLine: { show: true },
         splitLine: { show: false },
-        axisLabel: { formatter: elapsed, hideOverlap: true },
+        axisLabel: { formatter: elapsed },
         axisPointer: {
           show: true,
           status: "hide",
@@ -75,10 +69,7 @@ export function TrendChart({
       },
       yAxis: {
         type: "value",
-        min: 0,
-        splitNumber: 4,
         axisLine: { show: false },
-        axisLabel: { formatter: formatChartAxisValue, hideOverlap: true },
       },
       series: series.map((line) => ({
         id: line.key,
@@ -86,10 +77,6 @@ export function TrendChart({
         type: "line",
         data: samples.map((sample) => [sample.elapsed, sample[line.key]]),
         encode: { x: 0, y: 1, tooltip: [1] },
-        connectNulls: false,
-        smooth: false,
-        showSymbol: true,
-        symbol: "circle",
         // Keep isolated measurements visible without covering dense lines in dots.
         symbolSize: (_value, params) => {
           const i = params.dataIndex;
@@ -99,9 +86,8 @@ export function TrendChart({
             ? 7
             : 0;
         },
-        lineStyle: { color: line.color, width: 2 },
+        lineStyle: { color: line.color },
         itemStyle: { color: line.color },
-        emphasis: { scale: false },
       })),
     }),
     [samples, series, start, end, unit, theme],

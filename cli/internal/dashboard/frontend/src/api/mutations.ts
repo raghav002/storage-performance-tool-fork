@@ -1,4 +1,8 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 import { queryKeys } from "./queryKeys";
 import {
   attachRun,
@@ -7,6 +11,14 @@ import {
   stopRun,
   verifyStorage,
 } from "./requests";
+
+function invalidateRunData(client: QueryClient) {
+  return Promise.all(
+    [queryKeys.state, queryKeys.runs, queryKeys.catalogRoot].map((queryKey) =>
+      client.invalidateQueries({ queryKey }),
+    ),
+  );
+}
 
 export function useVerifyStorage() {
   const client = useQueryClient();
@@ -20,13 +32,7 @@ export function useStartRun() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: startRun,
-    onSuccess: async () => {
-      await Promise.all([
-        client.invalidateQueries({ queryKey: queryKeys.state }),
-        client.invalidateQueries({ queryKey: queryKeys.runs }),
-        client.invalidateQueries({ queryKey: queryKeys.catalogRoot }),
-      ]);
-    },
+    onSuccess: () => invalidateRunData(client),
   });
 }
 
@@ -42,13 +48,7 @@ export function useStopRun() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: stopRun,
-    onSuccess: async () => {
-      await Promise.all([
-        client.invalidateQueries({ queryKey: queryKeys.state }),
-        client.invalidateQueries({ queryKey: queryKeys.runs }),
-        client.invalidateQueries({ queryKey: queryKeys.catalogRoot }),
-      ]);
-    },
+    onSuccess: () => invalidateRunData(client),
   });
 }
 

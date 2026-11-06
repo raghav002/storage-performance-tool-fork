@@ -47,13 +47,11 @@ export function PhaseSummaryChart({
       },
       xAxis: {
         type: "value",
-        min: 0,
         // A fallback scale is only needed when every reported value is zero.
         max: data.every((row) => row.value === null || row.value === 0)
           ? 1
           : undefined,
         splitNumber: 3,
-        axisLabel: { formatter: formatChartAxisValue, hideOverlap: true },
       },
       yAxis: {
         type: "category",

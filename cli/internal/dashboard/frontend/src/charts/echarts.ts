@@ -8,6 +8,7 @@ import {
 } from "echarts/components";
 import { init, use as registerCharts } from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
+import { formatChartAxisValue } from "../utils/metrics";
 
 registerCharts([
   LineChart,
@@ -40,7 +41,17 @@ export function createChartTheme(theme: MantineTheme) {
       fontSize: px(theme.fontSizes.sm),
       color: text.secondary,
     },
-    valueAxis: axis,
+    grid: { left: 68, right: 20, top: 18, bottom: 38 },
+    valueAxis: {
+      ...axis,
+      min: 0,
+      splitNumber: 4,
+      axisLabel: {
+        ...axis.axisLabel,
+        formatter: formatChartAxisValue,
+        hideOverlap: true,
+      },
+    },
     categoryAxis: { ...axis, splitLine: { show: false } },
     tooltip: {
       confine: true,
@@ -54,6 +65,13 @@ export function createChartTheme(theme: MantineTheme) {
         color: text.primary,
       },
     },
-    line: { lineStyle: { width: 2 }, smooth: false, connectNulls: false },
+    line: {
+      lineStyle: { width: 2 },
+      smooth: false,
+      connectNulls: false,
+      showSymbol: true,
+      symbol: "circle",
+      emphasis: { scale: false },
+    },
   };
 }

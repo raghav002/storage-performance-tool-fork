@@ -16,7 +16,7 @@ export function AppFooter({
       c="var(--spt-text-subtle)"
       lh="normal"
       ta="center"
-      className="mx-auto max-w-387.5 px-xxl pb-6.25 max-[71.875rem]:px-section max-[47.5rem]:px-md max-[47.5rem]:pb-lg"
+      className="mx-auto w-full max-w-387.5 shrink-0 px-xxl pb-6.25 max-[71.875rem]:px-section max-[47.5rem]:px-md max-[47.5rem]:pb-lg"
     >
       {state?.branding?.product_name ?? "Storage Performance Tool"} ·{" "}
       {received

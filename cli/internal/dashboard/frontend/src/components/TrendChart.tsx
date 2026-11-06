@@ -148,7 +148,7 @@ export function TrendChart({
     <section
       aria-label={`${title} trend`}
       tabIndex={-1}
-      className="min-w-0 border-t border-subtle-border pt-lg"
+      className="min-w-0 border-t-[0.0625rem] border-subtle-border pt-lg"
     >
       <div className="flex flex-wrap items-center justify-between gap-sm">
         <div>
@@ -170,7 +170,7 @@ export function TrendChart({
                 component="span"
                 aria-hidden="true"
                 bg={line.color}
-                className="h-[3px] w-[18px] rounded-full"
+                className="h-0.75 w-4.5 rounded-full"
               />
               <Text component="span" size="sm">
                 {line.label}
@@ -191,11 +191,11 @@ export function TrendChart({
         <EChart
           option={option}
           label={`${title} over elapsed time, in ${unit}`}
-          className="h-[260px] w-full min-w-0 [@media(max-width:760px)]:h-[240px]"
+          className="h-65 w-full min-w-0 max-[47.5rem]:h-60"
           onReady={bindInspection}
         />
       ) : (
-        <Text size="sm" className="flex h-[180px] items-center justify-center">
+        <Text size="sm" className="flex h-45 items-center justify-center">
           No measured {title.toLowerCase()} in this window.
         </Text>
       )}

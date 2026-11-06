@@ -16,6 +16,7 @@ import {
   Text,
   Title,
   createTheme,
+  rem,
 } from "@mantine/core";
 import type { CSSVariablesResolver } from "@mantine/core";
 
@@ -54,10 +55,10 @@ export const dashboardTokens = {
   },
   focus: {
     color: "#78a9ee",
-    width: "3px",
-    offset: "3px",
+    width: rem(3),
+    offset: rem(3),
   },
-  layout: { tableMinWidth: "980px" },
+  layout: { tableMinWidth: rem(980) },
   status: {
     success: { text: "#267a60", background: "#eaf6f1" },
     warning: {
@@ -125,19 +126,19 @@ export const theme = createTheme({
     ],
   },
   fontSizes: {
-    xxs: "9px",
-    xs: "10px",
-    caption: "11px",
-    sm: "12px",
-    control: "13px",
-    md: "14px",
-    emphasis: "15px",
-    lg: "16px",
-    xl: "20px",
-    metricMobile: "23px",
-    metricCompact: "24px",
-    metric: "29px",
-    metricWide: "34px",
+    xxs: rem(9),
+    xs: rem(10),
+    caption: rem(11),
+    sm: rem(12),
+    control: rem(13),
+    md: rem(14),
+    emphasis: rem(15),
+    lg: rem(16),
+    xl: rem(20),
+    metricMobile: rem(23),
+    metricCompact: rem(24),
+    metric: rem(29),
+    metricWide: rem(34),
   },
   fontWeights: {
     regular: "400",
@@ -150,9 +151,9 @@ export const theme = createTheme({
     fontFamily,
     fontWeight: "650",
     sizes: {
-      h1: { fontSize: "27px", lineHeight: "normal" },
-      h2: { fontSize: "17px", lineHeight: "normal" },
-      h3: { fontSize: "13px", lineHeight: "normal" },
+      h1: { fontSize: rem(27), lineHeight: "normal" },
+      h2: { fontSize: rem(17), lineHeight: "normal" },
+      h3: { fontSize: rem(13), lineHeight: "normal" },
     },
   },
   lineHeights: {
@@ -161,29 +162,29 @@ export const theme = createTheme({
     code: "1.7",
   },
   radius: {
-    xs: "3px",
-    sm: "5px",
-    chip: "6px",
-    control: "7px",
-    md: "8px",
-    lg: "10px",
-    xl: "14px",
+    xs: rem(3),
+    sm: rem(5),
+    chip: rem(6),
+    control: rem(7),
+    md: rem(8),
+    lg: rem(10),
+    xl: rem(14),
   },
   defaultRadius: "md",
   spacing: {
-    xxs: "4px",
-    xs: "8px",
-    compact: "10px",
-    sm: "12px",
-    md: "16px",
-    comfortable: "18px",
-    lg: "20px",
-    panel: "22px",
-    section: "24px",
-    wide: "28px",
-    xl: "30px",
-    xxl: "36px",
-    xxxl: "48px",
+    xxs: rem(4),
+    xs: rem(8),
+    compact: rem(10),
+    sm: rem(12),
+    md: rem(16),
+    comfortable: rem(18),
+    lg: rem(20),
+    panel: rem(22),
+    section: rem(24),
+    wide: rem(28),
+    xl: rem(30),
+    xxl: rem(36),
+    xxxl: rem(48),
   },
   cursorType: "pointer",
   components: {
@@ -204,7 +205,7 @@ export const theme = createTheme({
                     : color === "yellow"
                       ? "var(--spt-status-warning-background)"
                       : "var(--spt-surface-subtle)",
-                "--alert-bd": `1px solid ${color === "red" ? "var(--spt-status-error-border)" : color === "yellow" ? "var(--spt-status-warning-border)" : "var(--spt-border-panel)"}`,
+                "--alert-bd": `0.0625rem solid ${color === "red" ? "var(--spt-status-error-border)" : color === "yellow" ? "var(--spt-status-warning-border)" : "var(--spt-border-panel)"}`,
                 "--alert-color":
                   color === "red"
                     ? "var(--spt-status-error-text)"
@@ -223,7 +224,7 @@ export const theme = createTheme({
       classNames: { message: "wrap-anywhere" },
     }),
     Progress: Progress.extend({
-      defaultProps: { size: "6px", radius: "sm", color: "spt" },
+      defaultProps: { size: rem(6), radius: "sm", color: "spt" },
       styles: { root: { backgroundColor: "var(--spt-surface-track)" } },
     }),
     Code: Code.extend({
@@ -235,7 +236,7 @@ export const theme = createTheme({
       styles: (_theme, { block }) => ({
         root: block
           ? {
-              maxHeight: 350,
+              maxHeight: rem(350),
               padding: "var(--mantine-spacing-md)",
               borderRadius: "var(--mantine-radius-md)",
               lineHeight: "var(--mantine-line-height-code)",
@@ -263,13 +264,13 @@ export const theme = createTheme({
       },
       classNames: {
         control:
-          "hover:bg-hover focus-visible:outline-solid focus-visible:outline-[length:var(--spt-focus-width)] focus-visible:outline-focus focus-visible:outline-offset-[var(--spt-focus-offset)]",
+          "hover:bg-(--spt-surface-hover) focus-visible:outline-solid focus-visible:outline-(length:--spt-focus-width) focus-visible:outline-focus focus-visible:outline-offset-(--spt-focus-offset)",
       },
     }),
     Drawer: Drawer.extend({
       defaultProps: {
         position: "right",
-        size: "min(440px, 100%)",
+        size: "min(27.5rem, 100%)",
         padding: "section",
         overlayProps: { backgroundOpacity: 0.42 },
       },
@@ -306,17 +307,17 @@ export const theme = createTheme({
       defaultProps: { type: "native", tabIndex: 0, role: "region" },
       classNames: {
         scrollContainer:
-          "focus-visible:outline-solid focus-visible:outline-[length:var(--spt-focus-width)] focus-visible:outline-focus focus-visible:outline-offset-[var(--spt-focus-offset)]",
+          "focus-visible:outline-solid focus-visible:outline-(length:--spt-focus-width) focus-visible:outline-focus focus-visible:outline-offset-(--spt-focus-offset)",
       },
     }),
     Input: Input.extend({
       defaultProps: { size: "sm", radius: "control" },
       vars: (_theme, { size }) => ({
-        wrapper: size === "sm" ? { "--input-height": "38px" } : {},
+        wrapper: size === "sm" ? { "--input-height": rem(38) } : {},
       }),
       classNames: {
         input:
-          "focus-visible:outline-solid focus-visible:outline-[length:var(--spt-focus-width)] focus-visible:outline-focus focus-visible:outline-offset-[var(--spt-focus-offset)]",
+          "focus-visible:outline-solid focus-visible:outline-(length:--spt-focus-width) focus-visible:outline-focus focus-visible:outline-offset-(--spt-focus-offset)",
       },
       styles: (_theme, { error }) => ({
         input: {
@@ -334,17 +335,17 @@ export const theme = createTheme({
         errorProps: { role: "alert" },
       },
       styles: {
-        label: { color: "var(--spt-text-muted)", marginBottom: "9px" },
+        label: { color: "var(--spt-text-muted)", marginBottom: rem(9) },
         description: {
           fontSize: "var(--mantine-font-size-caption)",
           lineHeight: "var(--mantine-line-height-help)",
-          marginTop: "9px",
+          marginTop: rem(9),
         },
         error: {
           color: "var(--spt-validation-text)",
           fontSize: "var(--mantine-font-size-caption)",
           lineHeight: "var(--mantine-line-height-help)",
-          marginTop: "9px",
+          marginTop: rem(9),
         },
       },
     }),
@@ -355,7 +356,7 @@ export const theme = createTheme({
         legend: {
           fontSize: "var(--mantine-font-size-control)",
           fontWeight: "var(--mantine-font-weight-heading)",
-          marginTop: "6px",
+          marginTop: rem(6),
           marginBottom: 0,
         },
       }),
@@ -377,7 +378,7 @@ export const theme = createTheme({
     NavLink: NavLink.extend({
       defaultProps: { variant: "light", bdrs: "md" },
       classNames: {
-        root: "min-h-[45px] p-[13px] focus-visible:outline-solid focus-visible:outline-[length:var(--spt-focus-width)] focus-visible:outline-focus focus-visible:outline-offset-[var(--spt-focus-offset)] [@media(max-width:760px)]:min-h-[37px] [@media(max-width:760px)]:w-auto [@media(max-width:760px)]:px-sm [@media(max-width:760px)]:py-[9px]",
+        root: "min-h-11.25 p-3.25 focus-visible:outline-solid focus-visible:outline-(length:--spt-focus-width) focus-visible:outline-focus focus-visible:outline-offset-(--spt-focus-offset) max-[47.5rem]:min-h-9.25 max-[47.5rem]:w-auto max-[47.5rem]:px-sm max-[47.5rem]:py-2.25",
       },
       styles: (_theme, { active }) => ({
         root: {
@@ -398,15 +399,15 @@ export const theme = createTheme({
         withItemsBorders: false,
         bg: "var(--spt-surface-track)",
       },
-      classNames: { label: "text-secondary data-[active]:text-primary" },
+      classNames: { label: "text-secondary data-active:text-primary" },
       vars: () => ({
         root: {
-          "--sc-padding": "7px 13px",
-          "--sc-shadow": "0 1px 4px #20304716",
+          "--sc-padding": "0.4375rem 0.8125rem",
+          "--sc-shadow": "0 0.0625rem 0.25rem #20304716",
         },
       }),
       styles: {
-        root: { padding: "3px" },
+        root: { padding: rem(3) },
         label: {
           fontWeight: "var(--mantine-font-weight-semibold)",
           borderRadius: "var(--mantine-radius-md)",
@@ -422,14 +423,14 @@ export const theme = createTheme({
         fw: "var(--mantine-font-weight-semibold)",
       },
       classNames: {
-        root: "focus-visible:outline-solid focus-visible:outline-[length:var(--spt-focus-width)] focus-visible:outline-focus focus-visible:outline-offset-[var(--spt-focus-offset)]",
+        root: "focus-visible:outline-solid focus-visible:outline-(length:--spt-focus-width) focus-visible:outline-focus focus-visible:outline-offset-(--spt-focus-offset)",
       },
       vars: (_theme, { variant, color, size }) => ({
         root: {
           ...(size === "sm"
-            ? { "--button-height": "38px", "--button-padding-x": "14px" }
+            ? { "--button-height": rem(38), "--button-padding-x": rem(14) }
             : size === "compact-sm"
-              ? { "--button-height": "29px", "--button-padding-x": "9px" }
+              ? { "--button-height": rem(29), "--button-padding-x": rem(9) }
               : {}),
           ...(color
             ? {}
@@ -438,7 +439,7 @@ export const theme = createTheme({
                   "--button-bg": "var(--spt-surface-control)",
                   "--button-hover": "var(--spt-surface-hover)",
                   "--button-color": "var(--spt-text-secondary)",
-                  "--button-bd": "1px solid var(--spt-border-control)",
+                  "--button-bd": "0.0625rem solid var(--spt-border-control)",
                 }
               : variant === "filled"
                 ? {
@@ -465,7 +466,7 @@ export const theme = createTheme({
         radius: "sm",
         h: "auto",
         py: "xxs",
-        px: "7px",
+        px: rem(7),
         fz: "xs",
         lh: 1.5,
         fw: "var(--mantine-font-weight-regular)",
@@ -491,10 +492,10 @@ export const theme = createTheme({
     }),
     Title: Title.extend({
       classNames: {
-        root: "data-[order=1]:[@media(max-width:760px)]:text-[23px]",
+        root: "data-[order=1]:max-[47.5rem]:text-[1.4375rem]",
       },
       styles: (_theme, { order }) => ({
-        root: { letterSpacing: order === 1 ? "-0.7px" : undefined },
+        root: { letterSpacing: order === 1 ? rem(-0.7) : undefined },
       }),
     }),
   },
@@ -511,6 +512,8 @@ export const cssVariablesResolver: CSSVariablesResolver = (theme) => {
       "--spt-table-min-width": tokens.layout.tableMinWidth,
     },
     light: {
+      "--mantine-color-body": tokens.surfaces.page,
+      "--mantine-color-text": tokens.text.primary,
       "--spt-text-primary": tokens.text.primary,
       "--spt-text-secondary": tokens.text.secondary,
       "--spt-text-muted": tokens.text.muted,

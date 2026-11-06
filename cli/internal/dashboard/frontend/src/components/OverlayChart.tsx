@@ -32,6 +32,10 @@ export function OverlayChart({
   lines,
 }: Props) {
   const theme = useMantineTheme();
+  const rootFontSize =
+    Number.parseFloat(getComputedStyle(document.documentElement).fontSize) ||
+    16;
+  const tooltipFontSize = Number(px(theme.fontSizes.sm)) * (rootFontSize / 16);
   const data = useMemo(
     () =>
       lines.map((line) => ({
@@ -63,7 +67,7 @@ export function OverlayChart({
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "line" },
-        textStyle: { fontSize: px(theme.fontSizes.sm) },
+        textStyle: { fontSize: tooltipFontSize },
         valueFormatter: (value) =>
           numeric(value) === null
             ? "Not reported"
@@ -103,7 +107,7 @@ export function OverlayChart({
         emphasis: { focus: "series" },
       })),
     };
-  }, [data, metric, unit, baseline, theme.fontSizes.sm, maxT, maxV]);
+  }, [data, metric, unit, baseline, tooltipFontSize, maxT, maxV]);
   const inspect = useCallback(
     (chart: EChartsType) => {
       if (selectedTime === null || time === undefined) return;
@@ -140,16 +144,16 @@ export function OverlayChart({
         <EChart
           option={option}
           label={`${phase} ${title} over elapsed seconds for ${lines.length} runs, in ${unit}. Baseline: ${baseline}. Exact values are available in the sample inspector below.`}
-          className="h-[280px] w-full min-w-0 [@media(max-width:760px)]:h-[240px]"
+          className="h-70 w-full min-w-0 max-[47.5rem]:h-60"
           onReady={inspect}
         />
       ) : (
-        <Text size="sm" className="flex h-[160px] items-center justify-center">
+        <Text size="sm" className="flex h-40 items-center justify-center">
           No samples for this metric.
         </Text>
       )}
       {times.length > 0 && (
-        <Box pt="md" className="border-t border-subtle-border">
+        <Box pt="md" className="border-t-[0.0625rem] border-subtle-border">
           <div className="mb-md flex flex-wrap items-baseline justify-between gap-sm">
             <Text size="sm" fw="var(--mantine-font-weight-semibold)">
               Sample inspector
@@ -188,7 +192,7 @@ export function OverlayChart({
                       component="span"
                       bg={line.color}
                       aria-hidden="true"
-                      className="mr-xs inline-block h-[3px] w-[18px] align-middle"
+                      className="mr-xs inline-block h-0.75 w-4.5 align-middle"
                     />
                     {line.label} · {line.id}
                     {line.id === baseline ? " (baseline)" : ""}

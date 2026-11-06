@@ -17,7 +17,14 @@ export function EChart({ option, label, className, onReady }: Props) {
   const { ref: sizeRef, width, height } = useElementSize<HTMLDivElement>();
   const ref = useMergedRef(element, sizeRef);
   const theme = useMantineTheme();
-  const chartTheme = useMemo(() => createChartTheme(theme), [theme]);
+  // Canvas APIs need font sizes in pixels at the current root size.
+  const rootFontSize =
+    Number.parseFloat(getComputedStyle(document.documentElement).fontSize) ||
+    16;
+  const chartTheme = useMemo(
+    () => createChartTheme(theme, rootFontSize),
+    [theme, rootFontSize],
+  );
   const reducedMotion = useReducedMotion(undefined, {
     getInitialValueInEffect: false,
   });
@@ -68,7 +75,7 @@ export function EChart({ option, label, className, onReady }: Props) {
       ref={ref}
       role="img"
       aria-label={label}
-      className={className ?? "h-[320px] w-full min-w-0"}
+      className={className ?? "h-80 w-full min-w-0"}
     />
   );
 }

@@ -23,12 +23,16 @@ registerCharts([
 export { init };
 export type { EChartsOption as ChartOption, EChartsType } from "echarts";
 
-export function createChartTheme(theme: MantineTheme) {
+export function createChartTheme(theme: MantineTheme, rootFontSize = 16) {
   const { charts, text, borders, surfaces } = theme.other.dashboard;
+  const fontScale = rootFontSize / 16;
   const axis = {
     axisLine: { lineStyle: { color: borders.panel } },
     axisTick: { show: false },
-    axisLabel: { color: text.muted, fontSize: px(theme.fontSizes.sm) },
+    axisLabel: {
+      color: text.muted,
+      fontSize: Number(px(theme.fontSizes.sm)) * fontScale,
+    },
     nameTextStyle: { color: text.secondary },
     splitLine: { lineStyle: { color: charts.grid } },
   };
@@ -38,7 +42,7 @@ export function createChartTheme(theme: MantineTheme) {
     backgroundColor: "transparent",
     textStyle: {
       fontFamily: theme.fontFamily,
-      fontSize: px(theme.fontSizes.sm),
+      fontSize: Number(px(theme.fontSizes.sm)) * fontScale,
       color: text.secondary,
     },
     grid: { left: 68, right: 20, top: 18, bottom: 38 },
@@ -61,7 +65,7 @@ export function createChartTheme(theme: MantineTheme) {
       borderWidth: 1,
       textStyle: {
         fontFamily: theme.fontFamily,
-        fontSize: px(theme.fontSizes.md),
+        fontSize: Number(px(theme.fontSizes.md)) * fontScale,
         color: text.primary,
       },
     },

@@ -208,7 +208,7 @@ export function Charts({
   return (
     <Paper
       component="section"
-      className="mb-panel p-panel [@media(max-width:760px)]:p-[17px] min-w-0"
+      className="mb-panel p-panel max-[47.5rem]:p-4.25 min-w-0"
       onKeyDown={(event) => {
         if (event.key === "Escape") setInspection(null);
       }}
@@ -218,7 +218,7 @@ export function Charts({
           <Title order={2} size="xl">
             Measured performance
           </Title>
-          <Text size="caption" className="mt-[5px] max-[760px]:max-w-[250px]">
+          <Text size="caption" className="mt-1.25 max-[47.5rem]:max-w-62.5">
             {display === "timeline"
               ? `${phaseName(phase)} phase · ${samples.length} recorded samples`
               : "Phase summary"}
@@ -247,7 +247,7 @@ export function Charts({
             <div className="flex flex-wrap items-end gap-md">
               <NativeSelect
                 label="Time window"
-                className="w-[160px] max-w-full"
+                className="w-40 max-w-full"
                 value={timeWindow.duration ?? "all"}
                 disabled={!canAdjust}
                 onChange={(event) => {
@@ -283,7 +283,7 @@ export function Charts({
                 <Button
                   size="compact-sm"
                   variant="default"
-                  leftSection={<ZoomIn size={14} aria-hidden="true" />}
+                  leftSection={<ZoomIn size="0.875rem" aria-hidden="true" />}
                   disabled={!canAdjust || width <= minimumWindow}
                   onClick={() => zoomWindow(0.5)}
                 >
@@ -292,7 +292,7 @@ export function Charts({
                 <Button
                   size="compact-sm"
                   variant="default"
-                  leftSection={<ZoomOut size={14} aria-hidden="true" />}
+                  leftSection={<ZoomOut size="0.875rem" aria-hidden="true" />}
                   disabled={!canAdjust || width >= span}
                   onClick={() => zoomWindow(2)}
                 >
@@ -301,7 +301,7 @@ export function Charts({
                 <Button
                   size="compact-sm"
                   variant="default"
-                  leftSection={<Maximize2 size={14} aria-hidden="true" />}
+                  leftSection={<Maximize2 size="0.875rem" aria-hidden="true" />}
                   disabled={!canAdjust}
                   onClick={() => {
                     changeWindow({ duration: null, end: null });
@@ -317,9 +317,9 @@ export function Charts({
                   variant={following ? "default" : "light"}
                   leftSection={
                     following ? (
-                      <Pause size={14} aria-hidden="true" />
+                      <Pause size="0.875rem" aria-hidden="true" />
                     ) : (
-                      <Play size={14} aria-hidden="true" />
+                      <Play size="0.875rem" aria-hidden="true" />
                     )
                   }
                   disabled={!canAdjust}
@@ -339,7 +339,7 @@ export function Charts({
                   component="a"
                   size="compact-sm"
                   variant="light"
-                  leftSection={<Download size={14} aria-hidden="true" />}
+                  leftSection={<Download size="0.875rem" aria-hidden="true" />}
                   href={`/api/runs/${encodeURIComponent(m.run_id)}/csv?kind=window&phase=${phase}&start=${start}&end=${end}`}
                   download
                 >
@@ -391,7 +391,7 @@ export function Charts({
                 <Button
                   size="compact-xs"
                   variant="default"
-                  leftSection={<ArrowLeft size={14} aria-hidden="true" />}
+                  leftSection={<ArrowLeft size="0.875rem" aria-hidden="true" />}
                   disabled={!canAdjust || start <= first}
                   onClick={() =>
                     changeWindow({ duration: width, end: end - width / 2 })
@@ -402,7 +402,9 @@ export function Charts({
                 <Button
                   size="compact-xs"
                   variant="default"
-                  rightSection={<ArrowRight size={14} aria-hidden="true" />}
+                  rightSection={
+                    <ArrowRight size="0.875rem" aria-hidden="true" />
+                  }
                   disabled={!canAdjust || end >= last}
                   onClick={() =>
                     changeWindow({ duration: width, end: end + width / 2 })
@@ -514,7 +516,7 @@ export function Charts({
             onChange={(e) => setCleanup(e.target.checked)}
           />
           {summaries.length ? (
-            <div className="my-lg grid grid-cols-1 gap-md min-[1500px]:grid-cols-3">
+            <div className="my-lg grid grid-cols-1 gap-md min-[93.75rem]:grid-cols-3">
               {graphs.map((graph) => (
                 <PhaseSummaryChart
                   key={graph.key}

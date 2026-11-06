@@ -7,7 +7,7 @@ export function Status({ status }: { status: string }) {
       color={good ? "teal" : "yellow"}
       leftSection={
         <span
-          className="size-[5px] rounded-full bg-current"
+          className="size-1.25 rounded-full bg-current"
           aria-hidden="true"
         />
       }

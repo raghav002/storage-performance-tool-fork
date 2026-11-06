@@ -148,7 +148,7 @@ function LogContents({
         </Text>
       ) : (
         <pre
-          className="p-sm max-h-[360px] overflow-auto bg-[#101827] text-[#dbe4f0] rounded-md text-sm/help whitespace-pre-wrap wrap-anywhere"
+          className="p-sm max-h-90 overflow-auto bg-[#101827] text-[#dbe4f0] rounded-md text-sm/help whitespace-pre-wrap wrap-anywhere"
           tabIndex={0}
         >
           {data.lines.map((l, i) => (

@@ -79,7 +79,7 @@ export function ConnectionGraph({
   const y = (i: number) => 24 + i * row;
   const passed = v.nodes.filter((n) => n.status === "passed").length;
   return (
-    <figure className="mx-0 p-comfortable mt-section mb-0 bg-surface-subtle border border-border rounded-md">
+    <figure className="mx-0 p-comfortable mt-section mb-0 bg-surface-subtle border-[0.0625rem] border-border rounded-md">
       <svg
         className="block w-full h-auto"
         viewBox={`0 0 720 ${height}`}

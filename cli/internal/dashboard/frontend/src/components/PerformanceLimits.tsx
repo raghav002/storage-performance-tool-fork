@@ -107,7 +107,7 @@ function LimitsForm({
     <Accordion.Item value="limits">
       <Accordion.Control>
         Performance limits{" "}
-        <span className="text-xs/[inherit] font-normal ml-sm text-muted [@media(max-width:760px)]:block [@media(max-width:760px)]:mt-xs [@media(max-width:760px)]:mr-0 [@media(max-width:760px)]:mb-0 [@media(max-width:760px)]:ml-md">
+        <span className="text-xs/[inherit] font-normal ml-sm text-muted max-[47.5rem]:block max-[47.5rem]:mt-xs max-[47.5rem]:mr-0 max-[47.5rem]:mb-0 max-[47.5rem]:ml-md">
           {phaseName(phase)} ·{" "}
           {checks.filter((c) => limits[c.key] !== null).length}/3 set
         </span>
@@ -119,7 +119,7 @@ function LimitsForm({
           {o.threads === 1 ? "" : "s"}. These limits stay in this browser and
           apply to the selected phase.
         </Text>
-        <div className="my-lg grid grid-cols-3 gap-panel [@media(max-width:760px)]:grid-cols-1">
+        <div className="my-lg grid grid-cols-3 gap-panel max-[47.5rem]:grid-cols-1">
           {checks.map((c) => {
             const limit = limits[c.key],
               value = c.value;

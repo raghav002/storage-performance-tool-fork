@@ -23,13 +23,13 @@ export function MetricCard({
   return (
     <Paper
       component="article"
-      className="relative min-w-0 overflow-hidden p-[21px] [@media(max-width:1150px)]:p-md [@media(max-width:760px)]:p-comfortable"
+      className="relative min-w-0 overflow-hidden p-5.25 max-[71.875rem]:p-md max-[47.5rem]:p-comfortable"
     >
       <Box
         component="span"
         aria-hidden="true"
         bg={accentColors[accent] ?? accentColors.blue}
-        className="absolute top-[23px] left-0 h-[30px] w-[3px]"
+        className="absolute top-5.75 left-0 h-7.5 w-0.75"
       />
       <Text
         component="span"
@@ -42,7 +42,7 @@ export function MetricCard({
       <Text
         component="div"
         fw="var(--mantine-font-weight-heading)"
-        className="mt-[14px] mb-[11px] text-metric tracking-[-1px] wrap-anywhere tabular-nums [@media(min-width:1500px)]:text-metric-wide [@media(max-width:1150px)]:text-metric-compact [@media(max-width:760px)]:text-metric-mobile"
+        className="mt-3.5 mb-2.75 text-metric tracking-[-0.0625rem] wrap-anywhere tabular-nums min-[93.75rem]:text-metric-wide max-[71.875rem]:text-metric-compact max-[47.5rem]:text-metric-mobile"
         c="var(--spt-text-primary)"
         lh="normal"
       >
@@ -52,14 +52,14 @@ export function MetricCard({
             component="small"
             size="sm"
             c="var(--spt-text-subtle)"
-            className="ml-[7px]"
+            className="ml-1.75"
             lh="normal"
           >
             {unit}
           </Text>
         )}
       </Text>
-      <Text size="xs" className="[@media(max-width:760px)]:text-caption">
+      <Text size="xs" className="max-[47.5rem]:text-caption">
         {detail}
       </Text>
     </Paper>

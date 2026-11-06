@@ -57,7 +57,7 @@ export function NodeTable({ nodes }: { nodes: NodeRow[] }) {
                       size="xxs"
                       c="var(--spt-text-muted)"
                       lh="normal"
-                      className="mt-[5px] block"
+                      className="mt-1.25 block"
                     >
                       {n.node_id}
                     </Text>

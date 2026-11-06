@@ -1,9 +1,9 @@
 import { Alert, Button, Paper, Table, Text, Title } from "@mantine/core";
-import { useRuns } from "../api/queries";
-import { Status } from "./Status";
-import { formatNumber as fmt, phaseName } from "../utils/metrics";
+import { useRuns } from "../../api/queries";
+import { Status } from "../../components/Status";
+import { formatNumber as fmt, phaseName } from "../../utils/metrics";
 
-export function RunHistory({
+export function HistoryPage({
   opening,
   error: openingError,
   onOpen,

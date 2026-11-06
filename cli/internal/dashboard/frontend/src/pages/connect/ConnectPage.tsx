@@ -1,9 +1,9 @@
 import { Alert, Button, NativeSelect, Paper, Text, Title } from "@mantine/core";
 import { useState } from "react";
-import type { State } from "../types";
-import { useAttachRun, useDetachRun } from "../api/mutations";
+import type { State } from "../../types";
+import { useAttachRun, useDetachRun } from "../../api/mutations";
 
-export function ConnectRun({
+export function ConnectPage({
   state,
   offline,
   onConnected,

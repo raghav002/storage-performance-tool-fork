@@ -11,10 +11,10 @@ import {
   Title,
 } from "@mantine/core";
 import { useState } from "react";
-import type { CompareDelta, CompareResult } from "../types";
-import { useComparison, useLastSuccessfulData } from "../api/queries";
-import { dashboardTokens } from "../theme";
-import { formatNumber as fmt } from "../utils/metrics";
+import type { CompareDelta, CompareResult } from "../../types";
+import { useComparison, useLastSuccessfulData } from "../../api/queries";
+import { dashboardTokens } from "../../theme";
+import { formatNumber as fmt } from "../../utils/metrics";
 import {
   deltaText,
   flagText,
@@ -23,9 +23,9 @@ import {
   regressionCount,
   type OverlayMetric,
   type RuleOverrides,
-} from "../utils/catalog";
+} from "../../utils/catalog";
 
-import { OverlayChart } from "./OverlayChart";
+import { OverlayChart } from "../../components/OverlayChart";
 
 const palette = dashboardTokens.charts.comparison;
 const metrics: { key: OverlayMetric; label: string; unit: string }[] = [
@@ -35,7 +35,7 @@ const metrics: { key: OverlayMetric; label: string; unit: string }[] = [
   { key: "p99_latency_us", label: "P99 latency", unit: "µs" },
 ];
 
-export function Compare({
+export function ComparePage({
   ids,
   baseline,
   onBack,

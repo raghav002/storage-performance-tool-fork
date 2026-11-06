@@ -9,6 +9,7 @@ import {
 } from "@mantine/core";
 import { useCallback, useMemo, useState } from "react";
 import type { ChartOption, EChartsType } from "../charts/echarts";
+import { lineSymbols } from "../charts/lineSymbols";
 import type { SeriesPoint } from "../types";
 import { overlayExtent, type OverlayMetric } from "../utils/catalog";
 import { elapsed, formatChartValue, numeric } from "../utils/metrics";
@@ -89,23 +90,23 @@ export function OverlayChart({
         max: maxV === 0 ? 1 : undefined,
         axisLine: { show: false },
       },
-      series: data.map((line) => ({
-        id: line.id,
-        name: `${line.label}${line.id === baseline ? " (baseline)" : ""}`,
-        type: "line",
-        data: line.points.map((point) => [point.t, numeric(point[metric])]),
-        encode: { x: 0, y: 1, tooltip: [1] },
-        symbolSize: (_value, { dataIndex: i }) =>
-          numeric(line.points[i]?.[metric]) !== null &&
-          (i === 0 || numeric(line.points[i - 1][metric]) === null) &&
-          (i === line.points.length - 1 ||
-            numeric(line.points[i + 1][metric]) === null)
-            ? 7
-            : 0,
-        lineStyle: { color: line.color, width: line.id === baseline ? 3 : 2 },
-        itemStyle: { color: line.color },
-        emphasis: { focus: "series" },
-      })),
+      series: data.map((line) => {
+        const points: [number, number | null][] = line.points.map((point) => [
+          point.t,
+          numeric(point[metric]),
+        ]);
+        return {
+          id: line.id,
+          name: `${line.label}${line.id === baseline ? " (baseline)" : ""}`,
+          type: "line",
+          data: points,
+          encode: { x: 0, y: 1, tooltip: [1] },
+          ...lineSymbols(points, line.color),
+          lineStyle: { color: line.color, width: line.id === baseline ? 3 : 2 },
+          itemStyle: { color: line.color },
+          emphasis: { focus: "series" },
+        };
+      }),
     };
   }, [data, metric, unit, baseline, tooltipFontSize, maxT, maxV]);
   const inspect = useCallback(

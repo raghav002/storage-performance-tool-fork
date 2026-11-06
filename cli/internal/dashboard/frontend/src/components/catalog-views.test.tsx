@@ -23,8 +23,8 @@ import {
   waitFor,
 } from "@testing-library/react";
 import type { CatalogRun, CompareResult, LogResponse } from "../types";
-import { Catalog } from "./Catalog";
-import { Compare, DeltaTable } from "./Compare";
+import { CatalogPage } from "../pages/catalog/CatalogPage";
+import { ComparePage, DeltaTable } from "../pages/compare/ComparePage";
 import { OverlayChart } from "./OverlayChart";
 import { Charts } from "./RunCharts";
 import { RunLog } from "./RunLog";
@@ -260,7 +260,7 @@ describe("Catalog", () => {
         read_only: true,
       };
     });
-    render(<Catalog onCompare={() => {}} />);
+    render(<CatalogPage onCompare={() => {}} />);
     await screen.findByText("a");
     fireEvent.click(screen.getAllByRole("button", { name: "Details" })[0]);
     expect(
@@ -311,7 +311,7 @@ describe("Catalog", () => {
         read_only: true,
       };
     });
-    render(<Catalog onCompare={() => {}} />);
+    render(<CatalogPage onCompare={() => {}} />);
     await screen.findByText("a");
     fireEvent.click(screen.getAllByRole("button", { name: "Details" })[0]);
     expect(await screen.findByText("Loading artifacts…")).toBeTruthy();
@@ -353,7 +353,7 @@ describe("Catalog", () => {
       read_only: true,
     }));
     const onCompare = vi.fn();
-    render(<Catalog onCompare={onCompare} />);
+    render(<CatalogPage onCompare={onCompare} />);
     await screen.findByText("a");
     expect(screen.getByLabelText("Compare bad")).toHaveProperty(
       "disabled",
@@ -415,7 +415,7 @@ describe("Compare", () => {
   it("labels the rule honestly and shows settings differences", async () => {
     const calls = stubRequests(() => compareResult);
     render(
-      <Compare ids={["base", "next"]} baseline="base" onBack={() => {}} />,
+      <ComparePage ids={["base", "next"]} baseline="base" onBack={() => {}} />,
     );
     await screen.findByText("Threshold check, not statistical significance");
     expect(screen.getByRole("status").textContent).toContain(
@@ -431,7 +431,7 @@ describe("Compare", () => {
     await waitFor(() => expect(calls.at(-1)).toContain("threshold_pct=5"));
   });
   it("asks for at least two runs", () => {
-    render(<Compare ids={["only"]} baseline="" onBack={() => {}} />);
+    render(<ComparePage ids={["only"]} baseline="" onBack={() => {}} />);
     expect(screen.getByText("Select runs to compare")).toBeTruthy();
   });
   it("reads exact samples without inventing values for another run", () => {
@@ -591,7 +591,7 @@ describe("NodeTable", () => {
       truncated: false,
       read_only: true,
     }));
-    render(<Catalog onCompare={onCompare} />);
+    render(<CatalogPage onCompare={onCompare} />);
     expect(
       await screen.findByRole("button", { name: "Compare with previous" }),
     ).toBeTruthy();

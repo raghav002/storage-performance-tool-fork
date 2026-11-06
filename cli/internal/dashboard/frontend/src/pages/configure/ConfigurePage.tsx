@@ -14,13 +14,13 @@ import {
   Title,
 } from "@mantine/core";
 import { useState } from "react";
-import type { Driver, Options, RunMode, State } from "../types";
-import { useStartRun } from "../api/mutations";
-import { useRuns } from "../api/queries";
-import { defaults } from "../config";
+import type { Driver, Options, RunMode, State } from "../../types";
+import { useStartRun } from "../../api/mutations";
+import { useRuns } from "../../api/queries";
+import { defaults } from "../../config";
 import { StorageConfiguration } from "./StorageConfiguration";
-import { formatNumber as fmt } from "../utils/metrics";
-import { driverReadiness } from "../utils/driver";
+import { formatNumber as fmt } from "../../utils/metrics";
+import { driverReadiness } from "../../utils/driver";
 import {
   fallbackLimits,
   formatBytes,
@@ -31,7 +31,7 @@ import {
   validateOptions,
   type OptionErrors,
   type SizeUnit,
-} from "../utils/validation";
+} from "../../utils/validation";
 
 type ExpertDraft = {
   object_count: string;
@@ -672,7 +672,7 @@ function ExpertWorkspace({
   );
 }
 
-export function Configure({
+export function ConfigurePage({
   state,
   mode,
   offline,

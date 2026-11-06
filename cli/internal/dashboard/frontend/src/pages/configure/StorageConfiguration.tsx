@@ -9,11 +9,11 @@ import {
   TextInput,
 } from "@mantine/core";
 import { useEffect, useState } from "react";
-import type { State } from "../types";
-import { useVerifyStorage } from "../api/mutations";
-import { ConnectionGraph } from "./ConnectionGraph";
-import { Status } from "./Status";
-import { endpointError, hostErrors } from "../utils/validation";
+import type { State } from "../../types";
+import { useVerifyStorage } from "../../api/mutations";
+import { ConnectionGraph } from "../../components/ConnectionGraph";
+import { Status } from "../../components/Status";
+import { endpointError, hostErrors } from "../../utils/validation";
 
 type Form = { hosts: string[]; endpoint: string };
 

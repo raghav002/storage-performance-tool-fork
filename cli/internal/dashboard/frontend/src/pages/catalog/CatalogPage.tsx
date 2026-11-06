@@ -12,22 +12,22 @@ import {
 } from "@mantine/core";
 import { useState } from "react";
 import { useDebouncedValue } from "@mantine/hooks";
-import type { CatalogRun } from "../types";
+import type { CatalogRun } from "../../types";
 import {
   useArtifacts,
   useCatalog,
   useLastSuccessfulData,
-} from "../api/queries";
-import { Status } from "./Status";
-import { RunLog } from "./RunLog";
-import { formatNumber as fmt } from "../utils/metrics";
+} from "../../api/queries";
+import { Status } from "../../components/Status";
+import { RunLog } from "../../components/RunLog";
+import { formatNumber as fmt } from "../../utils/metrics";
 import {
   maxCompare,
   previousRun,
   runSettings,
   toggleSelection,
   type CatalogFilters,
-} from "../utils/catalog";
+} from "../../utils/catalog";
 
 const integrityText: Record<CatalogRun["integrity"], string> = {
   passed: "Integrity passed",
@@ -36,7 +36,7 @@ const integrityText: Record<CatalogRun["integrity"], string> = {
   not_recorded: "Integrity not recorded",
 };
 
-export function Catalog({
+export function CatalogPage({
   onCompare,
 }: {
   onCompare: (ids: string[], baseline: string) => void;

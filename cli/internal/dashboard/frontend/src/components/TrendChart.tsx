@@ -2,6 +2,7 @@ import { Box, Text, Title, useMantineTheme } from "@mantine/core";
 import { useCallback, useMemo } from "react";
 import type { ElementEvent } from "echarts/core";
 import type { ChartOption, EChartsType } from "../charts/echarts";
+import { lineSymbols } from "../charts/lineSymbols";
 import type { Sample } from "../types";
 import {
   elapsed,
@@ -80,29 +81,22 @@ export function TrendChart({
         axisLine: { show: false },
         axisLabel: { formatter: formatChartAxisValue, hideOverlap: true },
       },
-      series: series.map((line) => ({
-        id: line.key,
-        name: line.label,
-        type: "line",
-        data: samples.map((sample) => [sample.elapsed, sample[line.key]]),
-        encode: { x: 0, y: 1, tooltip: [1] },
-        connectNulls: false,
-        smooth: false,
-        showSymbol: true,
-        symbol: "circle",
-        // Keep isolated measurements visible without covering dense lines in dots.
-        symbolSize: (_value, params) => {
-          const i = params.dataIndex;
-          return samples[i]?.[line.key] !== null &&
-            (i === 0 || samples[i - 1][line.key] === null) &&
-            (i === samples.length - 1 || samples[i + 1][line.key] === null)
-            ? 7
-            : 0;
-        },
-        lineStyle: { color: line.color, width: 2 },
-        itemStyle: { color: line.color },
-        emphasis: { scale: false },
-      })),
+      series: series.map((line) => {
+        const points: [number, number | null][] = samples.map((sample) => [
+          sample.elapsed,
+          sample[line.key],
+        ]);
+        return {
+          id: line.key,
+          name: line.label,
+          type: "line",
+          data: points,
+          encode: { x: 0, y: 1, tooltip: [1] },
+          ...lineSymbols(points, line.color),
+          lineStyle: { color: line.color },
+          itemStyle: { color: line.color },
+        };
+      }),
     }),
     [samples, series, start, end, unit, theme],
   );

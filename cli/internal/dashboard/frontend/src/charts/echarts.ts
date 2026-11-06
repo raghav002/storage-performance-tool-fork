@@ -4,6 +4,7 @@ import {
   AriaComponent,
   AxisPointerComponent,
   GridComponent,
+  MarkPointComponent,
   TooltipComponent,
 } from "echarts/components";
 import { init, use as registerCharts } from "echarts/core";
@@ -13,6 +14,7 @@ registerCharts([
   LineChart,
   BarChart,
   GridComponent,
+  MarkPointComponent,
   TooltipComponent,
   AxisPointerComponent,
   AriaComponent,

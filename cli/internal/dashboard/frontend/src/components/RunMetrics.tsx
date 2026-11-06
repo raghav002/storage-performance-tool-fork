@@ -26,12 +26,12 @@ export function PhaseResults({
   return (
     <Paper
       component="section"
-      className="mb-panel p-panel [@media(max-width:760px)]:p-[17px]"
+      className="mb-panel p-panel max-[47.5rem]:p-4.25"
     >
-      <div className="flex justify-between items-center gap-[15px] mb-comfortable [@media(max-width:760px)]:items-start">
+      <div className="flex justify-between items-center gap-3.75 mb-comfortable max-[47.5rem]:items-start">
         <div>
           <Title order={2}>Phase results</Title>
-          <Text size="caption" className="mt-[5px] max-[760px]:max-w-[250px]">
+          <Text size="caption" className="mt-1.25 max-[47.5rem]:max-w-62.5">
             Each phase has its own counters and timing.
           </Text>
         </div>
@@ -150,7 +150,7 @@ export function MeasuredDetails({
       <Accordion.Item value="section">
         <Accordion.Control>
           SPT measured details{" "}
-          <span className="text-xs/[inherit] font-normal ml-sm text-muted [@media(max-width:760px)]:block [@media(max-width:760px)]:mt-xs [@media(max-width:760px)]:mr-0 [@media(max-width:760px)]:mb-0 [@media(max-width:760px)]:ml-md">
+          <span className="text-xs/[inherit] font-normal ml-sm text-muted max-[47.5rem]:block max-[47.5rem]:mt-xs max-[47.5rem]:mr-0 max-[47.5rem]:mb-0 max-[47.5rem]:ml-md">
             {phaseName(phase)} phase
           </span>
         </Accordion.Control>
@@ -169,14 +169,14 @@ export function MeasuredDetails({
               </Accordion.Item>
             </Accordion>
           )}
-          <div className="grid grid-cols-3 gap-comfortable [@media(max-width:1150px)]:grid-cols-2 [@media(max-width:760px)]:grid-cols-1">
+          <div className="grid grid-cols-3 gap-comfortable max-[71.875rem]:grid-cols-2 max-[47.5rem]:grid-cols-1">
             {groups.map((g) => (
               <section className="p-md bg-[#f8fafc] rounded-md" key={g.title}>
                 <Title order={3}>{g.title}</Title>
                 <dl className="mb-0">
                   {g.values.map(([name, value]) => (
                     <div
-                      className="px-0 py-[7px] flex justify-between gap-compact border-b border-b-[#e8edf4] text-caption/[inherit]"
+                      className="px-0 py-1.75 flex justify-between gap-compact border-b-[0.0625rem] border-b-[#e8edf4] text-caption/[inherit]"
                       key={name}
                     >
                       <dt className="text-[#748399] max-w-[60%]">{name}</dt>

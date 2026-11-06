@@ -98,9 +98,9 @@ export function Compare({
   const regressions = data ? regressionCount(data.deltas) : 0;
   return (
     <>
-      <div className="flex justify-between items-center mb-[26px] gap-md [@media(max-width:760px)]:items-start [@media(max-width:760px)]:flex-col">
+      <div className="flex justify-between items-center mb-6.5 gap-md max-[47.5rem]:items-start max-[47.5rem]:flex-col">
         <div className="min-w-0">
-          <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-compact">
+          <span className="block text-xs/[inherit] tracking-[0.08125rem] text-[#6b7f99] font-heading mb-compact">
             COMPARE · {ids.length} RUNS
           </span>
           <Title order={1}>Compare runs</Title>
@@ -109,7 +109,7 @@ export function Compare({
             baseline run.
           </Text>
         </div>
-        <div className="flex flex-wrap items-center gap-compact [@media(max-width:760px)]:w-full">
+        <div className="flex flex-wrap items-center gap-compact max-[47.5rem]:w-full">
           <Button onClick={onBack}>Back to catalog</Button>
         </div>
       </div>
@@ -130,7 +130,7 @@ export function Compare({
             component="section"
             p="panel"
             mb="comfortable"
-            className="flex flex-wrap items-end gap-[14px]"
+            className="flex flex-wrap items-end gap-3.5"
             aria-label="Regression rule"
           >
             <div className="basis-full">
@@ -153,7 +153,7 @@ export function Compare({
             </NativeSelect>
             <TextInput
               label="Threshold %"
-              className="w-[110px]"
+              className="w-27.5"
               type="number"
               min={0}
               step={1}
@@ -164,7 +164,7 @@ export function Compare({
             />
             <TextInput
               label="Latency floor µs"
-              className="w-[110px]"
+              className="w-27.5"
               type="number"
               min={0}
               value={draft.latency_floor_us ?? ""}
@@ -174,7 +174,7 @@ export function Compare({
             />
             <TextInput
               label="Min operations"
-              className="w-[110px]"
+              className="w-27.5"
               type="number"
               min={0}
               value={draft.min_ops ?? ""}
@@ -216,7 +216,7 @@ export function Compare({
           )}
           <Paper
             component="section"
-            className="mb-panel p-panel [@media(max-width:760px)]:p-[17px]"
+            className="mb-panel p-panel max-[47.5rem]:p-4.25"
           >
             <div data-spt-legacy="" className="run-log-heading">
               <Title order={2} className="flex-auto">
@@ -460,7 +460,7 @@ export function DeltaTable({
                             size="caption"
                             c="var(--spt-text-muted)"
                             lh="normal"
-                            className="mt-[3px] block"
+                            className="mt-0.75 block"
                           >
                             {d.reason}
                           </Text>

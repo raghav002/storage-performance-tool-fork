@@ -1,4 +1,5 @@
 @layer theme, base, mantine, components, utilities;
+
 @import "tailwindcss/theme.css" layer(theme);
 @import "@mantine/core/styles.layer.css";
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
@@ -7,6 +8,7 @@
 @source "../index.html";
 @source not "./**/*.{test,spec}.{ts,tsx}";
 @source not "./**/__tests__/**";
+
 @theme inline {
   --color-primary: var(--mantine-primary-color-filled);
   --color-foreground: var(--spt-text-primary);
@@ -60,24 +62,6 @@
   --leading-code: var(--mantine-line-height-code);
 }
 
-:root {
-  font-family: var(--mantine-font-family);
-  color: var(--spt-text-primary);
-  background: var(--spt-surface-page);
-  font-synthesis: none;
-  /* Keep the root unit baseline independent of component font-size tokens. */
-  font-size: 14px;
-  color-scheme: light;
-}
-* {
-  box-sizing: border-box;
-}
-body {
-  margin: 0;
-  font: inherit;
-  color: inherit;
-  background: inherit;
-}
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

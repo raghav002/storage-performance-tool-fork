@@ -41,9 +41,9 @@ export function ConnectRun({
 
   return (
     <>
-      <div className="flex justify-between items-center mb-[26px] gap-md [@media(max-width:760px)]:items-start [@media(max-width:760px)]:flex-col">
+      <div className="flex justify-between items-center mb-6.5 gap-md max-[47.5rem]:items-start max-[47.5rem]:flex-col">
         <div className="min-w-0">
-          <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-compact">
+          <span className="block text-xs/[inherit] tracking-[0.08125rem] text-[#6b7f99] font-heading mb-compact">
             READ ONLY MONITORING
           </span>
           <Title order={1}>Connect to an active run</Title>
@@ -68,23 +68,23 @@ export function ConnectRun({
       )}
       <Paper
         component="section"
-        className="mb-panel max-w-[880px] p-wide [@media(max-width:760px)]:p-[17px]"
+        className="mb-panel max-w-220 p-wide max-[47.5rem]:p-4.25"
       >
         {attached ? (
           <>
-            <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-compact">
+            <span className="block text-xs/[inherit] tracking-[0.08125rem] text-[#6b7f99] font-heading mb-compact">
               CURRENT CONNECTION
             </span>
             <Title order={2} className="mt-compact">
               Monitoring {state?.connection?.host}
             </Title>
-            <Text className="mt-xs max-w-[650px]">
+            <Text className="mt-xs max-w-162.5">
               Run {state?.connection?.run_id ?? "—"} · Updates with the SPT
               status API and live metrics endpoint on port 9999.
             </Text>
-            <div className="flex items-center justify-between gap-md mt-wide [@media(max-width:620px)]:items-stretch [@media(max-width:620px)]:flex-col">
+            <div className="flex items-center justify-between gap-md mt-wide max-[38.75rem]:items-stretch max-[38.75rem]:flex-col">
               <span className="inline-flex items-center gap-xs text-[#356c58] text-sm/[inherit]">
-                <i className="inline-block w-[7px] h-[7px] bg-[#188a82] rounded-full mr-xs" />{" "}
+                <i className="inline-block w-1.75 h-1.75 bg-[#188a82] rounded-full mr-xs" />{" "}
                 Connected · read only
               </span>
               <div className="flex flex-wrap items-center gap-compact">
@@ -101,13 +101,13 @@ export function ConnectRun({
           </>
         ) : (
           <>
-            <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-compact">
+            <span className="block text-xs/[inherit] tracking-[0.08125rem] text-[#6b7f99] font-heading mb-compact">
               EXISTING SPT RUN
             </span>
             <Title order={2} className="mt-compact">
               Choose its entry machine
             </Title>
-            <Text className="mt-xs max-w-[650px]">
+            <Text className="mt-xs max-w-162.5">
               SPT’s entry machine serves the documented /status and
               /metrics/json APIs. Choose a client machine already saved in
               Storage configuration.
@@ -115,7 +115,7 @@ export function ConnectRun({
             {hosts.length ? (
               <NativeSelect
                 label="Entry machine"
-                className="my-[26px] max-w-[420px]"
+                className="my-6.5 max-w-105"
                 value={host}
                 onChange={(event) => setHost(event.target.value)}
                 disabled={busy || offline}
@@ -135,7 +135,7 @@ export function ConnectRun({
                 </Text>
               </div>
             )}
-            <div className="flex items-center justify-between gap-md mt-wide [@media(max-width:620px)]:items-stretch [@media(max-width:620px)]:flex-col">
+            <div className="flex items-center justify-between gap-md mt-wide max-[38.75rem]:items-stretch max-[38.75rem]:flex-col">
               <span className="text-subtle text-xs/[inherit]">
                 The run must already be active on the selected machine.
               </span>

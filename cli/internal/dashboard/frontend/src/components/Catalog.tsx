@@ -62,9 +62,9 @@ export function Catalog({
   const runs = data?.runs ?? [];
   return (
     <>
-      <div className="flex justify-between items-center mb-[26px] gap-md [@media(max-width:760px)]:items-start [@media(max-width:760px)]:flex-col">
+      <div className="flex justify-between items-center mb-6.5 gap-md max-[47.5rem]:items-start max-[47.5rem]:flex-col">
         <div className="min-w-0">
-          <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-compact">
+          <span className="block text-xs/[inherit] tracking-[0.08125rem] text-[#6b7f99] font-heading mb-compact">
             RESULTS CATALOG · READ ONLY
           </span>
           <Title order={1}>Results catalog</Title>
@@ -74,7 +74,7 @@ export function Catalog({
             deletes results.
           </Text>
         </div>
-        <div className="flex flex-wrap items-center gap-compact [@media(max-width:760px)]:w-full">
+        <div className="flex flex-wrap items-center gap-compact max-[47.5rem]:w-full">
           <Button
             onClick={() => {
               void catalog.refetch();
@@ -102,7 +102,7 @@ export function Catalog({
         component="section"
         p="panel"
         mb="comfortable"
-        className="flex flex-wrap items-end gap-[14px]"
+        className="flex flex-wrap items-end gap-3.5"
         aria-label="Filters"
       >
         <TextInput
@@ -111,7 +111,7 @@ export function Catalog({
           value={filters.q}
           placeholder="Run name, label, size, endpoint host"
           onChange={(e) => setFilters({ ...filters, q: e.target.value })}
-          className="min-w-0 flex-[1_1_280px]"
+          className="min-w-0 flex-[1_1_17.5rem]"
         />
         <NativeSelect
           label="Source"
@@ -288,7 +288,7 @@ function CatalogRow({
         <Table.Td
           ff="monospace"
           fz="caption"
-          className="min-w-[180px] max-w-[300px] whitespace-normal wrap-anywhere"
+          className="min-w-45 max-w-75 whitespace-normal wrap-anywhere"
         >
           {run.id}
           <Text
@@ -296,7 +296,7 @@ function CatalogRow({
             size="caption"
             c="var(--spt-text-muted)"
             lh="normal"
-            className="mt-[3px] block"
+            className="mt-0.75 block"
           >
             {run.source === "dashboard" ? "Dashboard" : "CLI"}
             {run.label ? ` · ${run.label}` : ""}
@@ -310,7 +310,7 @@ function CatalogRow({
                 .replace("Z", "")
             : "—"}
         </Table.Td>
-        <Table.Td className="min-w-[160px] whitespace-normal">
+        <Table.Td className="min-w-40 whitespace-normal">
           {runSettings(run)}
         </Table.Td>
         <Table.Td>
@@ -320,7 +320,7 @@ function CatalogRow({
             size="caption"
             c="var(--spt-text-muted)"
             lh="normal"
-            className="mt-[3px] block"
+            className="mt-0.75 block"
           >
             {integrityText[run.integrity]}
           </Text>
@@ -333,7 +333,7 @@ function CatalogRow({
                 size="caption"
                 c="var(--spt-text-secondary)"
                 lh="normal"
-                className="my-[3px] mr-compact inline-block"
+                className="my-0.75 mr-compact inline-block"
                 key={p.key}
               >
                 {p.key} {fmt(p.iops, 1)}
@@ -387,9 +387,9 @@ function CatalogRow({
                 ))}
               </ul>
             )}
-            <dl className="grid grid-cols-2 gap-lg [@media(max-width:760px)]:grid-cols-1">
+            <dl className="grid grid-cols-2 gap-lg max-[47.5rem]:grid-cols-1">
               <div>
-                <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                <dt className="text-muted text-caption/[inherit] mb-1.75">
                   Endpoint host
                 </dt>
                 <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
@@ -397,7 +397,7 @@ function CatalogRow({
                 </dd>
               </div>
               <div>
-                <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                <dt className="text-muted text-caption/[inherit] mb-1.75">
                   S3 driver
                 </dt>
                 <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
@@ -405,7 +405,7 @@ function CatalogRow({
                 </dd>
               </div>
               <div>
-                <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                <dt className="text-muted text-caption/[inherit] mb-1.75">
                   CLI / engine
                 </dt>
                 <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
@@ -413,7 +413,7 @@ function CatalogRow({
                 </dd>
               </div>
               <div>
-                <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                <dt className="text-muted text-caption/[inherit] mb-1.75">
                   Summary file
                 </dt>
                 <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
@@ -495,8 +495,8 @@ function RunArtifacts({ runId }: { runId: string }) {
   const items = artifacts.data?.artifacts;
   const error = artifacts.error?.message ?? "";
   return (
-    <section className="mt-[1.25rem]" aria-label="Run artifacts">
-      <Title order={3} size="md" className="mb-[5px]">
+    <section className="mt-lg" aria-label="Run artifacts">
+      <Title order={3} size="md" className="mb-1.25">
         Artifacts
       </Title>
       <Text size="sm" className="my-comfortable">
@@ -513,7 +513,7 @@ function RunArtifacts({ runId }: { runId: string }) {
           Loading artifacts…
         </Text>
       ) : items && items.length === 0 ? (
-        <div className="px-0 py-[0.75rem] text-center">
+        <div className="px-0 py-sm text-center">
           <Title order={4} size="md">
             No downloadable artifacts
           </Title>
@@ -523,10 +523,10 @@ function RunArtifacts({ runId }: { runId: string }) {
           </Text>
         </div>
       ) : (
-        <ul className="mx-0 p-0 list-none mt-[0.75rem] mb-0 grid gap-[0.65rem]">
+        <ul className="mx-0 p-0 list-none mt-sm mb-0 grid gap-[0.65rem]">
           {(items ?? []).map((a) => (
             <li
-              className="flex flex-wrap items-center gap-[0.5rem_1rem]"
+              className="flex flex-wrap items-center gap-y-xs gap-x-md"
               key={a.name}
             >
               <Button
@@ -536,8 +536,8 @@ function RunArtifacts({ runId }: { runId: string }) {
               >
                 Download {a.type}
               </Button>
-              <span className="flex flex-wrap gap-[0.5rem_0.75rem] items-baseline">
-                <span className="px-[0.4rem] py-[0.1rem] text-[0.75rem]/[inherit] font-semibold tracking-[0.04em] rounded-[0.25rem] bg-[#e8eef9] text-[#1e3a8a]">
+              <span className="flex flex-wrap gap-y-xs gap-x-sm items-baseline">
+                <span className="px-[0.4rem] py-[0.1rem] text-sm/[inherit] font-semibold tracking-[0.04em] rounded-[0.25rem] bg-[#e8eef9] text-[#1e3a8a]">
                   {a.kind.toUpperCase()}
                 </span>
                 <span className="text-subtle text-xs/[inherit]">{a.name}</span>

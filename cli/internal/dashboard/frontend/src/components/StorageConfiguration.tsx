@@ -86,8 +86,8 @@ export function StorageConfiguration({
 
   return (
     <>
-      <div className="mx-0 my-section p-comfortable flex gap-[26px] items-center flex-wrap bg-surface-subtle border border-border rounded-md [@media(max-width:760px)]:gap-comfortable">
-        <div className="grid gap-[7px] min-w-0">
+      <div className="mx-0 my-section p-comfortable flex gap-6.5 items-center flex-wrap bg-surface-subtle border-[0.0625rem] border-border rounded-md max-[47.5rem]:gap-comfortable">
+        <div className="grid gap-1.75 min-w-0">
           <span className="text-xs/[inherit] text-muted">
             S3 endpoint in use
           </span>
@@ -95,7 +95,7 @@ export function StorageConfiguration({
             {target.endpoint_label || "Not configured"}
           </strong>
         </div>
-        <div className="grid gap-[7px] min-w-0">
+        <div className="grid gap-1.75 min-w-0">
           <span className="text-xs/[inherit] text-muted">Bucket</span>
           <strong className="text-sm/[inherit] wrap-anywhere">
             {target.bucket || "Not reported"}
@@ -155,7 +155,7 @@ export function StorageConfiguration({
             ))}
           </ul>
           <Button
-            leftSection={<Plus size={16} aria-hidden="true" />}
+            leftSection={<Plus size="1rem" aria-hidden="true" />}
             type="button"
             disabled={form.hosts.length >= saved.max_hosts}
             onClick={() => setForm({ ...form, hosts: [...form.hosts, ""] })}
@@ -171,7 +171,7 @@ export function StorageConfiguration({
             {form.hosts.length} of {saved.max_hosts}
           </Text>
           <TextInput
-            className="mt-[26px] mb-panel"
+            className="mt-6.5 mb-panel"
             label="S3 endpoint (optional)"
             type="url"
             placeholder={

@@ -212,7 +212,7 @@ function PreviousRunPicker({
     <div className="flex flex-wrap items-end gap-compact">
       <NativeSelect
         label="Completed benchmark"
-        className="min-w-[170px] flex-1"
+        className="min-w-42.5 flex-1"
         value={previousID}
         onChange={(e) => setChosenID(e.target.value)}
       >
@@ -333,9 +333,9 @@ function ExpertWorkspace({
   }
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_275px] items-start gap-[25px] mt-panel [@media(max-width:1000px)]:grid-cols-1">
+    <div className="grid grid-cols-[minmax(0,1fr)_17.1875rem] items-start gap-6.25 mt-panel max-[62.5rem]:grid-cols-1">
       <div className="min-w-0">
-        <div className="flex flex-col gap-[5px]">
+        <div className="flex flex-col gap-1.25">
           <strong className="text-base/[inherit] text-foreground">
             Start from
           </strong>
@@ -344,7 +344,7 @@ function ExpertWorkspace({
           </span>
         </div>
         <div
-          className="my-[14px] mb-compact grid grid-cols-2 gap-[9px] [@media(max-width:560px)]:grid-cols-1"
+          className="my-3.5 mb-compact grid grid-cols-2 gap-2.25 max-[35rem]:grid-cols-1"
           role="group"
           aria-label="Start expert configuration"
         >
@@ -365,7 +365,7 @@ function ExpertWorkspace({
               justify="flex-start"
               classNames={{
                 label:
-                  "flex-col items-start gap-[5px] whitespace-normal text-left",
+                  "flex-col items-start gap-1.25 whitespace-normal text-left",
               }}
               aria-pressed={start === key}
               onClick={() => setStart(key)}
@@ -379,12 +379,12 @@ function ExpertWorkspace({
             </Button>
           ))}
         </div>
-        <div className="p-[14px] bg-surface-subtle border border-border rounded-md">
+        <div className="p-3.5 bg-surface-subtle border-[0.0625rem] border-border rounded-md">
           {start === "new" && (
             <div className="flex flex-wrap items-end gap-compact">
               <NativeSelect
                 label="Starting preset"
-                className="min-w-[170px] flex-1"
+                className="min-w-42.5 flex-1"
                 defaultValue="default"
                 onChange={(e) => {
                   const preset = expertPresets.find(
@@ -409,7 +409,7 @@ function ExpertWorkspace({
             <div className="flex flex-wrap items-end gap-compact">
               <NativeSelect
                 label="Saved configurations"
-                className="min-w-[170px] flex-1"
+                className="min-w-42.5 flex-1"
                 value={chosenProfile}
                 onChange={(e) => setChosenProfile(e.target.value)}
               >
@@ -475,7 +475,7 @@ function ExpertWorkspace({
                 <Text
                   c={importError ? "#b73a2b" : "#23754e"}
                   size="caption"
-                  className="mt-[9px]"
+                  className="mt-2.25"
                   role="status"
                 >
                   {commandMessage}
@@ -485,7 +485,7 @@ function ExpertWorkspace({
           )}
         </div>
 
-        <div className="flex flex-col gap-[5px] mt-[23px]">
+        <div className="flex flex-col gap-1.25 mt-5.75">
           <strong className="text-base/[inherit] text-foreground">
             {workloadName} · Essential settings
           </strong>
@@ -511,31 +511,31 @@ function ExpertWorkspace({
                 the Dashboard API. Defaults are enforced by the Go server.
               </Text>
               <dl className="mx-0 mt-compact mb-0">
-                <div className="px-0 py-xs flex justify-between gap-sm border-b border-b-[#e7edf5] text-caption/[inherit]">
+                <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
                   <dt className="text-muted">Maximum objects</dt>
                   <dd className="m-0 font-heading text-right wrap-anywhere">
                     {limits.expert.object_count.max.toLocaleString("en-US")}
                   </dd>
                 </div>
-                <div className="px-0 py-xs flex justify-between gap-sm border-b border-b-[#e7edf5] text-caption/[inherit]">
+                <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
                   <dt className="text-muted">Maximum threads / client</dt>
                   <dd className="m-0 font-heading text-right wrap-anywhere">
                     {limits.expert.threads.max}
                   </dd>
                 </div>
-                <div className="px-0 py-xs flex justify-between gap-sm border-b border-b-[#e7edf5] text-caption/[inherit]">
+                <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
                   <dt className="text-muted">Maximum object size</dt>
                   <dd className="m-0 font-heading text-right wrap-anywhere">
                     {formatBytes(limits.expert.object_size_bytes.max)}
                   </dd>
                 </div>
-                <div className="px-0 py-xs flex justify-between gap-sm border-b border-b-[#e7edf5] text-caption/[inherit]">
+                <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
                   <dt className="text-muted">Maximum runtime</dt>
                   <dd className="m-0 font-heading text-right wrap-anywhere">
                     {limits.expert.max_runtime_seconds.max}s
                   </dd>
                 </div>
-                <div className="px-0 py-xs flex justify-between gap-sm border-b border-b-[#e7edf5] text-caption/[inherit]">
+                <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
                   <dt className="text-muted">Maximum data</dt>
                   <dd className="m-0 font-heading text-right wrap-anywhere">
                     {formatBytes(limits.expert.max_total_bytes)}
@@ -547,13 +547,13 @@ function ExpertWorkspace({
         </Accordion>
       </div>
       <aside
-        className="p-lg border border-[#dbe5f0] rounded-lg bg-[#f7fafe] sticky top-[20px] min-w-0 [@media(max-width:1000px)]:static"
+        className="p-lg border-[0.0625rem] border-[#dbe5f0] rounded-lg bg-[#f7fafe] sticky top-lg min-w-0 max-[62.5rem]:static"
         aria-label="Expert configuration summary"
       >
-        <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-[9px]">
+        <span className="block text-xs/[inherit] tracking-[0.08125rem] text-[#6b7f99] font-heading mb-2.25">
           CONFIGURATION SUMMARY
         </span>
-        <Title order={3} size="lg" className="mb-[3px]">
+        <Title order={3} size="lg" className="mb-0.75">
           {workloadName}
         </Title>
         <span className="text-[#697c93] text-caption/[inherit]">
@@ -565,13 +565,13 @@ function ExpertWorkspace({
               : "Storage not verified"}
         </span>
         <dl className="mx-0 mt-compact mb-0">
-          <div className="px-0 py-xs flex justify-between gap-sm border-b border-b-[#e7edf5] text-caption/[inherit]">
+          <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
             <dt className="text-muted">Maximum objects</dt>
             <dd className="m-0 font-heading text-right wrap-anywhere">
               {draft.object_count || "—"}
             </dd>
           </div>
-          <div className="px-0 py-xs flex justify-between gap-sm border-b border-b-[#e7edf5] text-caption/[inherit]">
+          <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
             <dt className="text-muted">Object size</dt>
             <dd className="m-0 font-heading text-right wrap-anywhere">
               {draft.size_amount
@@ -579,13 +579,13 @@ function ExpertWorkspace({
                 : "—"}
             </dd>
           </div>
-          <div className="px-0 py-xs flex justify-between gap-sm border-b border-b-[#e7edf5] text-caption/[inherit]">
+          <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
             <dt className="text-muted">Threads / client</dt>
             <dd className="m-0 font-heading text-right wrap-anywhere">
               {draft.threads || "—"}
             </dd>
           </div>
-          <div className="px-0 py-xs flex justify-between gap-sm border-b border-b-[#e7edf5] text-caption/[inherit]">
+          <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
             <dt className="text-muted">Safety limit</dt>
             <dd className="m-0 font-heading text-right wrap-anywhere">
               {draft.max_runtime_seconds
@@ -594,7 +594,7 @@ function ExpertWorkspace({
             </dd>
           </div>
         </dl>
-        <div className="p-sm flex flex-col gap-[5px] mt-[14px] bg-[var(--mantine-color-spt-1)] rounded-control text-caption/[inherit]">
+        <div className="p-sm flex flex-col gap-1.25 mt-3.5 bg-(--mantine-color-spt-1) rounded-control text-caption/[inherit]">
           <strong>Maximum test data</strong>
           <span className="text-emphasis/[inherit] font-bold text-[#176aca]">
             {Number.isFinite(volume) ? formatBytes(volume) : "—"}
@@ -602,18 +602,18 @@ function ExpertWorkspace({
         </div>
         <div className="mx-0 my-md text-caption/[inherit]">
           <strong>Modified from defaults</strong>
-          <div className="flex gap-[5px] flex-wrap mt-[9px]">
+          <div className="flex gap-1.25 flex-wrap mt-2.25">
             {changed.length ? (
               changed.map(([, label]) => (
                 <span
-                  className="px-[7px] py-xxs rounded-chip bg-[#e4effe] text-[var(--mantine-color-spt-7)] text-xs/[inherit]"
+                  className="px-1.75 py-xxs rounded-chip bg-[#e4effe] text-(--mantine-color-spt-7) text-xs/[inherit]"
                   key={label}
                 >
                   {label}
                 </span>
               ))
             ) : (
-              <span className="px-[7px] py-xxs rounded-chip bg-[#e8edf3] text-muted text-xs/[inherit]">
+              <span className="px-1.75 py-xxs rounded-chip bg-[#e8edf3] text-muted text-xs/[inherit]">
                 Using defaults
               </span>
             )}
@@ -641,7 +641,7 @@ function ExpertWorkspace({
             </Accordion.Panel>
           </Accordion.Item>
         </Accordion>
-        <div className="grid gap-xs mt-comfortable pt-[15px] border-t border-t-border">
+        <div className="grid gap-xs mt-comfortable pt-3.75 border-t-[0.0625rem] border-t-border">
           <TextInput
             label="Save this configuration"
             id="expert-profile-name"
@@ -725,9 +725,9 @@ export function Configure({
   }
   return (
     <div
-      className={`mx-auto my-[15px] ${mode === "expert" ? "max-w-[1210px]" : "max-w-[800px]"}`}
+      className={`mx-auto my-3.75 ${mode === "expert" ? "max-w-302.5" : "max-w-200"}`}
     >
-      <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-compact">
+      <span className="block text-xs/[inherit] tracking-[0.08125rem] text-[#6b7f99] font-heading mb-compact">
         NEW BENCHMARK
       </span>
       <Title order={1}>Configure a run</Title>
@@ -743,9 +743,9 @@ export function Configure({
       )}
       <Paper
         component="section"
-        className="mb-panel p-panel [@media(max-width:760px)]:p-[17px]"
+        className="mb-panel p-panel max-[47.5rem]:p-4.25"
       >
-        <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-compact">
+        <span className="block text-xs/[inherit] tracking-[0.08125rem] text-[#6b7f99] font-heading mb-compact">
           STEP 1
         </span>
         <Title order={2}>Storage configuration</Title>
@@ -757,9 +757,9 @@ export function Configure({
       </Paper>
       <Paper
         component="section"
-        className="mb-panel p-panel [@media(max-width:760px)]:p-[17px]"
+        className="mb-panel p-panel max-[47.5rem]:p-4.25"
       >
-        <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-compact">
+        <span className="block text-xs/[inherit] tracking-[0.08125rem] text-[#6b7f99] font-heading mb-compact">
           STEP 2
         </span>
         <Title order={2}>
@@ -776,7 +776,7 @@ export function Configure({
             setReview(false);
           }}
         >
-          <div className="my-comfortable grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-sm">
+          <div className="my-comfortable grid grid-cols-[repeat(auto-fit,minmax(min(15rem,100%),1fr))] gap-sm">
             <Radio
               value="s3"
               label="S3 write + verify"
@@ -811,9 +811,9 @@ export function Configure({
                   machine
                   {clients === 1 ? "" : "s"}
                 </Title>
-                <dl className="grid grid-cols-2 gap-lg [@media(max-width:760px)]:grid-cols-1">
+                <dl className="grid grid-cols-2 gap-lg max-[47.5rem]:grid-cols-1">
                   <div>
-                    <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                    <dt className="text-muted text-caption/[inherit] mb-1.75">
                       Maximum objects
                     </dt>
                     <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
@@ -821,7 +821,7 @@ export function Configure({
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                    <dt className="text-muted text-caption/[inherit] mb-1.75">
                       Object size
                     </dt>
                     <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
@@ -829,7 +829,7 @@ export function Configure({
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                    <dt className="text-muted text-caption/[inherit] mb-1.75">
                       Parallel threads
                     </dt>
                     <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
@@ -837,7 +837,7 @@ export function Configure({
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-muted text-caption/[inherit] mb-[7px]">
+                    <dt className="text-muted text-caption/[inherit] mb-1.75">
                       Safety time limit
                     </dt>
                     <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
@@ -857,7 +857,7 @@ export function Configure({
                   </Text>
                 )}
                 {mode === "expert" && (
-                  <div className="mt-[14px]">
+                  <div className="mt-3.5">
                     <strong className="text-sm/[inherit]">
                       CLI settings preview
                     </strong>
@@ -985,7 +985,7 @@ function GuidedFields({
     />
   );
   return (
-    <div className="my-xl grid grid-cols-2 gap-panel [@media(max-width:760px)]:grid-cols-1">
+    <div className="my-xl grid grid-cols-2 gap-panel max-[47.5rem]:grid-cols-1">
       {select(
         "object_count",
         "Maximum objects",
@@ -1051,7 +1051,7 @@ function ExpertFields({
     />
   );
   return (
-    <div className="mt-[15px] mb-lg grid grid-cols-2 gap-[15px] [@media(max-width:760px)]:grid-cols-1">
+    <div className="mt-3.75 mb-lg grid grid-cols-2 gap-3.75 max-[47.5rem]:grid-cols-1">
       {number(
         "object_count",
         "Maximum objects",

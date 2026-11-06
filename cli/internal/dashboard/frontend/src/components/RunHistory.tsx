@@ -29,9 +29,9 @@ export function RunHistory({
   };
   return (
     <>
-      <div className="flex justify-between items-center mb-[26px] gap-md [@media(max-width:760px)]:items-start [@media(max-width:760px)]:flex-col">
+      <div className="flex justify-between items-center mb-6.5 gap-md max-[47.5rem]:items-start max-[47.5rem]:flex-col">
         <div className="min-w-0">
-          <span className="block text-xs/[inherit] tracking-[1.3px] text-[#6b7f99] font-heading mb-compact">
+          <span className="block text-xs/[inherit] tracking-[0.08125rem] text-[#6b7f99] font-heading mb-compact">
             SAVED BENCHMARKS
           </span>
           <Title order={1}>Run history</Title>
@@ -39,7 +39,7 @@ export function RunHistory({
             SPT result folders saved on the project VM.
           </Text>
         </div>
-        <div className="flex flex-wrap items-center gap-compact [@media(max-width:760px)]:w-full">
+        <div className="flex flex-wrap items-center gap-compact max-[47.5rem]:w-full">
           <Button
             onClick={() => {
               onRefresh();
@@ -94,7 +94,7 @@ export function RunHistory({
                         size="xs"
                         c="var(--spt-text-muted)"
                         lh="normal"
-                        className="mt-[5px] block"
+                        className="mt-1.25 block"
                       >
                         {run.options?.threads ?? "—"} thread(s)
                       </Text>
@@ -110,7 +110,7 @@ export function RunHistory({
                             size="caption"
                             c="var(--spt-text-secondary)"
                             lh="normal"
-                            className="my-[3px] mr-compact inline-block"
+                            className="my-0.75 mr-compact inline-block"
                             key={phase.phase}
                           >
                             {phaseName(phase.phase)} {fmt(phase.successful_ops)}

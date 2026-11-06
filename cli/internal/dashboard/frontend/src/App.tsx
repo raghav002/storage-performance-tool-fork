@@ -69,7 +69,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex min-h-screen max-[47.5rem]:block">
+    <div className="flex min-h-screen max-[47.5rem]:flex-col">
       <AppSidebar
         state={state}
         error={error}
@@ -83,7 +83,7 @@ export default function App() {
           }
         }}
       />
-      <div className="min-w-0 flex-1">
+      <div className="flex min-w-0 flex-1 flex-col">
         <AppHeader
           state={state}
           error={error}
@@ -95,7 +95,7 @@ export default function App() {
             if (page !== "configure") showDashboard();
           }}
         />
-        <main className="mx-auto max-w-387.5 px-xxl py-8 min-[93.75rem]:pt-10 max-[71.875rem]:p-section max-[47.5rem]:px-md max-[47.5rem]:py-panel">
+        <main className="mx-auto w-full min-w-0 max-w-387.5 flex-1 px-xxl py-8 min-[93.75rem]:pt-10 max-[71.875rem]:p-section max-[47.5rem]:px-md max-[47.5rem]:py-panel">
           {error && (
             <Alert color="red" role="alert">
               <strong>Connection unavailable. </strong>

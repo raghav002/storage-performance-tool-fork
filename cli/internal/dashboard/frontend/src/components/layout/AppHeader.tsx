@@ -16,7 +16,7 @@ export function AppHeader({
     <Box
       component="header"
       bg="#ffffffc9"
-      className="flex h-19 items-center justify-between border-b-[0.0625rem] border-divider px-xxl max-[71.875rem]:px-section max-[47.5rem]:h-auto max-[47.5rem]:min-h-19 max-[47.5rem]:flex-wrap max-[47.5rem]:gap-xs max-[47.5rem]:p-md"
+      className="flex h-19 shrink-0 items-center justify-between border-b-[0.0625rem] border-divider px-xxl max-[71.875rem]:px-section max-[47.5rem]:h-auto max-[47.5rem]:min-h-19 max-[47.5rem]:flex-wrap max-[47.5rem]:gap-xs max-[47.5rem]:p-md"
     >
       <Text component="span" size="sm" c="var(--spt-text-muted)" lh="normal">
         Benchmark workspace

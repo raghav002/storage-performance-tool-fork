@@ -27,6 +27,26 @@ Open `http://127.0.0.1:8000` directly or through an SSH tunnel. See `../README.m
 
 For source development, `npm run dev` uses Vite on port 5173 and proxies reads to the backend on port 8000. **Live run submission requires the production Go server origin**; its same-origin check intentionally rejects cross-port requests. Use the built dashboard at port 8000 for actual runs.
 
+## Code structure
+
+`src/App.tsx` chooses which screen and run to show. It uses React state to switch screens, and TanStack Router has not been added. The `pages/` folder contains screens and their own components, while `components/` contains UI used by several screens. Its `layout/` folder contains the sidebar, header, and footer.
+
+The `api/` folder contains server requests and TanStack Query code, while shared chart settings live in `charts/echarts.ts`. The main `types.ts` file describes shared data, and `pages/types.ts` lists screen names. These folders and files are under `src/`.
+
+## Theme
+
+The theme is split into four files, with `theme/index.ts` putting it together and `theme/tokens.ts` storing shared colors and values. `theme/components.ts` sets how Mantine components look, while `theme/cssVariables.ts` makes theme values available to CSS.
+
+## Styling
+
+Use Mantine for buttons, inputs, tables, and their appearance. Use Tailwind for layout, spacing, and custom containers. Reuse shared theme values when they fit, and use regular Tailwind classes when they match the value you need. Keep custom `rem` values when needed, and use CSS modules only when Tailwind cannot handle the styling cleanly.
+
+Mantine provides the base styles, so Tailwind Preflight is turned off. `styles.css` connects Tailwind to the theme, and it reduces animation when the user requests it.
+
+## Checks
+
+Run `npm run lint`, `npm run format:check`, and `npm run typecheck` to check the code. Run `npm test` for tests and `npm run build` to build the dashboard. Use `npm run format` to fix formatting. Run these commands from the frontend folder, and commit UI changes together with the rebuilt `../server/index.html`.
+
 ## Data and controls
 
 - GET `/api/state`, refreshed every two seconds; a visible error identifies stale state and disables run submission. It also carries `limits`, the values each run mode accepts.

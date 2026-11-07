@@ -114,6 +114,8 @@ public class TestConfigBuilder {
 			return Boolean.class;
 		case "list":
 			return List.class;
+		case "map":
+			return Map.class;
 		case "any":
 			return Object.class;
 		default:
@@ -189,6 +191,9 @@ public class TestConfigBuilder {
 		stepLimit.put("size", "100MB");
 		stepLimit.put("time", "60s");
 		step.put("limit", stepLimit);
+		Map<String, Object> stepPreparation = new HashMap<>();
+		stepPreparation.put("timeout", "10m");
+		step.put("preparation", stepPreparation);
 		Map<String, Object> stepNode = new HashMap<>();
 		stepNode.put("addrs", List.of());
 		stepNode.put("port", 9020);
@@ -283,6 +288,7 @@ public class TestConfigBuilder {
 		Map<String, Object> storageNetNode = new HashMap<>();
 		storageNetNode.put("slice", false);
 		storageNet.put("node", storageNetNode);
+		storageNet.put("nodeInterfaces", new HashMap<String, Object>());
 		storage.put("net", storageNet);
 
 		values.put("storage", storage);
@@ -292,6 +298,9 @@ public class TestConfigBuilder {
 		outputSection.put("color", true);
 
 		Map<String, Object> metrics = new HashMap<>();
+		Map<String, Object> metricsBucket = new HashMap<>();
+		metricsBucket.put("enabled", true);
+		metrics.put("bucket", metricsBucket);
 		Map<String, Object> metricsAverage = new HashMap<>();
 		Map<String, Object> metricsAverageAggregation = new HashMap<>();
 		metricsAverageAggregation.put("period", 10);
@@ -314,6 +323,16 @@ public class TestConfigBuilder {
 		metrics.put("trace", metricsTrace);
 
 		metrics.put("threshold", 0.0);
+
+		Map<String, Object> metricsSteadyWarmup = new HashMap<>();
+		metricsSteadyWarmup.put("turnovers", 1.0);
+		Map<String, Object> metricsSteadyMin = new HashMap<>();
+		metricsSteadyMin.put("turnovers", 20.0);
+		metricsSteadyMin.put("duration", "20s");
+		Map<String, Object> metricsSteady = new HashMap<>();
+		metricsSteady.put("warmup", metricsSteadyWarmup);
+		metricsSteady.put("min", metricsSteadyMin);
+		metrics.put("steady", metricsSteady);
 
 		Map<String, Object> metricsTiming = new HashMap<>();
 		metricsTiming.put("persist", false);

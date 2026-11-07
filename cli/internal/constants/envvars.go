@@ -6,10 +6,16 @@ const (
 	EnvSptGitHubToken  = "SPT_GITHUB_TOKEN" // #nosec G101 -- env var name only
 	EnvHosts           = "HOSTS"
 	EnvS3Endpoint      = "S3_ENDPOINT"
+	EnvS3Endpoints     = "S3_ENDPOINTS"
+	EnvThreads         = "THREADS"
+	EnvInterfaces      = "SPT_INTERFACES"
+	EnvHostInterfaces  = "SPT_HOST_INTERFACES"
 	EnvS3AccessKey     = "S3_ACCESS_KEY" // #nosec G101 -- env var names only
 	EnvS3SecretKey     = "S3_SECRET_KEY" // #nosec G101 -- env var names only
 	EnvS3Bucket        = "S3_BUCKET"
+	EnvS3Buckets       = "S3_BUCKETS" // comma-separated target bucket names, as --buckets
 	EnvS3AuthVersion   = "S3_AUTH_VERSION"
+	EnvS3Region        = "S3_REGION"
 	EnvSkipImagePull   = "SPT_SKIP_IMAGE_PULL"
 	EnvSptJavaOpts     = "SPT_JAVA_OPTS"
 	EnvSptLogDir       = "SPT_LOG_DIR"

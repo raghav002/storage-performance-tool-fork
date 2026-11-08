@@ -1,7 +1,9 @@
+import { Button, Code, Fieldset, Text, TextInput } from "@mantine/core";
 import { useEffect, useState } from "react";
 import type { State } from "../types";
 import { useVerifyStorage } from "../api/mutations";
 import { ConnectionGraph } from "./ConnectionGraph";
+import { Status } from "./Status";
 import { endpointError, hostErrors } from "../utils/validation";
 
 type Form = { hosts: string[]; endpoint: string };
@@ -38,9 +40,9 @@ export function StorageConfiguration({
 
   if (!saved || !form)
     return (
-      <p data-spt-legacy="" className="form-help">
+      <Text size="sm" className="my-comfortable">
         Waiting for the dashboard server…
-      </p>
+      </Text>
     );
 
   const v = saved.verification,
@@ -86,13 +88,7 @@ export function StorageConfiguration({
           <span data-spt-legacy="">Bucket</span>
           <strong data-spt-legacy="">{target.bucket || "Not reported"}</strong>
         </div>
-        <span
-          data-spt-legacy=""
-          className={`status ${target.ready ? "good" : "warn"}`}
-        >
-          <i data-spt-legacy="" />
-          {target.ready ? "ready" : "needs setup"}
-        </span>
+        <Status status={target.ready ? "ready" : "needs setup"} />
       </div>
       {!!target.reasons?.length && (
         <div data-spt-legacy="" className="notice">
@@ -106,47 +102,33 @@ export function StorageConfiguration({
           void verify();
         }}
       >
-        <fieldset
-          data-spt-legacy=""
-          className="plain-fieldset"
-          disabled={locked}
-        >
-          <legend data-spt-legacy="">Client machines</legend>
-          <p data-spt-legacy="" className="form-help">
+        <Fieldset legend="Client machines" disabled={locked}>
+          <Text size="sm" className="my-comfortable">
             The machines that generate load. Each needs Docker and key-based SSH
             access from the dashboard host. Enter{" "}
-            <code data-spt-legacy="">user@host</code>, or{" "}
-            <code data-spt-legacy="">127.0.0.1</code> for the dashboard host
-            itself.
-          </p>
-          <ul data-spt-legacy="" className="host-list">
+            <Code fz="caption">user@host</Code>, or{" "}
+            <Code fz="caption">127.0.0.1</Code> for the dashboard host itself.
+          </Text>
+          <ul className="m-0 mb-sm grid list-none gap-compact p-0">
             {form.hosts.map((host, i) => (
-              <li data-spt-legacy="" key={i}>
-                <input
-                  data-spt-legacy=""
+              <li key={i} className="flex items-start gap-compact">
+                <TextInput
+                  className="min-w-0 flex-1"
+                  styles={{
+                    input: {
+                      fontFamily: "var(--mantine-font-family-monospace)",
+                    },
+                  }}
                   aria-label={`Client machine ${i + 1}`}
                   placeholder="user@hostname"
                   autoComplete="off"
                   spellCheck={false}
                   maxLength={300}
                   value={host}
-                  aria-invalid={!!rowErrors[i]}
-                  aria-describedby={
-                    rowErrors[i] ? `host-error-${i}` : undefined
-                  }
+                  error={rowErrors[i]}
                   onChange={(e) => setHost(i, e.target.value)}
                 />
-                {rowErrors[i] && (
-                  <small
-                    data-spt-legacy=""
-                    id={`host-error-${i}`}
-                    className="field-error host-error"
-                  >
-                    {rowErrors[i]}
-                  </small>
-                )}
-                <button
-                  data-spt-legacy=""
+                <Button
                   type="button"
                   disabled={form.hosts.length === 1}
                   aria-label={`Remove client machine ${i + 1}`}
@@ -158,67 +140,54 @@ export function StorageConfiguration({
                   }
                 >
                   Remove
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
-          <button
-            data-spt-legacy=""
+          <Button
             type="button"
             disabled={form.hosts.length >= saved.max_hosts}
             onClick={() => setForm({ ...form, hosts: [...form.hosts, ""] })}
           >
             ＋ Add machine
-          </button>
-          <span data-spt-legacy="" className="subtle host-count">
+          </Button>
+          <Text
+            component="span"
+            size="caption"
+            c="var(--spt-text-subtle)"
+            className="ml-sm"
+          >
             {form.hosts.length} of {saved.max_hosts}
-          </span>
-          <label data-spt-legacy="" className="endpoint-field">
-            S3 endpoint (optional)
-            <input
-              data-spt-legacy=""
-              type="url"
-              placeholder={
-                target.endpoint_source === "env" && target.endpoint
-                  ? `${target.endpoint} (from the host)`
-                  : "https://s3.example.com or http://127.0.0.1:9000"
-              }
-              autoComplete="off"
-              spellCheck={false}
-              maxLength={2048}
-              value={form.endpoint}
-              aria-invalid={!!urlError}
-              aria-describedby={urlError ? "endpoint-error" : undefined}
-              onChange={(e) => setForm({ ...form, endpoint: e.target.value })}
-            />
-            {urlError && (
-              <small
-                data-spt-legacy=""
-                id="endpoint-error"
-                className="field-error"
-              >
-                {urlError}
-              </small>
-            )}
-            <small data-spt-legacy="">
-              Use HTTP or HTTPS. Prefer HTTPS when the endpoint is outside a
-              trusted private network. Leave blank to use the endpoint
-              configured on the host. The bucket and access keys always come
-              from the host.
-            </small>
-          </label>
-        </fieldset>
+          </Text>
+          <TextInput
+            className="mt-[26px] mb-panel"
+            label="S3 endpoint (optional)"
+            type="url"
+            placeholder={
+              target.endpoint_source === "env" && target.endpoint
+                ? `${target.endpoint} (from the host)`
+                : "https://s3.example.com or http://127.0.0.1:9000"
+            }
+            autoComplete="off"
+            spellCheck={false}
+            maxLength={2048}
+            value={form.endpoint}
+            error={urlError}
+            description="Use HTTP or HTTPS. Prefer HTTPS when the endpoint is outside a trusted private network. Leave blank to use the endpoint configured on the host. The bucket and access keys always come from the host."
+            onChange={(e) => setForm({ ...form, endpoint: e.target.value })}
+          />
+        </Fieldset>
         <div data-spt-legacy="" className="actions">
-          <button
-            data-spt-legacy=""
-            className="primary"
+          <Button
+            variant="filled"
+            loading={locked}
             type="submit"
             disabled={
               locked || offline || invalid || state?.job?.status === "running"
             }
           >
             {locked ? "Verifying…" : "Verify connection"}
-          </button>
+          </Button>
           <span data-spt-legacy="" className="subtle" role="status">
             {running
               ? "Checking each machine. This can take a few minutes."

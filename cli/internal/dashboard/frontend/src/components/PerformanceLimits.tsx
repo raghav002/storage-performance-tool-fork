@@ -1,3 +1,4 @@
+import { Button, Text, TextInput } from "@mantine/core";
 import { useState } from "react";
 import type { Row, State } from "../types";
 import { defaults } from "../config";
@@ -111,13 +112,13 @@ function LimitsForm({
           {checks.filter((c) => limits[c.key] !== null).length}/3 set
         </span>
       </summary>
-      <p data-spt-legacy="" className="form-help">
+      <Text size="sm" className="my-comfortable">
         Set your team’s expectations for {state.target.endpoint_label},{" "}
         {o.object_size} objects, and {o.threads} thread
         {o.threads === 1 ? "" : "s"}. These limits stay in this browser and
         apply to the selected phase.
-      </p>
-      <div data-spt-legacy="" className="form-grid limits-grid">
+      </Text>
+      <div className="my-lg grid grid-cols-3 gap-panel [@media(max-width:760px)]:grid-cols-1">
         {checks.map((c) => {
           const limit = limits[c.key],
             value = c.value;
@@ -130,41 +131,38 @@ function LimitsForm({
                   ? "Within limit"
                   : "Outside limit";
           return (
-            <label data-spt-legacy="" key={c.key}>
-              {c.minimum ? "Minimum" : "Maximum"} {c.label} (
-              {c.key === "iops"
-                ? "ops/s"
-                : c.key === "bandwidth"
-                  ? "MiB/s"
-                  : "µs"}
-              )
-              <input
-                data-spt-legacy=""
-                type="number"
-                min="0"
-                step="any"
-                placeholder="No limit set"
-                value={draft[c.key]}
-                onChange={(e) =>
-                  setDraft({ ...draft, [c.key]: e.target.value })
-                }
-              />
-              <span
-                data-spt-legacy=""
-                className={result === "Outside limit" ? "limit-bad" : "subtle"}
-              >
-                {result} · measured {fmt(value, 2)}
-              </span>
-            </label>
+            <TextInput
+              key={c.key}
+              className="min-w-0"
+              label={`${c.minimum ? "Minimum" : "Maximum"} ${c.label} (${
+                c.key === "iops"
+                  ? "ops/s"
+                  : c.key === "bandwidth"
+                    ? "MiB/s"
+                    : "µs"
+              })`}
+              description={`${result} · measured ${fmt(value, 2)}`}
+              descriptionProps={{
+                c:
+                  result === "Outside limit"
+                    ? "var(--spt-threshold-failure)"
+                    : "var(--spt-text-subtle)",
+              }}
+              type="number"
+              min="0"
+              step="any"
+              placeholder="No limit set"
+              value={draft[c.key]}
+              onChange={(e) => setDraft({ ...draft, [c.key]: e.target.value })}
+            />
           );
         })}
       </div>
       <div data-spt-legacy="" className="actions">
-        <button data-spt-legacy="" className="primary" onClick={save}>
+        <Button variant="filled" onClick={save}>
           Save limits
-        </button>
-        <button
-          data-spt-legacy=""
+        </Button>
+        <Button
           onClick={() => {
             try {
               localStorage.removeItem(key);
@@ -177,7 +175,7 @@ function LimitsForm({
           }}
         >
           Clear limits
-        </button>
+        </Button>
         <span data-spt-legacy="" className="subtle" role="status">
           {message}
         </span>

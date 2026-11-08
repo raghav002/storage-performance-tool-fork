@@ -1,3 +1,12 @@
+import {
+  Button,
+  Checkbox,
+  Paper,
+  Radio,
+  Table,
+  Text,
+  Title,
+} from "@mantine/core";
 import { useState } from "react";
 import { useDebouncedValue } from "@mantine/hooks";
 import type { CatalogRun } from "../types";
@@ -55,16 +64,15 @@ export function Catalog({
           <span data-spt-legacy="" className="eyebrow">
             RESULTS CATALOG · READ ONLY
           </span>
-          <h1 data-spt-legacy="">Results catalog</h1>
-          <p data-spt-legacy="">
+          <Title order={1}>Results catalog</Title>
+          <Text size="sm" className="mt-xs wrap-anywhere">
             Dashboard and CLI runs found under{" "}
             {data?.root ?? "the results folder"}. Nothing here changes or
             deletes results.
-          </p>
+          </Text>
         </div>
         <div data-spt-legacy="" className="actions">
-          <button
-            data-spt-legacy=""
+          <Button
             onClick={() => {
               void catalog.refetch();
               if (
@@ -77,15 +85,14 @@ export function Catalog({
             disabled={loading}
           >
             Rescan
-          </button>
-          <button
-            data-spt-legacy=""
-            className="primary"
+          </Button>
+          <Button
+            variant="filled"
             disabled={selected.length < 2}
             onClick={() => onCompare(selected, effectiveBaseline)}
           >
             Compare {selected.length || ""} selected
-          </button>
+          </Button>
         </div>
       </div>
       <section
@@ -155,14 +162,14 @@ export function Catalog({
             </option>
           </select>
         </label>
-        <p data-spt-legacy="" className="form-help">
+        <Text size="sm" className="basis-full">
           Select 2–{maxCompare} runs to compare; the baseline is the run the
           others are checked against. "Compare with previous" pairs this run
           with the next older complete run that shares the same workload, object
           size, threads, and (when recorded) object count, host count, and S3
           driver — not an SPT product version. Falls back to the next older
           complete run when no shape match exists.
-        </p>
+        </Text>
       </section>
       {error && (
         <div data-spt-legacy="" className="error" role="alert">
@@ -174,30 +181,34 @@ export function Catalog({
           The results folder is large; only part of it was scanned.
         </div>
       )}
-      <section data-spt-legacy="" className="panel run-history-panel">
+      <Paper component="section" className="mb-panel">
         {loading && !data ? (
-          <p data-spt-legacy="" className="history-empty">
+          <Text className="px-section py-xxl text-center">
             Scanning results…
-          </p>
+          </Text>
         ) : runs.length ? (
-          <div data-spt-legacy="" className="table-wrap">
-            <table
-              data-spt-legacy=""
-              className="run-history-table catalog-table"
-            >
-              <thead data-spt-legacy="">
-                <tr data-spt-legacy="">
-                  <th data-spt-legacy="">Compare</th>
-                  <th data-spt-legacy="">Baseline</th>
-                  <th data-spt-legacy="">Run</th>
-                  <th data-spt-legacy="">Started · UTC</th>
-                  <th data-spt-legacy="">Settings</th>
-                  <th data-spt-legacy="">Status</th>
-                  <th data-spt-legacy="">Phases · IOPS</th>
-                  <th data-spt-legacy=""></th>
-                </tr>
-              </thead>
-              <tbody data-spt-legacy="">
+          <Table.ScrollContainer
+            minWidth="var(--spt-table-min-width)"
+            aria-label="Results catalog scroll area"
+          >
+            <Table aria-label="Results catalog" stickyHeader>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th scope="col" ta="center">
+                    Compare
+                  </Table.Th>
+                  <Table.Th scope="col" ta="center">
+                    Baseline
+                  </Table.Th>
+                  <Table.Th scope="col">Run</Table.Th>
+                  <Table.Th scope="col">Started · UTC</Table.Th>
+                  <Table.Th scope="col">Settings</Table.Th>
+                  <Table.Th scope="col">Status</Table.Th>
+                  <Table.Th scope="col">Phases · IOPS</Table.Th>
+                  <Table.Th scope="col" aria-label="Actions"></Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
                 {runs.map((run) => (
                   <CatalogRow
                     key={run.id}
@@ -220,24 +231,24 @@ export function Catalog({
                     }
                   />
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
         ) : (
           <div data-spt-legacy="" className="history-empty">
-            <h2 data-spt-legacy="">No runs found</h2>
-            <p data-spt-legacy="">
+            <Title order={2}>No runs found</Title>
+            <Text className="mt-xs">
               {filters.q || filters.source || filters.status
                 ? "No runs match these filters."
                 : "SPT result folders will appear here after a run."}
-            </p>
+            </Text>
           </div>
         )}
-        <p data-spt-legacy="" className="history-footnote">
+        <Text size="caption" className="px-comfortable pb-md">
           {data ? `${runs.length} shown of ${data.total} found.` : ""} Malformed
           or partial folders are listed with what is missing.
-        </p>
-      </section>
+        </Text>
+      </Paper>
     </>
   );
 }
@@ -267,85 +278,127 @@ function CatalogRow({
 }) {
   return (
     <>
-      <tr
-        data-spt-legacy=""
-        className={run.status === "malformed" ? "catalog-malformed" : ""}
+      <Table.Tr
+        bg={
+          run.status === "malformed"
+            ? "var(--spt-status-warning-background)"
+            : undefined
+        }
       >
-        <td data-spt-legacy="">
-          <input
-            data-spt-legacy=""
-            type="checkbox"
+        <Table.Td ta="center">
+          <Checkbox
+            className="inline-flex"
             aria-label={`Compare ${run.id}`}
             checked={checked}
             disabled={!checked && (full || run.status === "malformed")}
             onChange={onToggle}
           />
-        </td>
-        <td data-spt-legacy="">
-          <input
-            data-spt-legacy=""
-            type="radio"
+        </Table.Td>
+        <Table.Td ta="center">
+          <Radio
+            className="inline-flex"
             name="baseline"
             aria-label={`Use ${run.id} as baseline`}
             checked={isBaseline}
             disabled={!checked}
             onChange={onBaseline}
           />
-        </td>
-        <td data-spt-legacy="" className="history-run-id">
+        </Table.Td>
+        <Table.Td
+          ff="monospace"
+          fz="caption"
+          className="min-w-[180px] max-w-[300px] whitespace-normal wrap-anywhere"
+        >
           {run.id}
-          <small data-spt-legacy="">
+          <Text
+            component="small"
+            size="caption"
+            c="var(--spt-text-muted)"
+            lh="normal"
+            className="mt-[3px] block"
+          >
             {run.source === "dashboard" ? "Dashboard" : "CLI"}
             {run.label ? ` · ${run.label}` : ""}
-          </small>
-        </td>
-        <td data-spt-legacy="">
+          </Text>
+        </Table.Td>
+        <Table.Td>
           {run.started_at
             ? run.started_at
                 .replace("T", " ")
                 .replace(/\.\d+/, "")
                 .replace("Z", "")
             : "—"}
-        </td>
-        <td data-spt-legacy="" className="catalog-settings">
+        </Table.Td>
+        <Table.Td className="min-w-[160px] whitespace-normal">
           {runSettings(run)}
-        </td>
-        <td data-spt-legacy="">
+        </Table.Td>
+        <Table.Td>
           <Status status={run.status} />
-          <small data-spt-legacy="">{integrityText[run.integrity]}</small>
-        </td>
-        <td data-spt-legacy="">
+          <Text
+            component="small"
+            size="caption"
+            c="var(--spt-text-muted)"
+            lh="normal"
+            className="mt-[3px] block"
+          >
+            {integrityText[run.integrity]}
+          </Text>
+        </Table.Td>
+        <Table.Td>
           {run.phases.length ? (
             run.phases.map((p) => (
-              <span data-spt-legacy="" className="history-phase" key={p.key}>
+              <Text
+                component="span"
+                size="caption"
+                c="var(--spt-text-secondary)"
+                lh="normal"
+                className="my-[3px] mr-compact inline-block"
+                key={p.key}
+              >
                 {p.key} {fmt(p.iops, 1)}
-              </span>
+              </Text>
             ))
           ) : (
-            <span data-spt-legacy="" className="subtle">
-              No phase totals
-            </span>
-          )}
-        </td>
-        <td data-spt-legacy="" className="catalog-row-actions">
-          <button data-spt-legacy="" aria-expanded={open} onClick={onOpen}>
-            {open ? "Hide" : "Details"}
-          </button>
-          {run.status === "complete" && previous && (
-            <button
-              data-spt-legacy=""
-              type="button"
-              title={`Compare with ${previous.name || previous.id}`}
-              onClick={() => onComparePrevious(previous.id)}
+            <Text
+              component="span"
+              size="xs"
+              c="var(--spt-text-subtle)"
+              lh="normal"
             >
-              Compare with previous
-            </button>
+              No phase totals
+            </Text>
           )}
-        </td>
-      </tr>
+        </Table.Td>
+        <Table.Td>
+          <div className="flex flex-col items-stretch gap-[0.35rem]">
+            <Button
+              className="whitespace-nowrap"
+              aria-expanded={open}
+              onClick={onOpen}
+            >
+              {open ? "Hide" : "Details"}
+            </Button>
+            {run.status === "complete" && previous && (
+              <Button
+                className="whitespace-nowrap"
+                type="button"
+                title={`Compare with ${previous.name || previous.id}`}
+                onClick={() => onComparePrevious(previous.id)}
+              >
+                Compare with previous
+              </Button>
+            )}
+          </div>
+        </Table.Td>
+      </Table.Tr>
       {open && (
-        <tr data-spt-legacy="" className="catalog-detail">
-          <td data-spt-legacy="" colSpan={8}>
+        <Table.Tr>
+          <Table.Td
+            bg="var(--spt-surface-subtle)"
+            p="md"
+            className="whitespace-normal wrap-anywhere"
+            colSpan={8}
+          >
             {run.issues.length > 0 && (
               <ul data-spt-legacy="" className="catalog-issues">
                 {run.issues.map((i) => (
@@ -376,36 +429,59 @@ function CatalogRow({
               </div>
             </dl>
             {run.phases.length > 0 && (
-              <div data-spt-legacy="" className="table-wrap">
-                <table data-spt-legacy="" className="run-history-table">
-                  <thead data-spt-legacy="">
-                    <tr data-spt-legacy="">
-                      <th data-spt-legacy="">Phase</th>
-                      <th data-spt-legacy="">Successful</th>
-                      <th data-spt-legacy="">Failed</th>
-                      <th data-spt-legacy="">Corrupt</th>
-                      <th data-spt-legacy="">IOPS</th>
-                      <th data-spt-legacy="">MiB/s</th>
-                      <th data-spt-legacy="">P50 µs</th>
-                      <th data-spt-legacy="">P99 µs</th>
-                    </tr>
-                  </thead>
-                  <tbody data-spt-legacy="">
+              <Table.ScrollContainer
+                minWidth="var(--spt-table-min-width)"
+                aria-label="Catalog phase details scroll area"
+              >
+                <Table aria-label="Catalog phase details" stickyHeader>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th scope="col">Phase</Table.Th>
+                      <Table.Th scope="col" ta="right">
+                        Successful
+                      </Table.Th>
+                      <Table.Th scope="col" ta="right">
+                        Failed
+                      </Table.Th>
+                      <Table.Th scope="col" ta="right">
+                        Corrupt
+                      </Table.Th>
+                      <Table.Th scope="col" ta="right">
+                        IOPS
+                      </Table.Th>
+                      <Table.Th scope="col" ta="right">
+                        MiB/s
+                      </Table.Th>
+                      <Table.Th scope="col" ta="right">
+                        P50 µs
+                      </Table.Th>
+                      <Table.Th scope="col" ta="right">
+                        P99 µs
+                      </Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
                     {run.phases.map((p) => (
-                      <tr data-spt-legacy="" key={p.key}>
-                        <td data-spt-legacy="">{p.key}</td>
-                        <td data-spt-legacy="">{fmt(p.successful_ops)}</td>
-                        <td data-spt-legacy="">{fmt(p.failed_ops)}</td>
-                        <td data-spt-legacy="">{fmt(p.corrupt_ops)}</td>
-                        <td data-spt-legacy="">{fmt(p.iops, 2)}</td>
-                        <td data-spt-legacy="">{fmt(p.bandwidth_mib_s, 2)}</td>
-                        <td data-spt-legacy="">{fmt(p.p50_latency_us, 1)}</td>
-                        <td data-spt-legacy="">{fmt(p.p99_latency_us, 1)}</td>
-                      </tr>
+                      <Table.Tr key={p.key}>
+                        <Table.Td>{p.key}</Table.Td>
+                        <Table.Td ta="right">{fmt(p.successful_ops)}</Table.Td>
+                        <Table.Td ta="right">{fmt(p.failed_ops)}</Table.Td>
+                        <Table.Td ta="right">{fmt(p.corrupt_ops)}</Table.Td>
+                        <Table.Td ta="right">{fmt(p.iops, 2)}</Table.Td>
+                        <Table.Td ta="right">
+                          {fmt(p.bandwidth_mib_s, 2)}
+                        </Table.Td>
+                        <Table.Td ta="right">
+                          {fmt(p.p50_latency_us, 1)}
+                        </Table.Td>
+                        <Table.Td ta="right">
+                          {fmt(p.p99_latency_us, 1)}
+                        </Table.Td>
+                      </Table.Tr>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
             )}
             <RunArtifacts key={run.id} runId={run.id} />
             {run.status !== "malformed" && (
@@ -414,8 +490,8 @@ function CatalogRow({
                 title="Engine logs"
               />
             )}
-          </td>
-        </tr>
+          </Table.Td>
+        </Table.Tr>
       )}
     </>
   );
@@ -431,43 +507,46 @@ function RunArtifacts({ runId }: { runId: string }) {
       className="catalog-artifacts"
       aria-label="Run artifacts"
     >
-      <h3 data-spt-legacy="">Artifacts</h3>
-      <p data-spt-legacy="" className="form-help">
+      <Title order={3} size="md" className="mb-[5px]">
+        Artifacts
+      </Title>
+      <Text size="sm" className="my-comfortable">
         CSV, XML, and log files SPT left in this run folder. Only files the
         dashboard recognizes are listed.
-      </p>
+      </Text>
       {error && (
         <div data-spt-legacy="" className="error" role="alert">
           {error}
         </div>
       )}
       {items === undefined && !error ? (
-        <p data-spt-legacy="" className="subtle">
+        <Text size="xs" c="var(--spt-text-subtle)">
           Loading artifacts…
-        </p>
+        </Text>
       ) : items && items.length === 0 ? (
         <div
           data-spt-legacy=""
           className="history-empty catalog-artifacts-empty"
         >
-          <h4 data-spt-legacy="">No downloadable artifacts</h4>
-          <p data-spt-legacy="">
+          <Title order={4} size="md">
+            No downloadable artifacts
+          </Title>
+          <Text className="mt-xs">
             This run folder has no CSV, XML, or log files the dashboard can
             offer. Engine log text may also be unavailable for the same reason.
-          </p>
+          </Text>
         </div>
       ) : (
         <ul data-spt-legacy="" className="artifact-list">
           {(items ?? []).map((a) => (
             <li data-spt-legacy="" key={a.name}>
-              <a
-                data-spt-legacy=""
-                className="button-link"
+              <Button
+                component="a"
                 href={`/api/catalog/artifact?id=${encodeURIComponent(runId)}&file=${encodeURIComponent(a.name)}`}
                 download={a.name}
               >
                 Download {a.type}
-              </a>
+              </Button>
               <span data-spt-legacy="" className="artifact-meta">
                 <span data-spt-legacy="" className="artifact-kind">
                   {a.kind.toUpperCase()}

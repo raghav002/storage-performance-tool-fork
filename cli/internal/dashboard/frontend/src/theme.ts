@@ -1,4 +1,17 @@
-import { createTheme } from "@mantine/core";
+import {
+  Badge,
+  Button,
+  Fieldset,
+  Input,
+  NavLink,
+  Paper,
+  Radio,
+  SegmentedControl,
+  Table,
+  Text,
+  Title,
+  createTheme,
+} from "@mantine/core";
 import type { CSSVariablesResolver } from "@mantine/core";
 
 const fontFamily =
@@ -39,6 +52,7 @@ export const dashboardTokens = {
     width: "3px",
     offset: "3px",
   },
+  layout: { tableMinWidth: "980px" },
   status: {
     success: { text: "#267a60", background: "#eaf6f1" },
     warning: {
@@ -108,6 +122,10 @@ export const theme = createTheme({
     emphasis: "15px",
     lg: "16px",
     xl: "20px",
+    metricMobile: "23px",
+    metricCompact: "24px",
+    metric: "29px",
+    metricWide: "34px",
   },
   fontWeights: {
     regular: "400",
@@ -156,6 +174,223 @@ export const theme = createTheme({
     xxxl: "48px",
   },
   cursorType: "pointer",
+  components: {
+    Table: Table.extend({
+      defaultProps: {
+        horizontalSpacing: "sm",
+        verticalSpacing: "sm",
+        withRowBorders: true,
+        tabularNums: true,
+        borderColor: "var(--spt-border-subtle)",
+      },
+      classNames: { td: "not-first:text-muted" },
+      styles: {
+        table: { whiteSpace: "nowrap", lineHeight: "normal" },
+        th: {
+          backgroundColor: "var(--spt-surface-subtle)",
+          color: "var(--spt-text-subtle)",
+          fontSize: "var(--mantine-font-size-xs)",
+          fontWeight: "var(--mantine-font-weight-medium)",
+        },
+        td: { verticalAlign: "middle" },
+      },
+    }),
+    TableScrollContainer: Table.ScrollContainer.extend({
+      defaultProps: { type: "native", tabIndex: 0, role: "region" },
+      classNames: {
+        scrollContainer:
+          "focus-visible:outline-solid focus-visible:outline-[length:var(--spt-focus-width)] focus-visible:outline-focus focus-visible:outline-offset-[var(--spt-focus-offset)]",
+      },
+    }),
+    Input: Input.extend({
+      defaultProps: { size: "sm", radius: "control" },
+      vars: (_theme, { size }) => ({
+        wrapper: size === "sm" ? { "--input-height": "38px" } : {},
+      }),
+      classNames: {
+        input:
+          "focus-visible:outline-solid focus-visible:outline-[length:var(--spt-focus-width)] focus-visible:outline-focus focus-visible:outline-offset-[var(--spt-focus-offset)]",
+      },
+      styles: (_theme, { error }) => ({
+        input: {
+          color: "var(--spt-text-secondary)",
+          backgroundColor: "var(--spt-surface-control)",
+          borderColor: error
+            ? "var(--spt-validation-border)"
+            : "var(--spt-border-control)",
+        },
+      }),
+    }),
+    InputWrapper: Input.Wrapper.extend({
+      defaultProps: {
+        inputWrapperOrder: ["label", "input", "description", "error"],
+        errorProps: { role: "alert" },
+      },
+      styles: {
+        label: { color: "var(--spt-text-muted)", marginBottom: "9px" },
+        description: {
+          fontSize: "var(--mantine-font-size-caption)",
+          lineHeight: "var(--mantine-line-height-help)",
+          marginTop: "9px",
+        },
+        error: {
+          color: "var(--spt-validation-text)",
+          fontSize: "var(--mantine-font-size-caption)",
+          lineHeight: "var(--mantine-line-height-help)",
+          marginTop: "9px",
+        },
+      },
+    }),
+    Fieldset: Fieldset.extend({
+      defaultProps: { variant: "unstyled" },
+      styles: (_theme, { disabled }) => ({
+        root: { minWidth: 0, margin: 0, opacity: disabled ? 0.55 : undefined },
+        legend: {
+          fontSize: "var(--mantine-font-size-control)",
+          fontWeight: "var(--mantine-font-weight-heading)",
+          marginTop: "6px",
+          marginBottom: 0,
+        },
+      }),
+    }),
+    Radio: Radio.extend({
+      defaultProps: { size: "sm" },
+      styles: {
+        label: {
+          fontSize: "var(--mantine-font-size-md)",
+          fontWeight: "var(--mantine-font-weight-bold)",
+        },
+        description: {
+          color: "var(--spt-text-muted)",
+          fontSize: "var(--mantine-font-size-sm)",
+          lineHeight: "var(--mantine-line-height-body)",
+        },
+      },
+    }),
+    NavLink: NavLink.extend({
+      defaultProps: { variant: "light", bdrs: "md" },
+      classNames: {
+        root: "min-h-[45px] p-[13px] focus-visible:outline-solid focus-visible:outline-[length:var(--spt-focus-width)] focus-visible:outline-focus focus-visible:outline-offset-[var(--spt-focus-offset)] [@media(max-width:760px)]:min-h-[37px] [@media(max-width:760px)]:w-auto [@media(max-width:760px)]:px-sm [@media(max-width:760px)]:py-[9px]",
+      },
+      styles: (_theme, { active }) => ({
+        root: {
+          color: active
+            ? "var(--mantine-color-spt-7)"
+            : "var(--spt-text-secondary)",
+        },
+        label: {
+          fontSize: "var(--mantine-font-size-control)",
+          fontWeight: "var(--mantine-font-weight-semibold)",
+        },
+      }),
+    }),
+    SegmentedControl: SegmentedControl.extend({
+      defaultProps: {
+        size: "sm",
+        radius: "md",
+        withItemsBorders: false,
+        bg: "var(--spt-surface-track)",
+      },
+      classNames: { label: "text-secondary data-[active]:text-primary" },
+      vars: () => ({
+        root: {
+          "--sc-padding": "7px 13px",
+          "--sc-shadow": "0 1px 4px #20304716",
+        },
+      }),
+      styles: {
+        root: { padding: "3px" },
+        label: {
+          fontWeight: "var(--mantine-font-weight-semibold)",
+          borderRadius: "var(--mantine-radius-md)",
+        },
+        indicator: { borderRadius: "var(--mantine-radius-md)" },
+      },
+    }),
+    Button: Button.extend({
+      defaultProps: {
+        variant: "default",
+        size: "sm",
+        radius: "md",
+        fw: "var(--mantine-font-weight-semibold)",
+      },
+      classNames: {
+        root: "focus-visible:outline-solid focus-visible:outline-[length:var(--spt-focus-width)] focus-visible:outline-focus focus-visible:outline-offset-[var(--spt-focus-offset)]",
+      },
+      vars: (_theme, { variant, color, size }) => ({
+        root: {
+          ...(size === "sm"
+            ? { "--button-height": "38px", "--button-padding-x": "14px" }
+            : size === "compact-sm"
+              ? { "--button-height": "29px", "--button-padding-x": "9px" }
+              : {}),
+          ...(color
+            ? {}
+            : variant === "default"
+              ? {
+                  "--button-bg": "var(--spt-surface-control)",
+                  "--button-hover": "var(--spt-surface-hover)",
+                  "--button-color": "var(--spt-text-secondary)",
+                  "--button-bd": "1px solid var(--spt-border-control)",
+                }
+              : variant === "filled"
+                ? {
+                    "--button-bg": "var(--spt-action-primary)",
+                    "--button-hover": "var(--spt-action-primary-hover)",
+                    "--button-color": "var(--spt-text-inverse)",
+                  }
+                : {}),
+        },
+      }),
+    }),
+    Paper: Paper.extend({
+      defaultProps: {
+        withBorder: true,
+        radius: "lg",
+        bg: "var(--spt-surface-panel)",
+      },
+      styles: { root: { borderColor: "var(--spt-border-panel)" } },
+    }),
+    Badge: Badge.extend({
+      defaultProps: {
+        variant: "light",
+        size: "sm",
+        radius: "sm",
+        h: "auto",
+        py: "xxs",
+        px: "7px",
+        fz: "xs",
+        lh: 1.5,
+        fw: "var(--mantine-font-weight-regular)",
+        tt: "capitalize",
+      },
+      styles: { root: { letterSpacing: "normal" } },
+      vars: (_theme, { color, variant }) => ({
+        root:
+          variant === "light" && (color === "teal" || color === "yellow")
+            ? {
+                "--badge-bg": `var(--spt-status-${color === "teal" ? "success" : "warning"}-background)`,
+                "--badge-color": `var(--spt-status-${color === "teal" ? "success" : "warning"}-text)`,
+              }
+            : {},
+      }),
+    }),
+    Text: Text.extend({
+      defaultProps: {
+        size: "md",
+        c: "var(--spt-text-description)",
+        lh: "var(--mantine-line-height-body)",
+      },
+    }),
+    Title: Title.extend({
+      classNames: {
+        root: "data-[order=1]:[@media(max-width:760px)]:text-[23px]",
+      },
+      styles: (_theme, { order }) => ({
+        root: { letterSpacing: order === 1 ? "-0.7px" : undefined },
+      }),
+    }),
+  },
   other: { dashboard: dashboardTokens },
 });
 
@@ -166,6 +401,7 @@ export const cssVariablesResolver: CSSVariablesResolver = (theme) => {
     variables: {
       "--spt-focus-width": tokens.focus.width,
       "--spt-focus-offset": tokens.focus.offset,
+      "--spt-table-min-width": tokens.layout.tableMinWidth,
     },
     light: {
       "--spt-text-primary": tokens.text.primary,

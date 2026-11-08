@@ -1,3 +1,4 @@
+import { Button, Paper, Table, Text, Title } from "@mantine/core";
 import { useRuns } from "../api/queries";
 import { Status } from "./Status";
 import { formatNumber as fmt, phaseName } from "../utils/metrics";
@@ -33,12 +34,13 @@ export function RunHistory({
           <span data-spt-legacy="" className="eyebrow">
             SAVED BENCHMARKS
           </span>
-          <h1 data-spt-legacy="">Run history</h1>
-          <p data-spt-legacy="">SPT result folders saved on the project VM.</p>
+          <Title order={1}>Run history</Title>
+          <Text size="sm" className="mt-xs wrap-anywhere">
+            SPT result folders saved on the project VM.
+          </Text>
         </div>
         <div data-spt-legacy="" className="actions">
-          <button
-            data-spt-legacy=""
+          <Button
             onClick={() => {
               onRefresh();
               void history.refetch();
@@ -46,7 +48,7 @@ export function RunHistory({
             disabled={loading}
           >
             Refresh history
-          </button>
+          </Button>
         </div>
       </div>
       {error && (
@@ -54,87 +56,101 @@ export function RunHistory({
           {error}
         </div>
       )}
-      <section data-spt-legacy="" className="panel run-history-panel">
+      <Paper component="section" className="mb-panel">
         {loading && !runs.length ? (
-          <p data-spt-legacy="" className="history-empty">
+          <Text className="px-section py-xxl text-center">
             Loading saved runs…
-          </p>
+          </Text>
         ) : runs.length ? (
-          <div data-spt-legacy="" className="table-wrap">
-            <table data-spt-legacy="" className="run-history-table">
-              <thead data-spt-legacy="">
-                <tr data-spt-legacy="">
-                  <th data-spt-legacy="">Started · local time</th>
-                  <th data-spt-legacy="">Run</th>
-                  <th data-spt-legacy="">Workload settings</th>
-                  <th data-spt-legacy="">Status</th>
-                  <th data-spt-legacy="">
+          <Table.ScrollContainer
+            minWidth="var(--spt-table-min-width)"
+            aria-label="Run history scroll area"
+          >
+            <Table aria-label="Run history" stickyHeader>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th scope="col">Started · local time</Table.Th>
+                  <Table.Th scope="col">Run</Table.Th>
+                  <Table.Th scope="col">Workload settings</Table.Th>
+                  <Table.Th scope="col">Status</Table.Th>
+                  <Table.Th scope="col">
                     Phase results · successful / failed
-                  </th>
-                  <th data-spt-legacy=""></th>
-                </tr>
-              </thead>
-              <tbody data-spt-legacy="">
+                  </Table.Th>
+                  <Table.Th scope="col" aria-label="Actions"></Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
                 {runs.map((run) => (
-                  <tr data-spt-legacy="" key={run.run_id}>
-                    <td data-spt-legacy="">{localTime(run.started_at)}</td>
-                    <td data-spt-legacy="" className="history-run-id">
+                  <Table.Tr key={run.run_id}>
+                    <Table.Td>{localTime(run.started_at)}</Table.Td>
+                    <Table.Td ff="monospace" fz="caption">
                       {run.run_id}
-                    </td>
-                    <td data-spt-legacy="">
+                    </Table.Td>
+                    <Table.Td>
                       {run.options?.object_count ?? "—"} ×{" "}
                       {run.options?.object_size ?? "—"}
-                      <small data-spt-legacy="">
+                      <Text
+                        component="small"
+                        size="xs"
+                        c="var(--spt-text-muted)"
+                        lh="normal"
+                        className="mt-[5px] block"
+                      >
                         {run.options?.threads ?? "—"} thread(s)
-                      </small>
-                    </td>
-                    <td data-spt-legacy="">
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
                       <Status status={run.status} />
-                    </td>
-                    <td data-spt-legacy="">
+                    </Table.Td>
+                    <Table.Td>
                       {run.phase_summaries.length ? (
                         run.phase_summaries.map((phase) => (
-                          <span
-                            data-spt-legacy=""
-                            className="history-phase"
+                          <Text
+                            component="span"
+                            size="caption"
+                            c="var(--spt-text-secondary)"
+                            lh="normal"
+                            className="my-[3px] mr-compact inline-block"
                             key={phase.phase}
                           >
                             {phaseName(phase.phase)} {fmt(phase.successful_ops)}
                             /{fmt(phase.failed_ops)}
-                          </span>
+                          </Text>
                         ))
                       ) : (
-                        <span data-spt-legacy="" className="subtle">
+                        <Text
+                          component="span"
+                          size="xs"
+                          c="var(--spt-text-subtle)"
+                          lh="normal"
+                        >
                           No phase totals saved
-                        </span>
+                        </Text>
                       )}
-                    </td>
-                    <td data-spt-legacy="">
-                      <button
-                        data-spt-legacy=""
-                        onClick={() => onOpen(run.run_id)}
-                      >
+                    </Table.Td>
+                    <Table.Td>
+                      <Button onClick={() => onOpen(run.run_id)}>
                         View results
-                      </button>
-                    </td>
-                  </tr>
+                      </Button>
+                    </Table.Td>
+                  </Table.Tr>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
         ) : (
           <div data-spt-legacy="" className="history-empty">
-            <h2 data-spt-legacy="">No saved benchmark runs</h2>
-            <p data-spt-legacy="">
+            <Title order={2}>No saved benchmark runs</Title>
+            <Text className="mt-xs">
               Completed and partial SPT results will appear here.
-            </p>
+            </Text>
           </div>
         )}
-        <p data-spt-legacy="" className="history-footnote">
+        <Text size="caption" className="px-comfortable pb-md">
           Times are shown in this computer’s local time. Older runs may have
           partial results if SPT stopped before writing its final summaries.
-        </p>
-      </section>
+        </Text>
+      </Paper>
     </>
   );
 }

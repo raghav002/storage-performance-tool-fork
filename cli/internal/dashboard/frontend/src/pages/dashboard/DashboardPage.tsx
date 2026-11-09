@@ -42,7 +42,12 @@ export function DashboardPage({
     !historical &&
     job?.status === "running" &&
     state?.connection?.mode !== "attached";
-  const stopPending = stopping.isPending || !!job?.stop_requested;
+  // isSuccess keeps the stop pending once the server has accepted it, even if
+  // the state refetch after it fails and the cached job still lacks
+  // stop_requested. <DashboardPage> is keyed by run ID, so the mutation starts
+  // fresh for every run.
+  const stopPending =
+    stopping.isPending || stopping.isSuccess || !!job?.stop_requested;
   function stop() {
     if (!canStop || stopPending || !job) return;
     // Capture the run now: the page may move on to a newer run while the

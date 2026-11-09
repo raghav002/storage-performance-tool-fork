@@ -77,6 +77,8 @@ export type Job = {
   prefix?: string;
   options?: Options;
   stop_requested?: boolean;
+  stop_requested_at?: string;
+  can_stop?: boolean;
 };
 export type State = {
   connection?: {

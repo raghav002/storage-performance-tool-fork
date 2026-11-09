@@ -1,6 +1,14 @@
-import { Alert, Button, NativeSelect, Paper, Text, Title } from "@mantine/core";
+import {
+  Alert,
+  Button,
+  Code,
+  NativeSelect,
+  Paper,
+  Text,
+  Title,
+} from "@mantine/core";
 import { LayoutDashboard } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Row, State } from "../../types";
 import { useStopRun } from "../../api/mutations";
 import { MetricCard } from "../../components/MetricCard";
@@ -20,6 +28,9 @@ import { DashboardHeader } from "./DashboardHeader";
 import { RunOverview } from "./RunOverview";
 import { RunRecord } from "./RunRecord";
 
+// How long "Stopping…" may last before the page suggests checking the VM.
+const SLOW_STOP_MS = 3 * 60 * 1000;
+
 export function DashboardPage({
   state,
   selected,
@@ -38,10 +49,29 @@ export function DashboardPage({
   const stopping = useStopRun();
   const stopError = stopping.error?.message;
   // An attached CLI run is monitored read-only, so it cannot be stopped here.
-  const canStop =
+  const ownRun =
     !historical &&
     job?.status === "running" &&
     state?.connection?.mode !== "attached";
+  // can_stop is false when the run started before the dashboard restarted:
+  // the server no longer holds its SPT process, so it cannot stop it.
+  const canStop = ownRun && job?.can_stop === true;
+  // SPT's own cancel steps take about 2 minutes at most, so 3 minutes after
+  // the stop request point the user at the VM. The dashboard never
+  // force-kills SPT. <DashboardPage> is keyed by run ID, so the flag starts
+  // false for every run.
+  const stopWaiting = ownRun && !!job?.stop_requested;
+  const stopRequestedAt = Date.parse(job?.stop_requested_at ?? "");
+  const [stopDeadlinePassed, setStopDeadlinePassed] = useState(false);
+  useEffect(() => {
+    if (!stopWaiting || !Number.isFinite(stopRequestedAt)) return;
+    const timer = setTimeout(
+      () => setStopDeadlinePassed(true),
+      Math.max(0, stopRequestedAt + SLOW_STOP_MS - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [stopWaiting, stopRequestedAt]);
+  const stopSlow = stopWaiting && stopDeadlinePassed;
   // isSuccess keeps the stop pending once the server has accepted it, even if
   // the state refetch after it fails and the cached job still lacks
   // stop_requested. <DashboardPage> is keyed by run ID, so the mutation starts
@@ -134,6 +164,18 @@ export function DashboardPage({
       {stopError && (
         <Alert color="red" role="alert">
           {stopError}
+        </Alert>
+      )}
+      {ownRun && job?.can_stop === false && (
+        <Alert role="note">
+          This run started before the dashboard restarted, so it can&apos;t be
+          stopped from here. Stop it on the VM if needed.
+        </Alert>
+      )}
+      {stopSlow && (
+        <Alert color="yellow" role="status">
+          SPT hasn&apos;t exited 3 minutes after the stop request. Check the VM
+          (<Code>docker ps</Code> and the run log).
         </Alert>
       )}
       {!job && !m ? (

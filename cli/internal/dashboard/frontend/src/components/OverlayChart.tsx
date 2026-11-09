@@ -12,12 +12,7 @@ import type { ChartOption, EChartsType } from "../charts/echarts";
 import { lineSymbols } from "../charts/lineSymbols";
 import type { SeriesPoint } from "../types";
 import { overlayExtent, type OverlayMetric } from "../utils/catalog";
-import {
-  elapsed,
-  formatChartAxisValue,
-  formatChartValue,
-  numeric,
-} from "../utils/metrics";
+import { elapsed, formatChartValue, numeric } from "../utils/metrics";
 import { EChart } from "./EChart";
 
 type Props = {
@@ -38,6 +33,10 @@ export function OverlayChart({
   lines,
 }: Props) {
   const theme = useMantineTheme();
+  const rootFontSize =
+    Number.parseFloat(getComputedStyle(document.documentElement).fontSize) ||
+    16;
+  const tooltipFontSize = Number(px(theme.fontSizes.sm)) * (rootFontSize / 16);
   const data = useMemo(
     () =>
       lines.map((line) => ({
@@ -66,11 +65,10 @@ export function OverlayChart({
   );
   const option = useMemo<ChartOption>(() => {
     return {
-      grid: { left: 68, right: 20, top: 18, bottom: 38 },
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "line" },
-        textStyle: { fontSize: px(theme.fontSizes.sm) },
+        textStyle: { fontSize: tooltipFontSize },
         valueFormatter: (value) =>
           numeric(value) === null
             ? "Not reported"
@@ -78,12 +76,10 @@ export function OverlayChart({
       },
       xAxis: {
         type: "value",
-        min: 0,
         max: maxT || 1,
-        splitNumber: 4,
         axisLine: { show: true },
         splitLine: { show: false },
-        axisLabel: { formatter: elapsed, hideOverlap: true },
+        axisLabel: { formatter: elapsed },
         axisPointer: {
           snap: false,
           label: { formatter: ({ value }) => `${formatChartValue(value)}s` },
@@ -91,11 +87,8 @@ export function OverlayChart({
       },
       yAxis: {
         type: "value",
-        min: 0,
         max: maxV === 0 ? 1 : undefined,
-        splitNumber: 4,
         axisLine: { show: false },
-        axisLabel: { formatter: formatChartAxisValue, hideOverlap: true },
       },
       series: data.map((line) => {
         const points: [number, number | null][] = line.points.map((point) => [
@@ -115,7 +108,7 @@ export function OverlayChart({
         };
       }),
     };
-  }, [data, metric, unit, baseline, theme.fontSizes.sm, maxT, maxV]);
+  }, [data, metric, unit, baseline, tooltipFontSize, maxT, maxV]);
   const inspect = useCallback(
     (chart: EChartsType) => {
       if (selectedTime === null || time === undefined) return;
@@ -138,7 +131,7 @@ export function OverlayChart({
       aria-label={`${phase} comparison`}
     >
       <div className="flex flex-wrap items-baseline justify-between gap-sm">
-        <Title order={3} size="lg">
+        <Title order={3} size="lg" className="min-w-0 wrap-anywhere">
           {phase}
         </Title>
         <Text size="caption">
@@ -152,16 +145,16 @@ export function OverlayChart({
         <EChart
           option={option}
           label={`${phase} ${title} over elapsed seconds for ${lines.length} runs, in ${unit}. Baseline: ${baseline}. Exact values are available in the sample inspector below.`}
-          className="h-[280px] w-full min-w-0 [@media(max-width:760px)]:h-[240px]"
+          className="h-70 w-full min-w-0 max-[47.5rem]:h-60"
           onReady={inspect}
         />
       ) : (
-        <Text size="sm" className="flex h-[160px] items-center justify-center">
+        <Text size="sm" className="flex h-40 items-center justify-center">
           No samples for this metric.
         </Text>
       )}
       {times.length > 0 && (
-        <Box pt="md" className="border-t border-subtle-border">
+        <Box pt="md" className="border-t-[0.0625rem] border-subtle-border">
           <div className="mb-md flex flex-wrap items-baseline justify-between gap-sm">
             <Text size="sm" fw="var(--mantine-font-weight-semibold)">
               Sample inspector
@@ -200,7 +193,7 @@ export function OverlayChart({
                       component="span"
                       bg={line.color}
                       aria-hidden="true"
-                      className="mr-xs inline-block h-[3px] w-[18px] align-middle"
+                      className="mr-xs inline-block h-0.75 w-4.5 align-middle"
                     />
                     {line.label} · {line.id}
                     {line.id === baseline ? " (baseline)" : ""}

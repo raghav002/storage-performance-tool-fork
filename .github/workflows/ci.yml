@@ -161,10 +161,22 @@ jobs:
         with:
           excludes: ${{ vars.GOSEC_EXCLUDES || 'G117,G602,G703,G704' }}
 
+      - name: Prepare code sanitizer sources
+        run: |
+          set -euo pipefail
+          mkdir -p .github/code-sanitizer-source
+          # The generated page includes vendor code and is checked by dashboard-build.
+          git archive HEAD cli | tar -x -C .github/code-sanitizer-source \
+            --exclude=cli/internal/dashboard/server/index.html
+
       - name: Run code sanitizer
         uses: dell/common-github-actions/code-sanitizer@main
         with:
-          args: ${{ (env.ACT == 'true' && github.workspace || '/github/workspace') }}/cli
+          args: ${{ (env.ACT == 'true' && github.workspace || '/github/workspace') }}/.github/code-sanitizer-source/cli
+
+      - name: Remove code sanitizer sources
+        if: ${{ always() }}
+        run: rm -rf -- .github/code-sanitizer-source
 
       - name: Malware scan
         uses: dell/common-github-actions/malware-scanner@main

@@ -44,13 +44,16 @@ export function DashboardPage({
     state?.connection?.mode !== "attached";
   const stopPending = stopping.isPending || !!job?.stop_requested;
   function stop() {
-    if (!canStop || stopPending) return;
+    if (!canStop || stopPending || !job) return;
+    // Capture the run now: the page may move on to a newer run while the
+    // confirmation is open, and the server only stops the run named here.
+    const runID = job.run_id;
     if (
       window.confirm(
         "Stop this run? It ends now and won't finish its remaining phases.",
       )
     ) {
-      stopping.mutate();
+      stopping.mutate(runID);
     }
   }
   const summaries = m?.phase_summaries ?? [];

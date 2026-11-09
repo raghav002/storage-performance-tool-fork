@@ -171,10 +171,13 @@ func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleStop asks the running SPT process to shut down gracefully. SPT handles
-// the interrupt by stopping the engine test, removing its containers and
-// finalizing results, so the dashboard never force-kills it.
+// the interrupt by trying to stop the engine test, remove its containers and
+// finalize results, so the dashboard never force-kills it. The request names
+// the run it means to stop, so a page that is out of date cannot stop a newer
+// run by mistake.
 func (a *app) handleStop(w http.ResponseWriter, r *http.Request) {
-	if r.URL.RawQuery != "" {
+	runID := r.PathValue("runID")
+	if r.URL.RawQuery != "" || !runPattern.MatchString(runID) || !strings.HasPrefix(runID, "mt-dashboard-") {
 		writeJSON(w, 404, map[string]any{keyError: msgEndpointNotFound})
 		return
 	}
@@ -184,14 +187,8 @@ func (a *app) handleStop(w http.ResponseWriter, r *http.Request) {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.activeCmd == nil && a.attachedRunID != "" {
-		// An attached CLI run is monitored read-only; the dashboard never
-		// signals a process it did not start.
-		writeJSON(w, 409, map[string]any{keyError: "This dashboard is only monitoring the attached SPT run and will not stop it. Stop it from the terminal that started it."})
-		return
-	}
-	if a.activeCmd == nil || a.activeCmd.Process == nil || a.activeJob == nil || a.activeJob[keyStatus] != jobRunning {
-		writeJSON(w, 409, map[string]any{keyError: "No dashboard run is in progress."})
+	if refusal := a.stopRefusal(runID); refusal != "" {
+		writeJSON(w, 409, map[string]any{keyError: refusal})
 		return
 	}
 	if a.activeJob[keyStopRequested] == true {
@@ -207,6 +204,22 @@ func (a *app) handleStop(w http.ResponseWriter, r *http.Request) {
 	a.activeJob[keyMessage] = "Stopping SPT gracefully…"
 	_ = a.writeState(a.activeJob)
 	writeJSON(w, 202, map[string]any{keyJob: publicJob(a.activeJob), keyMessage: "Stop requested."})
+}
+
+// stopRefusal explains why runID cannot be stopped now, or returns "" when it
+// is the dashboard's own active run. The caller holds a.mu.
+func (a *app) stopRefusal(runID string) string {
+	switch {
+	case a.activeCmd == nil && a.attachedRunID != "":
+		// An attached CLI run is monitored read-only; the dashboard never
+		// signals a process it did not start.
+		return "This dashboard is only monitoring the attached SPT run and will not stop it. Stop it from the terminal that started it."
+	case a.activeCmd == nil || a.activeCmd.Process == nil || a.activeJob == nil || a.activeJob[keyStatus] != jobRunning:
+		return "No dashboard run is in progress."
+	case a.activeJob[keyRunID] != runID:
+		return "That run is no longer active, so it was not stopped."
+	}
+	return ""
 }
 
 func ensureEOF(dec *json.Decoder) error {

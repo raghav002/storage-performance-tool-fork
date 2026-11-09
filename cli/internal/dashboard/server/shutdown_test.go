@@ -1,6 +1,8 @@
 package server
 
 import (
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -81,22 +83,21 @@ func TestDashboardShutdownInterruptsRun(t *testing.T) {
 	}
 }
 
-func TestStopRunGracefully(t *testing.T) {
-	a, marker, _ := prepareShutdownTest(t)
-	stop := func(origin string) *httptest.ResponseRecorder {
-		request := httptest.NewRequest(http.MethodPost, "/api/runs/stop", nil)
-		request.Host = "localhost:8000"
-		request.Header.Set("Origin", origin)
-		response := httptest.NewRecorder()
-		a.handleStop(response, request)
-		return response
-	}
-	if response := stop("http://evil.example"); response.Code != http.StatusForbidden {
-		t.Fatalf("cross-origin stop: %d", response.Code)
-	}
-	if response := stop("http://localhost:8000"); response.Code != http.StatusConflict {
-		t.Fatalf("stop without a run: %d", response.Code)
-	}
+// stopRequest sends POST /api/runs/{runID}/stop straight to handleStop.
+func stopRequest(a *app, runID, origin string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodPost, "/api/runs/"+runID+"/stop", nil)
+	request.SetPathValue("runID", runID)
+	request.Host = "localhost:8000"
+	request.Header.Set("Origin", origin)
+	response := httptest.NewRecorder()
+	a.handleStop(response, request)
+	return response
+}
+
+// startStoppableRun starts a run through handleRun and returns its run ID once
+// the fake SPT child is ready.
+func startStoppableRun(t *testing.T, a *app) string {
+	t.Helper()
 	request := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(validRunRequest))
 	request.Host = "localhost:8000"
 	request.Header.Set("Origin", "http://localhost:8000")
@@ -106,11 +107,32 @@ func TestStopRunGracefully(t *testing.T) {
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("start run: %d %s", response.Code, response.Body.String())
 	}
+	var body struct {
+		Job struct {
+			RunID string `json:"run_id"`
+		} `json:"job"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil || body.Job.RunID == "" {
+		t.Fatalf("start run response: %v %s", err, response.Body.String())
+	}
 	waitForChild(t, a.root)
-	if response := stop("http://localhost:8000"); response.Code != http.StatusAccepted {
+	return body.Job.RunID
+}
+
+func TestStopRunGracefully(t *testing.T) {
+	a, marker, _ := prepareShutdownTest(t)
+	const origin = "http://localhost:8000"
+	if response := stopRequest(a, "mt-dashboard-none", "http://evil.example"); response.Code != http.StatusForbidden {
+		t.Fatalf("cross-origin stop: %d", response.Code)
+	}
+	if response := stopRequest(a, "mt-dashboard-none", origin); response.Code != http.StatusConflict {
+		t.Fatalf("stop without a run: %d", response.Code)
+	}
+	runID := startStoppableRun(t, a)
+	if response := stopRequest(a, runID, origin); response.Code != http.StatusAccepted {
 		t.Fatalf("stop run: %d %s", response.Code, response.Body.String())
 	}
-	if response := stop("http://localhost:8000"); response.Code != http.StatusAccepted && response.Code != http.StatusConflict {
+	if response := stopRequest(a, runID, origin); response.Code != http.StatusAccepted && response.Code != http.StatusConflict {
 		t.Fatalf("repeated stop: %d %s", response.Code, response.Body.String())
 	}
 	deadline := time.Now().Add(3 * time.Second)
@@ -130,8 +152,32 @@ func TestStopRunGracefully(t *testing.T) {
 	if data, err := os.ReadFile(marker); err != nil || string(data) != "stopped" {
 		t.Fatalf("child was not gracefully interrupted: %q, %v", data, err)
 	}
-	if response := stop("http://localhost:8000"); response.Code != http.StatusConflict {
+	if response := stopRequest(a, runID, origin); response.Code != http.StatusConflict {
 		t.Fatalf("stop after the run ended: %d", response.Code)
+	}
+}
+
+func TestStopChecksRunID(t *testing.T) {
+	a, marker, _ := prepareShutdownTest(t)
+	const origin = "http://localhost:8000"
+	runID := startStoppableRun(t, a)
+	for _, bad := range []string{"stop", "../" + runID, "mt-other-run", runID + "/x"} {
+		if response := stopRequest(a, bad, origin); response.Code != http.StatusNotFound {
+			t.Fatalf("malformed run ID %q: %d %s", bad, response.Code, response.Body.String())
+		}
+	}
+	response := stopRequest(a, "mt-dashboard-20000101T000000-dead", origin)
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "no longer active") {
+		t.Fatalf("stop of another run: %d %s", response.Code, response.Body.String())
+	}
+	a.mu.Lock()
+	requested := a.activeJob[keyStopRequested]
+	a.mu.Unlock()
+	if requested == true {
+		t.Fatal("a stop for another run marked the active run as stopping")
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a stop for another run signalled SPT: %v", err)
 	}
 }
 
@@ -141,11 +187,7 @@ func TestStopRefusesAttachedRun(t *testing.T) {
 	a.attachedHost = "127.0.0.1"
 	a.attachedRunID = "42"
 	a.mu.Unlock()
-	request := httptest.NewRequest(http.MethodPost, "/api/runs/stop", nil)
-	request.Host = "localhost:8000"
-	request.Header.Set("Origin", "http://localhost:8000")
-	response := httptest.NewRecorder()
-	a.handleStop(response, request)
+	response := stopRequest(a, "mt-dashboard-attached", "http://localhost:8000")
 	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "only monitoring") {
 		t.Fatalf("stop of an attached run: %d %s", response.Code, response.Body.String())
 	}

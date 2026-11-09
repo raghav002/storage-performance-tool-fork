@@ -61,7 +61,7 @@ The server listens on `127.0.0.1:8000` by default. For remote access, use SSH po
 
 The dashboard enforces bounded workload choices and allows one dashboard-managed run at a time. Run results are stored on the host in SPT's results directory.
 
-**Stop run** on the live dashboard ends a run early. It calls `POST /api/runs/stop`, which sends SPT one interrupt (SIGINT, or Ctrl+Break on Windows), the same signal the dashboard sends on Ctrl+C. SPT then stops the engine test, removes its containers and finalizes results, and the run is recorded as `stopped` (a Ctrl+C shutdown of the dashboard records `interrupted` instead). Stop run never force-kills SPT. If the dashboard restarted during the run, it no longer holds the process and cannot stop it.
+**Stop run** on the live dashboard ends a run early. It calls `POST /api/runs/{id}/stop` for the run on screen, which sends SPT one interrupt (SIGINT, or Ctrl+Break on Windows), the same signal the dashboard sends on Ctrl+C. SPT then stops the engine test, removes its containers and finalizes results, and the run is recorded as `stopped` (a Ctrl+C shutdown of the dashboard records `interrupted` instead). Stop run never force-kills SPT. If the dashboard restarted during the run, it no longer holds the process and cannot stop it.
 
 ### Saved history and console logs
 
@@ -151,7 +151,7 @@ All endpoints answer only on loopback with a loopback `Host` header; any other h
 | `GET /api/state` | Dashboard state, limits, target readiness (S3 and mock), job, live metrics |
 | `POST /api/storage/verify` | Save and verify client machines and the optional endpoint |
 | `POST /api/runs` | Start a run; body is the workload options plus optional `"driver": "mock"` |
-| `POST /api/runs/stop` | Gracefully stop the active dashboard run (`409` if none is running) |
+| `POST /api/runs/{id}/stop` | Gracefully stop the active dashboard run `{id}` (`409` if it is not the run in progress) |
 | `GET /api/runs`, `GET /api/runs/{id}`, `GET /api/runs/{id}/csv` | Dashboard run history and CSV export |
 | `GET /api/runs/{id}/log?level=all\|warn\|error&tail=N&source=console\|results` | Logs for a dashboard run |
 | `POST /api/attach`, `DELETE /api/attach` | Read-only monitoring of a CLI run |

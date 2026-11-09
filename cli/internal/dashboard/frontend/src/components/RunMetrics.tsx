@@ -1,4 +1,12 @@
-import { Button, Paper, Table, Text, Title } from "@mantine/core";
+import {
+  Accordion,
+  Button,
+  Code,
+  Paper,
+  Table,
+  Text,
+  Title,
+} from "@mantine/core";
 import type { Metrics, Row } from "../types";
 import {
   elapsed,
@@ -18,12 +26,12 @@ export function PhaseResults({
   return (
     <Paper
       component="section"
-      className="mb-panel p-panel [@media(max-width:760px)]:p-[17px]"
+      className="mb-panel p-panel max-[47.5rem]:p-4.25"
     >
-      <div data-spt-legacy="" className="section-heading">
-        <div data-spt-legacy="">
+      <div className="flex justify-between items-center gap-3.75 mb-comfortable max-[47.5rem]:items-start">
+        <div>
           <Title order={2}>Phase results</Title>
-          <Text size="caption" className="mt-[5px] max-[760px]:max-w-[250px]">
+          <Text size="caption" className="mt-1.25 max-[47.5rem]:max-w-62.5">
             Each phase has its own counters and timing.
           </Text>
         </div>
@@ -138,51 +146,70 @@ export function MeasuredDetails({
     sample_count: (chart_samples ?? samples ?? []).length,
   };
   return (
-    <details data-spt-legacy="" className="panel">
-      <summary data-spt-legacy="">
-        SPT measured details{" "}
-        <span data-spt-legacy="" className="summary-note">
-          {phaseName(phase)} phase
-        </span>
-      </summary>
-      <Text size="sm" className="my-comfortable">
-        All fields available from the dashboard API are retained below. A dash
-        means SPT did not report a value.
-      </Text>
-      {m.spt_summary_report && (
-        <details data-spt-legacy="" className="raw-details">
-          <summary data-spt-legacy="">SPT run summary</summary>
-          <pre data-spt-legacy="">{m.spt_summary_report}</pre>
-        </details>
-      )}
-      <div data-spt-legacy="" className="guided-core-grid">
-        {groups.map((g) => (
-          <section data-spt-legacy="" className="timing" key={g.title}>
-            <Title order={3}>{g.title}</Title>
-            <dl data-spt-legacy="">
-              {g.values.map(([name, value]) => (
-                <div data-spt-legacy="" key={name}>
-                  <dt data-spt-legacy="">{name}</dt>
-                  <dd data-spt-legacy="">{value}</dd>
+    <Accordion mb="panel">
+      <Accordion.Item value="section">
+        <Accordion.Control>
+          SPT measured details{" "}
+          <span className="text-xs/[inherit] font-normal ml-sm text-muted max-[47.5rem]:block max-[47.5rem]:mt-xs max-[47.5rem]:mr-0 max-[47.5rem]:mb-0 max-[47.5rem]:ml-md">
+            {phaseName(phase)} phase
+          </span>
+        </Accordion.Control>
+        <Accordion.Panel>
+          <Text size="sm" className="my-comfortable">
+            All fields available from the dashboard API are retained below. A
+            dash means SPT did not report a value.
+          </Text>
+          {m.spt_summary_report && (
+            <Accordion mt="panel">
+              <Accordion.Item value="section">
+                <Accordion.Control>SPT run summary</Accordion.Control>
+                <Accordion.Panel>
+                  <Code block>{m.spt_summary_report}</Code>
+                </Accordion.Panel>
+              </Accordion.Item>
+            </Accordion>
+          )}
+          <div className="grid grid-cols-3 gap-comfortable max-[71.875rem]:grid-cols-2 max-[47.5rem]:grid-cols-1">
+            {groups.map((g) => (
+              <section className="p-md bg-[#f8fafc] rounded-md" key={g.title}>
+                <Title order={3}>{g.title}</Title>
+                <dl className="mb-0">
+                  {g.values.map(([name, value]) => (
+                    <div
+                      className="px-0 py-1.75 flex justify-between gap-compact border-b-[0.0625rem] border-b-[#e8edf4] text-caption/[inherit]"
+                      key={name}
+                    >
+                      <dt className="text-[#748399] max-w-[60%]">{name}</dt>
+                      <dd className="m-0 text-right wrap-anywhere max-w-[62%] tabular-nums">
+                        {value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            ))}
+          </div>
+          <Accordion mt="panel">
+            <Accordion.Item value="section">
+              <Accordion.Control>
+                Source measurements and metadata
+              </Accordion.Control>
+              <Accordion.Panel>
+                <div className="flex flex-wrap items-center gap-compact">
+                  <Button
+                    component="a"
+                    href={`/api/runs/${encodeURIComponent(m.run_id)}/csv?kind=samples`}
+                    download
+                  >
+                    Export all samples CSV
+                  </Button>
                 </div>
-              ))}
-            </dl>
-          </section>
-        ))}
-      </div>
-      <details data-spt-legacy="" className="raw-details">
-        <summary data-spt-legacy="">Source measurements and metadata</summary>
-        <div data-spt-legacy="" className="actions">
-          <Button
-            component="a"
-            href={`/api/runs/${encodeURIComponent(m.run_id)}/csv?kind=samples`}
-            download
-          >
-            Export all samples CSV
-          </Button>
-        </div>
-        <pre data-spt-legacy="">{JSON.stringify(raw, null, 2)}</pre>
-      </details>
-    </details>
+                <Code block>{JSON.stringify(raw, null, 2)}</Code>
+              </Accordion.Panel>
+            </Accordion.Item>
+          </Accordion>
+        </Accordion.Panel>
+      </Accordion.Item>
+    </Accordion>
   );
 }

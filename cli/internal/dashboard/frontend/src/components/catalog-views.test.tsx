@@ -33,6 +33,15 @@ const originalAdapter = apiClient.defaults.adapter;
 const clients: QueryClient[] = [];
 
 beforeAll(() => {
+  // jsdom does not implement the observer used by Mantine's selection indicator.
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   vi.stubGlobal(
     "matchMedia",
     vi.fn((query: string) => ({
@@ -437,13 +446,13 @@ describe("RunLog", () => {
     render(<RunLog base="/api/runs/r/log" sources={["console", "results"]} />);
     await screen.findByText("WARN slow");
     expect(screen.getByText(/Interim console output/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "ERROR" }));
+    fireEvent.click(screen.getByRole("radio", { name: "ERROR" }));
     await waitFor(() =>
       expect(calls.at(-1)).toBe(
         "/api/runs/r/log?source=console&level=error&tail=200",
       ),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Results logs" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Results logs" }));
     await waitFor(() => expect(calls.at(-1)).toContain("source=results"));
   });
   it("stays closed and does not fetch until opened when collapsed", async () => {
@@ -455,13 +464,11 @@ describe("RunLog", () => {
       truncated: false,
       lines: [{ file: "write.errors.log", level: "error", text: "ERROR boom" }],
     }));
-    const { container } = render(
+    render(
       <RunLog base="/api/catalog/log?id=r" title="Errors and logs" collapsed />,
     );
     expect(calls).toHaveLength(0);
-    const details = container.querySelector("details")!;
-    details.open = true;
-    fireEvent(details, new Event("toggle"));
+    fireEvent.click(screen.getByRole("button", { name: "Errors and logs" }));
     await screen.findByText("ERROR boom");
     expect(screen.getByText("From: write.errors.log")).toBeTruthy();
   });

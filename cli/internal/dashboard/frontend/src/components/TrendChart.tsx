@@ -96,7 +96,7 @@ export function TrendChart({
             }}
           >
             {[0, 0.5, 1].map((f) => (
-              <g data-spt-legacy="" key={f}>
+              <g key={f}>
                 <line
                   data-spt-legacy=""
                   x1="60"
@@ -126,9 +126,9 @@ export function TrendChart({
               }
               if (part.length) segments.push(part);
               return (
-                <g data-spt-legacy="" key={l.key}>
+                <g key={l.key}>
                   {segments.map((ss, i) => (
-                    <g data-spt-legacy="" key={i}>
+                    <g key={i}>
                       <polyline
                         data-spt-legacy=""
                         fill="none"
@@ -140,7 +140,6 @@ export function TrendChart({
                       />
                       {ss.length === 1 && (
                         <circle
-                          data-spt-legacy=""
                           cx={x(ss[0])}
                           cy={y(ss[0][l.key]!)}
                           r="4"

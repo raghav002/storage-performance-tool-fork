@@ -1,4 +1,12 @@
-import { Button, Text, Title } from "@mantine/core";
+import {
+  Alert,
+  Button,
+  Checkbox,
+  NativeSelect,
+  Paper,
+  Text,
+  Title,
+} from "@mantine/core";
 import { useMemo, useState } from "react";
 import type { Metrics, Sample } from "../types";
 import { TrendChart } from "./TrendChart";
@@ -92,7 +100,10 @@ export function Charts({
     (r) => cleanup || phaseCode(r.phase) !== "DELETE",
   );
   return (
-    <section data-spt-legacy="" className="panel fleet">
+    <Paper
+      component="section"
+      className="mb-panel p-panel [@media(max-width:760px)]:p-[17px] min-w-0"
+    >
       <div data-spt-legacy="" className="section-heading">
         <div data-spt-legacy="">
           <Title order={2}>Measured performance</Title>
@@ -102,8 +113,7 @@ export function Charts({
               : "Final averages by phase"}
           </Text>
         </div>
-        <select
-          data-spt-legacy=""
+        <NativeSelect
           aria-label="Chart view"
           value={display}
           onChange={(e) => {
@@ -111,57 +121,46 @@ export function Charts({
             setActive(null);
           }}
         >
-          <option
-            data-spt-legacy=""
-            value="timeline"
-            disabled={!samples.length}
-          >
+          <option value="timeline" disabled={!samples.length}>
             Over time
           </option>
-          <option
-            data-spt-legacy=""
-            value="summary"
-            disabled={!m.phase_summaries?.length}
-          >
+          <option value="summary" disabled={!m.phase_summaries?.length}>
             Phase comparison
           </option>
-        </select>
+        </NativeSelect>
       </div>
       {display === "timeline" ? (
         <>
           <div data-spt-legacy="" className="fleet-toolbar">
-            <label data-spt-legacy="" className="check-label">
-              Time window
-              <select
-                data-spt-legacy=""
-                aria-label="Time window"
-                value={windowSize ?? "all"}
-                onChange={(e) => {
-                  setWindowSize(
-                    e.target.value === "all" ? null : Number(e.target.value),
-                  );
-                  setPosition(null);
-                }}
-              >
-                {[
-                  ["all", "Entire phase"],
-                  ["60", "1 minute"],
-                  ["300", "5 minutes"],
-                  ["3600", "1 hour"],
-                  ["86400", "1 day"],
-                ].map(([v, label]) => (
-                  <option data-spt-legacy="" key={v} value={v}>
-                    {label}
+            <NativeSelect
+              label="Time window"
+              aria-label="Time window"
+              value={windowSize ?? "all"}
+              onChange={(e) => {
+                setWindowSize(
+                  e.target.value === "all" ? null : Number(e.target.value),
+                );
+                setPosition(null);
+              }}
+            >
+              {[
+                ["all", "Entire phase"],
+                ["60", "1 minute"],
+                ["300", "5 minutes"],
+                ["3600", "1 hour"],
+                ["86400", "1 day"],
+              ].map(([v, label]) => (
+                <option key={v} value={v}>
+                  {label}
+                </option>
+              ))}
+              {windowSize !== null &&
+                ![60, 300, 3600, 86400].includes(windowSize) && (
+                  <option value={windowSize}>
+                    Custom · {elapsed(windowSize)}
                   </option>
-                ))}
-                {windowSize !== null &&
-                  ![60, 300, 3600, 86400].includes(windowSize) && (
-                    <option data-spt-legacy="" value={windowSize}>
-                      Custom · {elapsed(windowSize)}
-                    </option>
-                  )}
-              </select>
-            </label>
+                )}
+            </NativeSelect>
             <div data-spt-legacy="" className="button-group">
               <Button
                 size="compact-sm"
@@ -230,15 +229,15 @@ export function Charts({
             </label>
           )}
           {!samples.length && (
-            <div data-spt-legacy="" className="notice">
+            <Alert role="note">
               No interval history recorded for this phase. Final phase averages
               appear once SPT reports them.
-            </div>
+            </Alert>
           )}
           {samples.length === 1 && (
-            <div data-spt-legacy="" className="notice">
+            <Alert role="note">
               One measured point is available. It cannot establish a trend.
-            </div>
+            </Alert>
           )}
           {graphs.map((g) => (
             <TrendChart
@@ -274,15 +273,11 @@ export function Charts({
         </>
       ) : (
         <>
-          <label data-spt-legacy="" className="check-label">
-            <input
-              data-spt-legacy=""
-              type="checkbox"
-              checked={cleanup}
-              onChange={(e) => setCleanup(e.target.checked)}
-            />
-            Include cleanup in comparison
-          </label>
+          <Checkbox
+            label="Include cleanup in comparison"
+            checked={cleanup}
+            onChange={(e) => setCleanup(e.target.checked)}
+          />
           <div data-spt-legacy="" className="comparison-grid">
             {graphs.map((g) => {
               const field = g.key === "throughput" ? "iops" : g.field;
@@ -329,6 +324,6 @@ export function Charts({
           </Text>
         </>
       )}
-    </section>
+    </Paper>
   );
 }

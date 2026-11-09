@@ -1,4 +1,4 @@
-import { Button, Paper, Table, Text, Title } from "@mantine/core";
+import { Alert, Button, Paper, Table, Text, Title } from "@mantine/core";
 import { useRuns } from "../api/queries";
 import { Status } from "./Status";
 import { formatNumber as fmt, phaseName } from "../utils/metrics";
@@ -29,9 +29,9 @@ export function RunHistory({
   };
   return (
     <>
-      <div data-spt-legacy="" className="page-heading">
-        <div data-spt-legacy="">
-          <span data-spt-legacy="" className="eyebrow">
+      <div className="flex justify-between items-center mb-6.5 gap-md max-[47.5rem]:items-start max-[47.5rem]:flex-col">
+        <div className="min-w-0">
+          <span className="block text-xs/[inherit] tracking-[0.08125rem] text-[#6b7f99] font-heading mb-compact">
             SAVED BENCHMARKS
           </span>
           <Title order={1}>Run history</Title>
@@ -39,7 +39,7 @@ export function RunHistory({
             SPT result folders saved on the project VM.
           </Text>
         </div>
-        <div data-spt-legacy="" className="actions">
+        <div className="flex flex-wrap items-center gap-compact max-[47.5rem]:w-full">
           <Button
             onClick={() => {
               onRefresh();
@@ -52,9 +52,9 @@ export function RunHistory({
         </div>
       </div>
       {error && (
-        <div data-spt-legacy="" className="error" role="alert">
+        <Alert color="red" role="alert">
           {error}
-        </div>
+        </Alert>
       )}
       <Paper component="section" className="mb-panel">
         {loading && !runs.length ? (
@@ -94,7 +94,7 @@ export function RunHistory({
                         size="xs"
                         c="var(--spt-text-muted)"
                         lh="normal"
-                        className="mt-[5px] block"
+                        className="mt-1.25 block"
                       >
                         {run.options?.threads ?? "—"} thread(s)
                       </Text>
@@ -110,7 +110,7 @@ export function RunHistory({
                             size="caption"
                             c="var(--spt-text-secondary)"
                             lh="normal"
-                            className="my-[3px] mr-compact inline-block"
+                            className="my-0.75 mr-compact inline-block"
                             key={phase.phase}
                           >
                             {phaseName(phase.phase)} {fmt(phase.successful_ops)}
@@ -139,7 +139,7 @@ export function RunHistory({
             </Table>
           </Table.ScrollContainer>
         ) : (
-          <div data-spt-legacy="" className="history-empty">
+          <div className="px-section py-xxl text-center">
             <Title order={2}>No saved benchmark runs</Title>
             <Text className="mt-xs">
               Completed and partial SPT results will appear here.

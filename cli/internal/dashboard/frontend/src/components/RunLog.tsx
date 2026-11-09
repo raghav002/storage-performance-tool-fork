@@ -1,4 +1,11 @@
-import { Button, Text, Title } from "@mantine/core";
+import {
+  Accordion,
+  Button,
+  Paper,
+  SegmentedControl,
+  Text,
+  Title,
+} from "@mantine/core";
 import { useState } from "react";
 import type { LogLevel, LogResponse } from "../types";
 import { useLog } from "../api/queries";
@@ -25,7 +32,7 @@ export function RunLog({
   sources?: ("console" | "results")[];
   title?: string;
   refreshMs?: number;
-  /** Render inside a closed <details> so long traces stay hidden until asked for. */
+  /** Start collapsed so long traces stay hidden until requested. */
   collapsed?: boolean;
 }) {
   const [open, setOpen] = useState(!collapsed);
@@ -48,19 +55,22 @@ export function RunLog({
     />
   ) : null;
   return collapsed ? (
-    <details
-      data-spt-legacy=""
-      className="panel run-log"
+    <Accordion
+      mb="panel"
       aria-label={title}
-      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
+      value={open ? "log" : null}
+      onChange={(value) => setOpen(value === "log")}
+      keepMounted={false}
     >
-      <summary data-spt-legacy="">{title}</summary>
-      {open && body}
-    </details>
+      <Accordion.Item value="log">
+        <Accordion.Control>{title}</Accordion.Control>
+        <Accordion.Panel>{body}</Accordion.Panel>
+      </Accordion.Item>
+    </Accordion>
   ) : (
-    <section data-spt-legacy="" className="panel run-log" aria-label={title}>
+    <Paper component="section" p="panel" mb="panel" aria-label={title}>
       {body}
-    </section>
+    </Paper>
   );
 }
 
@@ -91,49 +101,28 @@ function LogContents({
   const files = [...new Set(data?.lines.map((l) => l.file) ?? [])];
   return (
     <>
-      <div data-spt-legacy="" className="run-log-heading">
+      <div className="flex flex-wrap gap-sm items-center">
         {!collapsed && (
           <Title order={3} className="flex-auto">
             {title}
           </Title>
         )}
-        <div
-          data-spt-legacy=""
-          className="mode-switch"
-          role="group"
+        <SegmentedControl<LogLevel>
           aria-label="Log level"
-        >
-          {levels.map((l) => (
-            <button
-              data-spt-legacy=""
-              key={l.value}
-              className={level === l.value ? "active" : ""}
-              aria-pressed={level === l.value}
-              onClick={() => setLevel(l.value)}
-            >
-              {l.label}
-            </button>
-          ))}
-        </div>
+          value={level}
+          onChange={setLevel}
+          data={levels}
+        />
         {sources && sources.length > 1 && (
-          <div
-            data-spt-legacy=""
-            className="mode-switch"
-            role="group"
+          <SegmentedControl<LogResponse["source"] | "">
             aria-label="Log source"
-          >
-            {sources.map((s) => (
-              <button
-                data-spt-legacy=""
-                key={s}
-                className={source === s ? "active" : ""}
-                aria-pressed={source === s}
-                onClick={() => setSource(s)}
-              >
-                {s === "console" ? "Console (interim)" : "Results logs"}
-              </button>
-            ))}
-          </div>
+            value={source}
+            onChange={setSource}
+            data={sources.map((s) => ({
+              value: s,
+              label: s === "console" ? "Console (interim)" : "Results logs",
+            }))}
+          />
         )}
         <Button onClick={() => void log.refetch()}>Reload</Button>
       </div>
@@ -158,12 +147,20 @@ function LogContents({
             : `No ${level === "warn" ? "warning or error" : "error"} lines recorded.`}
         </Text>
       ) : (
-        <pre data-spt-legacy="" className="log-lines" tabIndex={0}>
+        <pre
+          className="p-sm max-h-90 overflow-auto bg-[#101827] text-[#dbe4f0] rounded-md text-sm/help whitespace-pre-wrap wrap-anywhere"
+          tabIndex={0}
+        >
           {data.lines.map((l, i) => (
             <span
-              data-spt-legacy=""
               key={i}
-              className={`log-line log-${l.level}`}
+              className={
+                l.level === "warn"
+                  ? "text-[#f5c46b]"
+                  : l.level === "error"
+                    ? "text-[#ff8a80]"
+                    : undefined
+              }
             >
               {l.text}
               {"\n"}

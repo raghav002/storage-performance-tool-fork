@@ -1,8 +1,15 @@
 import {
+  Accordion,
+  Alert,
   Badge,
   Box,
   Button,
+  Checkbox,
+  Drawer,
+  NativeSelect,
   NavLink,
+  Paper,
+  Progress,
   SegmentedControl,
   Text,
   Title,
@@ -15,6 +22,7 @@ import {
   LayoutDashboard,
   ListFilter,
   Plus,
+  Square,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Row, RunMode, State } from "./types";
@@ -153,11 +161,11 @@ export default function App() {
   };
 
   return (
-    <div className="flex min-h-screen [@media(max-width:760px)]:block">
+    <div className="flex min-h-screen max-[47.5rem]:block">
       <Box
         component="aside"
         bg="var(--spt-surface-panel)"
-        className="sticky top-0 flex h-screen w-[235px] shrink-0 flex-col border-r border-divider px-lg py-xl [@media(max-width:1150px)]:w-[195px] [@media(max-width:1150px)]:px-[14px] [@media(max-width:1150px)]:py-[25px] [@media(max-width:760px)]:static [@media(max-width:760px)]:h-auto [@media(max-width:760px)]:w-full [@media(max-width:760px)]:border-r-0 [@media(max-width:760px)]:border-b [@media(max-width:760px)]:px-comfortable [@media(max-width:760px)]:py-[15px]"
+        className="sticky top-0 flex h-screen w-58.75 shrink-0 flex-col border-r-[0.0625rem] border-divider px-lg py-xl max-[71.875rem]:w-48.75 max-[71.875rem]:px-3.5 max-[71.875rem]:py-6.25 max-[47.5rem]:static max-[47.5rem]:h-auto max-[47.5rem]:w-full max-[47.5rem]:border-r-0 max-[47.5rem]:border-b-[0.0625rem] max-[47.5rem]:px-comfortable max-[47.5rem]:py-3.75"
       >
         <UnstyledButton
           component="a"
@@ -173,7 +181,7 @@ export default function App() {
             size="emphasis"
             fw="var(--mantine-font-weight-heading)"
             lh="normal"
-            className="grid size-[42px] shrink-0 place-items-center"
+            className="grid size-10.5 shrink-0 place-items-center"
           >
             SPT
           </Text>
@@ -191,7 +199,7 @@ export default function App() {
               size="xxs"
               c="var(--spt-text-subtle)"
               lh="normal"
-              className="mt-[6px] block tracking-[1px] [@media(max-width:760px)]:hidden"
+              className="mt-1.5 block tracking-[0.0625rem] max-[47.5rem]:hidden"
             >
               {(
                 state?.branding?.environment_label ?? "BENCHMARK CONSOLE"
@@ -203,19 +211,19 @@ export default function App() {
           size="xs"
           c="var(--spt-text-subtle)"
           lh="normal"
-          className="mx-sm mt-xxxl mb-[14px] tracking-[1.5px] [@media(max-width:760px)]:hidden"
+          className="mx-sm mt-xxxl mb-3.5 tracking-[0.09375rem] max-[47.5rem]:hidden"
         >
           WORKSPACE
         </Text>
         <nav
           aria-label="Main navigation"
-          className="grid gap-xs [@media(max-width:760px)]:mt-[15px] [@media(max-width:760px)]:flex [@media(max-width:760px)]:flex-wrap"
+          className="grid gap-xs max-[47.5rem]:mt-3.75 max-[47.5rem]:flex max-[47.5rem]:flex-wrap"
         >
           <NavLink
             component="button"
             type="button"
             label="Configure run"
-            leftSection={<Plus size={16} aria-hidden="true" />}
+            leftSection={<Plus size="1rem" aria-hidden="true" />}
             active={page === "configure"}
             aria-current={page === "configure" ? "page" : undefined}
             onClick={() => {
@@ -227,7 +235,7 @@ export default function App() {
             component="button"
             type="button"
             label="Live dashboard"
-            leftSection={<LayoutDashboard size={16} aria-hidden="true" />}
+            leftSection={<LayoutDashboard size="1rem" aria-hidden="true" />}
             active={page === "dashboard"}
             aria-current={page === "dashboard" ? "page" : undefined}
             onClick={showDashboard}
@@ -236,7 +244,7 @@ export default function App() {
             component="button"
             type="button"
             label="Run history"
-            leftSection={<History size={16} aria-hidden="true" />}
+            leftSection={<History size="1rem" aria-hidden="true" />}
             active={page === "history"}
             aria-current={page === "history" ? "page" : undefined}
             onClick={() => {
@@ -248,7 +256,7 @@ export default function App() {
             component="button"
             type="button"
             label="Results catalog"
-            leftSection={<ListFilter size={16} aria-hidden="true" />}
+            leftSection={<ListFilter size="1rem" aria-hidden="true" />}
             active={page === "catalog"}
             aria-current={page === "catalog" ? "page" : undefined}
             onClick={() => setPage("catalog")}
@@ -257,7 +265,7 @@ export default function App() {
             component="button"
             type="button"
             label="Compare runs"
-            leftSection={<ArrowLeftRight size={16} aria-hidden="true" />}
+            leftSection={<ArrowLeftRight size="1rem" aria-hidden="true" />}
             active={page === "compare"}
             aria-current={page === "compare" ? "page" : undefined}
             onClick={() => setPage("compare")}
@@ -266,19 +274,19 @@ export default function App() {
             component="button"
             type="button"
             label="Connect to active run"
-            leftSection={<ExternalLink size={16} aria-hidden="true" />}
+            leftSection={<ExternalLink size="1rem" aria-hidden="true" />}
             active={page === "connect"}
             aria-current={page === "connect" ? "page" : undefined}
             onClick={() => setPage("connect")}
           />
         </nav>
-        <div className="mx-sm mt-xxl mb-section border-t border-divider pt-section wrap-anywhere [@media(max-width:760px)]:hidden">
+        <div className="mx-sm mt-xxl mb-section border-t-[0.0625rem] border-divider pt-section wrap-anywhere max-[47.5rem]:hidden">
           <Text
             size="xxs"
             c="var(--spt-text-muted)"
             fw="var(--mantine-font-weight-heading)"
             lh="normal"
-            className="mb-compact tracking-[1.3px]"
+            className="mb-compact tracking-[0.08125rem]"
           >
             STORAGE TARGET
           </Text>
@@ -303,14 +311,14 @@ export default function App() {
           size="caption"
           c="var(--spt-text-muted)"
           lh="normal"
-          className="mt-auto [@media(max-width:760px)]:hidden"
+          className="mt-auto max-[47.5rem]:hidden"
         >
           <Box
             component="span"
             aria-hidden="true"
             bg={state && !error ? "var(--spt-chart-bandwidth)" : "#e2a243"}
             bdrs="50%"
-            className="mr-xs inline-block size-[7px]"
+            className="mr-xs inline-block size-1.75"
           />
           {error
             ? "Connection unavailable"
@@ -327,7 +335,7 @@ export default function App() {
         <Box
           component="header"
           bg="#ffffffc9"
-          className="flex h-[76px] items-center justify-between border-b border-divider px-xxl [@media(max-width:1150px)]:px-section [@media(max-width:760px)]:h-auto [@media(max-width:760px)]:min-h-[76px] [@media(max-width:760px)]:flex-wrap [@media(max-width:760px)]:gap-xs [@media(max-width:760px)]:p-md"
+          className="flex h-19 items-center justify-between border-b-[0.0625rem] border-divider px-xxl max-[71.875rem]:px-section max-[47.5rem]:h-auto max-[47.5rem]:min-h-19 max-[47.5rem]:flex-wrap max-[47.5rem]:gap-xs max-[47.5rem]:p-md"
         >
           <Text
             component="span"
@@ -337,7 +345,7 @@ export default function App() {
           >
             Benchmark workspace
           </Text>
-          <div className="flex items-center gap-lg [@media(max-width:760px)]:gap-compact">
+          <div className="flex items-center gap-lg max-[47.5rem]:gap-compact">
             <Badge
               color={error ? "yellow" : "spt"}
               c={
@@ -351,11 +359,11 @@ export default function App() {
               px="xs"
               styles={{
                 root: {
-                  paddingBlock: "5px",
+                  paddingBlock: "0.3125rem",
                   borderColor: error
                     ? "var(--spt-status-warning-border)"
                     : "var(--mantine-color-spt-2)",
-                  letterSpacing: "0.8px",
+                  letterSpacing: "0.05rem",
                 },
               }}
             >
@@ -384,10 +392,10 @@ export default function App() {
             />
           </div>
         </Box>
-        <main className="mx-auto max-w-[1550px] px-xxl py-[32px] [@media(min-width:1500px)]:pt-[40px] [@media(max-width:1150px)]:p-section [@media(max-width:760px)]:px-md [@media(max-width:760px)]:py-panel">
+        <main className="mx-auto max-w-387.5 px-xxl py-8 min-[93.75rem]:pt-10 max-[71.875rem]:p-section max-[47.5rem]:px-md max-[47.5rem]:py-panel">
           {error && (
-            <div data-spt-legacy="" className="error" role="alert">
-              <strong data-spt-legacy="">Connection unavailable. </strong>
+            <Alert color="red" role="alert">
+              <strong>Connection unavailable. </strong>
               {error}
               {received && (
                 <Text>
@@ -395,7 +403,7 @@ export default function App() {
                   controls are disabled until the connection returns.
                 </Text>
               )}
-            </div>
+            </Alert>
           )}
           {page === "connect" ? (
             <ConnectRun
@@ -435,7 +443,7 @@ export default function App() {
           ) : (
             <>
               {mode === "expert" && (
-                <div data-spt-legacy="" className="expert-edit">
+                <div className="flex justify-end mb-comfortable">
                   <Button type="button" onClick={() => setCustomizing(true)}>
                     Customize view
                   </Button>
@@ -456,116 +464,79 @@ export default function App() {
                 }
                 onConfigure={() => setPage("configure")}
               />
-              {mode === "expert" && customizing && (
-                <div
-                  data-spt-legacy=""
-                  className="expert-view-overlay"
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") setCustomizing(false);
-                  }}
+              {mode === "expert" && (
+                <Drawer
+                  opened={customizing}
+                  onClose={() => setCustomizing(false)}
+                  title={
+                    <>
+                      <Text
+                        component="span"
+                        className="block"
+                        size="xs"
+                        fw="var(--mantine-font-weight-bold)"
+                        tt="uppercase"
+                      >
+                        Expert view
+                      </Text>
+                      <Text
+                        component="span"
+                        className="block"
+                        size="xl"
+                        c="var(--spt-text-primary)"
+                        fw="var(--mantine-font-weight-heading)"
+                      >
+                        Customize dashboard
+                      </Text>
+                    </>
+                  }
+                  closeButtonProps={{ "aria-label": "Close customization" }}
                 >
-                  <button
-                    data-spt-legacy=""
-                    className="expert-view-backdrop"
-                    type="button"
-                    aria-label="Close dashboard customization"
-                    onClick={() => setCustomizing(false)}
-                  />
-                  <aside
-                    data-spt-legacy=""
-                    className="expert-view-drawer"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="expert-view-drawer-title"
-                  >
-                    <div
-                      data-spt-legacy=""
-                      className="expert-view-drawer-heading"
-                    >
-                      <div data-spt-legacy="">
-                        <span data-spt-legacy="" className="eyebrow">
-                          EXPERT VIEW
-                        </span>
-                        <Title
-                          order={2}
-                          size="xl"
-                          className="mt-[3px]"
-                          id="expert-view-drawer-title"
-                        >
-                          Customize dashboard
-                        </Title>
-                      </div>
-                      <button
-                        data-spt-legacy=""
-                        type="button"
-                        autoFocus
-                        aria-label="Close customization"
-                        onClick={() => setCustomizing(false)}
+                  <Text size="sm">
+                    Show or hide sections. This only changes your display, not
+                    the benchmark or its data.
+                  </Text>
+                  <div className="flex gap-xs">
+                    <Button onClick={() => setSelection(allSectionKeys())}>
+                      Show all
+                    </Button>
+                    <Button onClick={() => setSelection([])}>Hide all</Button>
+                  </div>
+                  <div className="grid gap-2.25">
+                    {fields.map((field) => (
+                      <Paper
+                        key={field.key}
+                        p="sm"
+                        radius="md"
+                        bg="var(--spt-surface-subtle)"
                       >
-                        ✕
-                      </button>
-                    </div>
+                        <Checkbox
+                          label={field.title}
+                          description={field.detail}
+                          checked={selection.includes(field.key)}
+                          onChange={(event) =>
+                            setSelection((previous) =>
+                              event.target.checked
+                                ? [...previous, field.key]
+                                : previous.filter((key) => key !== field.key),
+                            )
+                          }
+                        />
+                      </Paper>
+                    ))}
+                  </div>
+                  <div className="mt-auto flex items-center justify-between gap-compact border-t-[0.0625rem] border-divider pt-comfortable">
                     <Text size="sm">
-                      Show or hide sections. This only changes your display, not
-                      the benchmark or its data.
+                      {selection.length} of {fields.length} sections shown
                     </Text>
-                    <div
-                      data-spt-legacy=""
-                      className="expert-view-drawer-actions"
+                    <Button
+                      variant="filled"
+                      onClick={() => setCustomizing(false)}
                     >
-                      <Button
-                        type="button"
-                        onClick={() => setSelection(allSectionKeys())}
-                      >
-                        Show all
-                      </Button>
-                      <Button type="button" onClick={() => setSelection([])}>
-                        Hide all
-                      </Button>
-                    </div>
-                    <div data-spt-legacy="" className="expert-view-drawer-list">
-                      {fields.map((field) => (
-                        <label
-                          data-spt-legacy=""
-                          className="check-label"
-                          key={field.key}
-                        >
-                          <input
-                            data-spt-legacy=""
-                            type="checkbox"
-                            checked={selection.includes(field.key)}
-                            onChange={(event) =>
-                              setSelection((previous) =>
-                                event.target.checked
-                                  ? [...previous, field.key]
-                                  : previous.filter((key) => key !== field.key),
-                              )
-                            }
-                          />
-                          <span data-spt-legacy="">
-                            <strong data-spt-legacy="">{field.title}</strong>
-                            <small data-spt-legacy="">{field.detail}</small>
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                    <div
-                      data-spt-legacy=""
-                      className="expert-view-drawer-footer"
-                    >
-                      <span data-spt-legacy="">
-                        {selection.length} of {fields.length} sections shown
-                      </span>
-                      <Button
-                        variant="filled"
-                        type="button"
-                        onClick={() => setCustomizing(false)}
-                      >
-                        Done
-                      </Button>
-                    </div>
-                  </aside>
-                </div>
+                      Done
+                    </Button>
+                  </div>
+                </Drawer>
               )}
             </>
           )}
@@ -575,7 +546,7 @@ export default function App() {
           size="xs"
           c="var(--spt-text-subtle)"
           lh="normal"
-          className="px-xxl pb-[25px] [@media(max-width:760px)]:px-md [@media(max-width:760px)]:pb-lg"
+          className="px-xxl pb-6.25 max-[47.5rem]:px-md max-[47.5rem]:pb-lg"
         >
           {state?.branding?.product_name ?? "Storage Performance Tool"} ·{" "}
           {received
@@ -682,9 +653,9 @@ function Dashboard({
   const has = (key: string) => selected.includes(key);
   return (
     <>
-      <div data-spt-legacy="" className="page-heading">
-        <div data-spt-legacy="">
-          <span data-spt-legacy="" className="eyebrow">
+      <div className="flex justify-between items-center mb-6.5 gap-md max-[47.5rem]:items-start max-[47.5rem]:flex-col">
+        <div className="min-w-0">
+          <span className="block text-xs/[inherit] tracking-[0.08125rem] text-[#6b7f99] font-heading mb-compact">
             {job?.status === "running" ? "LIVE BENCHMARK" : "BENCHMARK RESULTS"}
           </span>
           <Title order={1}>
@@ -698,7 +669,7 @@ function Dashboard({
               "Configure a run to measure your storage target."}
           </Text>
         </div>
-        <div data-spt-legacy="" className="actions">
+        <div className="flex flex-wrap items-center gap-compact max-[47.5rem]:w-full">
           {historical && (
             <Button onClick={onBackHistory}>Back to run history</Button>
           )}
@@ -712,130 +683,164 @@ function Dashboard({
             </Button>
           )}
           {canStop && (
-            <Button onClick={stop} disabled={stopPending}>
+            <Button
+              color="red"
+              variant="light"
+              onClick={stop}
+              disabled={stopPending}
+              loading={stopPending}
+              leftSection={<Square size="0.875rem" aria-hidden="true" />}
+            >
               {stopPending ? "Stopping…" : "Stop run"}
             </Button>
           )}
-          <Button variant="filled" onClick={onConfigure}>
-            ＋ Configure run
+          <Button
+            variant="filled"
+            onClick={onConfigure}
+            leftSection={<Plus size="1rem" aria-hidden="true" />}
+          >
+            Configure run
           </Button>
         </div>
       </div>
       {stopError && (
-        <div data-spt-legacy="" className="error" role="alert">
+        <Alert color="red" role="alert">
           {stopError}
-        </div>
+        </Alert>
       )}
       {!job && !m ? (
-        <section data-spt-legacy="" className="panel empty-state">
-          <div data-spt-legacy="" className="empty-icon">
-            ◫
-          </div>
+        <Paper
+          component="section"
+          className="mb-panel px-section py-16 text-center"
+        >
+          <Paper
+            radius="xl"
+            bg="var(--spt-surface-selected)"
+            className="mx-auto mb-lg grid size-14 place-items-center"
+          >
+            <LayoutDashboard
+              size="1.625rem"
+              color="var(--spt-action-primary)"
+              aria-hidden="true"
+            />
+          </Paper>
           <Title order={2}>
             {state
               ? "No benchmark results yet"
               : "Waiting for dashboard server"}
           </Title>
-          <Text className="mt-[14px] mx-auto mb-section max-w-[450px]">
+          <Text className="mt-3.5 mx-auto mb-section max-w-112.5">
             Configure a write and verify benchmark. Measured results will appear
             here as SPT runs.
           </Text>
           <Button variant="filled" onClick={onConfigure}>
             Configure a run
           </Button>
-        </section>
+        </Paper>
       ) : (
         <>
           <section
-            data-spt-legacy=""
-            className="run-strip"
+            className="px-panel py-comfortable flex flex-wrap items-center gap-xl border-[0.0625rem] border-border rounded-lg bg-panel mb-panel max-[71.875rem]:gap-comfortable max-[47.5rem]:p-md"
             aria-label="Run status"
           >
-            <div data-spt-legacy="">
-              <span data-spt-legacy="">Status</span>
+            <div className="grid gap-1.75">
+              <span className="text-caption/[inherit] text-subtle">Status</span>
               <Status status={job?.status ?? "recorded"} />
             </div>
-            <div data-spt-legacy="">
-              <span data-spt-legacy="">Elapsed</span>
-              <strong data-spt-legacy="">
+            <div className="grid gap-1.75">
+              <span className="text-caption/[inherit] text-subtle">
+                Elapsed
+              </span>
+              <strong className="text-sm/[inherit] font-semibold">
                 {elapsed(job?.elapsed_seconds)}
               </strong>
             </div>
-            <div data-spt-legacy="">
-              <span data-spt-legacy="">Current phase</span>
-              <strong data-spt-legacy="">
+            <div className="grid gap-1.75">
+              <span className="text-caption/[inherit] text-subtle">
+                Current phase
+              </span>
+              <strong className="text-sm/[inherit] font-semibold">
                 {job?.phase || phaseName(m?.phase)}
               </strong>
             </div>
-            <div data-spt-legacy="">
-              <span data-spt-legacy="">Workload</span>
-              <strong data-spt-legacy="">
+            <div className="grid gap-1.75">
+              <span className="text-caption/[inherit] text-subtle">
+                Workload
+              </span>
+              <strong className="text-sm/[inherit] font-semibold">
                 {workloadLabel(runWorkloadType(m, job))}
               </strong>
             </div>
-            <div data-spt-legacy="" className="progress">
-              <div data-spt-legacy="">
-                <span data-spt-legacy="">Reported phase progress</span>
-                <strong data-spt-legacy="">
+            <div className="flex-1 min-w-35 grid gap-1.75 max-[47.5rem]:basis-full">
+              <div className="flex flex-wrap justify-between gap-3.75">
+                <span className="text-caption/[inherit] text-subtle">
+                  Reported phase progress
+                </span>
+                <strong className="text-sm/[inherit] font-semibold">
                   {progress === null ? "Not reported" : `${fmt(progress, 1)}%`}
                 </strong>
               </div>
               {progress !== null && (
-                <progress
-                  data-spt-legacy=""
-                  max="100"
+                <Progress
                   value={Math.max(0, Math.min(100, progress))}
                   aria-label="Reported phase progress"
                 />
               )}
             </div>
           </section>
-          <section data-spt-legacy="" className="panel outcome">
-            <div data-spt-legacy="">
-              <span data-spt-legacy="" className="eyebrow">
+          <Paper
+            component="section"
+            className="mb-panel p-panel max-[47.5rem]:p-4.25 flex items-center justify-between gap-section max-[71.875rem]:flex-col max-[71.875rem]:items-start"
+          >
+            <div>
+              <span className="block text-xs/[inherit] tracking-[0.08125rem] text-[#6b7f99] font-heading mb-1.75">
                 RUN OUTCOME
               </span>
               <Title order={2}>{outcome}</Title>
-              <Text size="sm" className="mt-[7px]">
+              <Text size="sm" className="mt-1.75">
                 {job?.message ||
                   "SPT measurements from the configured storage target."}
               </Text>
             </div>
-            <div data-spt-legacy="" className="outcome-facts">
-              <span data-spt-legacy="">
+            <div className="flex flex-wrap gap-wide shrink-0 max-[47.5rem]:gap-panel">
+              <span className="grid gap-1.75 text-muted text-xs/[inherit]">
                 Failed operations
-                <strong data-spt-legacy="">{fmt(failureCount)}</strong>
-                <small data-spt-legacy="">
+                <strong className="text-foreground text-lg/[inherit]">
+                  {fmt(failureCount)}
+                </strong>
+                <small className="font-normal max-w-37.5 text-xs/[inherit]">
                   {numeric(m?.total_failed) !== null
                     ? "Across all recorded phases"
                     : `In ${phaseName(selectedPhase).toLowerCase()} phase`}
                 </small>
               </span>
-              <span data-spt-legacy="">
+              <span className="grid gap-1.75 text-muted text-xs/[inherit]">
                 History captured
-                <strong data-spt-legacy="">{history.length} samples</strong>
-                <small data-spt-legacy="">Reported interval measurements</small>
+                <strong className="text-foreground text-lg/[inherit]">
+                  {history.length} samples
+                </strong>
+                <small className="font-normal max-w-37.5 text-xs/[inherit]">
+                  Reported interval measurements
+                </small>
               </span>
             </div>
-          </section>
+          </Paper>
+
           <RunWarnings warnings={m?.warnings} />
+
           {m && (
             <>
-              <div data-spt-legacy="" className="scope-bar">
-                <label data-spt-legacy="">
-                  Inspect phase
-                  <select
-                    data-spt-legacy=""
-                    value={selectedPhase}
-                    onChange={(e) => setPhase(e.target.value)}
-                  >
-                    {available.map((p) => (
-                      <option data-spt-legacy="" key={p} value={p}>
-                        {phaseName(p)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+              <div className="flex flex-wrap gap-lg items-center mb-comfortable">
+                <NativeSelect
+                  label="Inspect phase"
+                  value={selectedPhase}
+                  onChange={(e) => setPhase(e.target.value)}
+                  data={available.map((p) => ({
+                    value: p,
+                    label: phaseName(p),
+                  }))}
+                  className="min-w-40"
+                />
                 <Text size="caption">
                   {!m.is_active && final
                     ? "Final phase averages"
@@ -844,7 +849,7 @@ function Dashboard({
                 </Text>
               </div>
               {has("cards") && (
-                <div data-spt-legacy="" className="metrics-grid">
+                <div className="grid grid-cols-4 gap-md mb-panel max-[47.5rem]:grid-cols-2 max-[47.5rem]:gap-sm">
                   <MetricCard
                     label={`${phaseName(selectedPhase)} IOPS`}
                     value={formatMetric(
@@ -930,46 +935,68 @@ function Dashboard({
             />
           )}
           {has("record") && (
-            <details data-spt-legacy="" className="panel">
-              <summary data-spt-legacy="">Run record and settings</summary>
-              <div data-spt-legacy="" className="detail-strip">
-                <span data-spt-legacy="">Started: {utc(job?.started_at)}</span>
-                <span data-spt-legacy="">
-                  Finished: {utc(job?.finished_at)}
-                </span>
-                <span data-spt-legacy="">
-                  Exit code: {fmt(job?.returncode)}
-                </span>
-              </div>
-              <dl data-spt-legacy="" className="record-grid">
-                <div data-spt-legacy="">
-                  <dt data-spt-legacy="">Objects</dt>
-                  <dd data-spt-legacy="">{fmt(job?.options?.object_count)}</dd>
-                </div>
-                <div data-spt-legacy="">
-                  <dt data-spt-legacy="">Object size</dt>
-                  <dd data-spt-legacy="">{job?.options?.object_size ?? "—"}</dd>
-                </div>
-                <div data-spt-legacy="">
-                  <dt data-spt-legacy="">Threads</dt>
-                  <dd data-spt-legacy="">{fmt(job?.options?.threads)}</dd>
-                </div>
-                <div data-spt-legacy="">
-                  <dt data-spt-legacy="">Safety time limit</dt>
-                  <dd data-spt-legacy="">
-                    {elapsed(job?.options?.max_runtime_seconds)}
-                  </dd>
-                </div>
-                <div data-spt-legacy="">
-                  <dt data-spt-legacy="">Run prefix</dt>
-                  <dd data-spt-legacy="">{job?.prefix ?? "—"}</dd>
-                </div>
-                <div data-spt-legacy="">
-                  <dt data-spt-legacy="">Source</dt>
-                  <dd data-spt-legacy="">{m?.source_file ?? "—"}</dd>
-                </div>
-              </dl>
-            </details>
+            <Accordion mb="panel">
+              <Accordion.Item value="section">
+                <Accordion.Control>Run record and settings</Accordion.Control>
+                <Accordion.Panel>
+                  <div className="mx-0 my-panel flex flex-wrap gap-panel text-caption/[inherit] text-muted">
+                    <span>Started: {utc(job?.started_at)}</span>
+                    <span>Finished: {utc(job?.finished_at)}</span>
+                    <span>Exit code: {fmt(job?.returncode)}</span>
+                  </div>
+                  <dl className="grid grid-cols-2 gap-lg max-[47.5rem]:grid-cols-1">
+                    <div>
+                      <dt className="text-muted text-caption/[inherit] mb-1.75">
+                        Objects
+                      </dt>
+                      <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                        {fmt(job?.options?.object_count)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted text-caption/[inherit] mb-1.75">
+                        Object size
+                      </dt>
+                      <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                        {job?.options?.object_size ?? "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted text-caption/[inherit] mb-1.75">
+                        Threads
+                      </dt>
+                      <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                        {fmt(job?.options?.threads)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted text-caption/[inherit] mb-1.75">
+                        Safety time limit
+                      </dt>
+                      <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                        {elapsed(job?.options?.max_runtime_seconds)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted text-caption/[inherit] mb-1.75">
+                        Run prefix
+                      </dt>
+                      <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                        {job?.prefix ?? "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted text-caption/[inherit] mb-1.75">
+                        Source
+                      </dt>
+                      <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                        {m?.source_file ?? "—"}
+                      </dd>
+                    </div>
+                  </dl>
+                </Accordion.Panel>
+              </Accordion.Item>
+            </Accordion>
           )}
         </>
       )}

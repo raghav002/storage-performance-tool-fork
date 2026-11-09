@@ -1,4 +1,4 @@
-import { Button, Text, TextInput } from "@mantine/core";
+import { Accordion, Button, Text, TextInput } from "@mantine/core";
 import { useState } from "react";
 import type { Row, State } from "../types";
 import { defaults } from "../config";
@@ -40,9 +40,9 @@ export function PerformanceLimits(props: Props) {
     o.threads,
   ].join(":");
   return (
-    <details data-spt-legacy="" className="panel limits">
+    <Accordion mb="panel">
       <LimitsForm key={key} {...props} storageKey={key} />
-    </details>
+    </Accordion>
   );
 }
 
@@ -104,82 +104,86 @@ function LimitsForm({
     }
   }
   return (
-    <>
-      <summary data-spt-legacy="">
+    <Accordion.Item value="limits">
+      <Accordion.Control>
         Performance limits{" "}
-        <span data-spt-legacy="" className="summary-note">
+        <span className="text-xs/[inherit] font-normal ml-sm text-muted max-[47.5rem]:block max-[47.5rem]:mt-xs max-[47.5rem]:mr-0 max-[47.5rem]:mb-0 max-[47.5rem]:ml-md">
           {phaseName(phase)} ·{" "}
           {checks.filter((c) => limits[c.key] !== null).length}/3 set
         </span>
-      </summary>
-      <Text size="sm" className="my-comfortable">
-        Set your team’s expectations for {state.target.endpoint_label},{" "}
-        {o.object_size} objects, and {o.threads} thread
-        {o.threads === 1 ? "" : "s"}. These limits stay in this browser and
-        apply to the selected phase.
-      </Text>
-      <div className="my-lg grid grid-cols-3 gap-panel [@media(max-width:760px)]:grid-cols-1">
-        {checks.map((c) => {
-          const limit = limits[c.key],
-            value = c.value;
-          const result =
-            limit === null
-              ? "No limit set"
-              : value === null
-                ? "Not measured"
-                : (c.minimum ? value >= limit : value <= limit)
-                  ? "Within limit"
-                  : "Outside limit";
-          return (
-            <TextInput
-              key={c.key}
-              className="min-w-0"
-              label={`${c.minimum ? "Minimum" : "Maximum"} ${c.label} (${
-                c.key === "iops"
-                  ? "ops/s"
-                  : c.key === "bandwidth"
-                    ? "MiB/s"
-                    : "µs"
-              })`}
-              description={`${result} · measured ${fmt(value, 2)}`}
-              descriptionProps={{
-                c:
-                  result === "Outside limit"
-                    ? "var(--spt-threshold-failure)"
-                    : "var(--spt-text-subtle)",
-              }}
-              type="number"
-              min="0"
-              step="any"
-              placeholder="No limit set"
-              value={draft[c.key]}
-              onChange={(e) => setDraft({ ...draft, [c.key]: e.target.value })}
-            />
-          );
-        })}
-      </div>
-      <div data-spt-legacy="" className="actions">
-        <Button variant="filled" onClick={save}>
-          Save limits
-        </Button>
-        <Button
-          onClick={() => {
-            try {
-              localStorage.removeItem(key);
-              setLimits(noLimits);
-              setDraft({ iops: "", bandwidth: "", latency: "" });
-              setMessage("Limits cleared.");
-            } catch {
-              setMessage("Browser storage unavailable.");
-            }
-          }}
-        >
-          Clear limits
-        </Button>
-        <span data-spt-legacy="" className="subtle" role="status">
-          {message}
-        </span>
-      </div>
-    </>
+      </Accordion.Control>
+      <Accordion.Panel>
+        <Text size="sm" className="my-comfortable">
+          Set your team’s expectations for {state.target.endpoint_label},{" "}
+          {o.object_size} objects, and {o.threads} thread
+          {o.threads === 1 ? "" : "s"}. These limits stay in this browser and
+          apply to the selected phase.
+        </Text>
+        <div className="my-lg grid grid-cols-3 gap-panel max-[47.5rem]:grid-cols-1">
+          {checks.map((c) => {
+            const limit = limits[c.key],
+              value = c.value;
+            const result =
+              limit === null
+                ? "No limit set"
+                : value === null
+                  ? "Not measured"
+                  : (c.minimum ? value >= limit : value <= limit)
+                    ? "Within limit"
+                    : "Outside limit";
+            return (
+              <TextInput
+                key={c.key}
+                className="min-w-0"
+                label={`${c.minimum ? "Minimum" : "Maximum"} ${c.label} (${
+                  c.key === "iops"
+                    ? "ops/s"
+                    : c.key === "bandwidth"
+                      ? "MiB/s"
+                      : "µs"
+                })`}
+                description={`${result} · measured ${fmt(value, 2)}`}
+                descriptionProps={{
+                  c:
+                    result === "Outside limit"
+                      ? "var(--spt-threshold-failure)"
+                      : "var(--spt-text-subtle)",
+                }}
+                type="number"
+                min="0"
+                step="any"
+                placeholder="No limit set"
+                value={draft[c.key]}
+                onChange={(e) =>
+                  setDraft({ ...draft, [c.key]: e.target.value })
+                }
+              />
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap items-center gap-compact">
+          <Button variant="filled" onClick={save}>
+            Save limits
+          </Button>
+          <Button
+            onClick={() => {
+              try {
+                localStorage.removeItem(key);
+                setLimits(noLimits);
+                setDraft({ iops: "", bandwidth: "", latency: "" });
+                setMessage("Limits cleared.");
+              } catch {
+                setMessage("Browser storage unavailable.");
+              }
+            }}
+          >
+            Clear limits
+          </Button>
+          <span className="text-subtle text-xs/[inherit]" role="status">
+            {message}
+          </span>
+        </div>
+      </Accordion.Panel>
+    </Accordion.Item>
   );
 }

@@ -1,10 +1,13 @@
 import {
+  Alert,
   Button,
   Checkbox,
+  NativeSelect,
   Paper,
   Radio,
   Table,
   Text,
+  TextInput,
   Title,
 } from "@mantine/core";
 import { useState } from "react";
@@ -59,9 +62,9 @@ export function Catalog({
   const runs = data?.runs ?? [];
   return (
     <>
-      <div data-spt-legacy="" className="page-heading">
-        <div data-spt-legacy="">
-          <span data-spt-legacy="" className="eyebrow">
+      <div className="flex justify-between items-center mb-6.5 gap-md max-[47.5rem]:items-start max-[47.5rem]:flex-col">
+        <div className="min-w-0">
+          <span className="block text-xs/[inherit] tracking-[0.08125rem] text-[#6b7f99] font-heading mb-compact">
             RESULTS CATALOG · READ ONLY
           </span>
           <Title order={1}>Results catalog</Title>
@@ -71,7 +74,7 @@ export function Catalog({
             deletes results.
           </Text>
         </div>
-        <div data-spt-legacy="" className="actions">
+        <div className="flex flex-wrap items-center gap-compact max-[47.5rem]:w-full">
           <Button
             onClick={() => {
               void catalog.refetch();
@@ -95,73 +98,51 @@ export function Catalog({
           </Button>
         </div>
       </div>
-      <section
-        data-spt-legacy=""
-        className="panel catalog-filters"
+      <Paper
+        component="section"
+        p="panel"
+        mb="comfortable"
+        className="flex flex-wrap items-end gap-3.5"
         aria-label="Filters"
       >
-        <label data-spt-legacy="">
-          Search
-          <input
-            data-spt-legacy=""
-            type="search"
-            value={filters.q}
-            placeholder="Run name, label, size, endpoint host"
-            onChange={(e) => setFilters({ ...filters, q: e.target.value })}
-          />
-        </label>
-        <label data-spt-legacy="">
-          Source
-          <select
-            data-spt-legacy=""
-            value={filters.source}
-            onChange={(e) =>
-              setFilters({
-                ...filters,
-                source: e.target.value as CatalogFilters["source"],
-              })
-            }
-          >
-            <option data-spt-legacy="" value="">
-              All sources
-            </option>
-            <option data-spt-legacy="" value="dashboard">
-              Dashboard
-            </option>
-            <option data-spt-legacy="" value="cli">
-              CLI
-            </option>
-          </select>
-        </label>
-        <label data-spt-legacy="">
-          Status
-          <select
-            data-spt-legacy=""
-            value={filters.status}
-            onChange={(e) =>
-              setFilters({
-                ...filters,
-                status: e.target.value as CatalogFilters["status"],
-              })
-            }
-          >
-            <option data-spt-legacy="" value="">
-              All statuses
-            </option>
-            <option data-spt-legacy="" value="complete">
-              Complete
-            </option>
-            <option data-spt-legacy="" value="partial">
-              Partial
-            </option>
-            <option data-spt-legacy="" value="malformed">
-              Malformed
-            </option>
-            <option data-spt-legacy="" value="failed">
-              Integrity failed
-            </option>
-          </select>
-        </label>
+        <TextInput
+          label="Search"
+          type="search"
+          value={filters.q}
+          placeholder="Run name, label, size, endpoint host"
+          onChange={(e) => setFilters({ ...filters, q: e.target.value })}
+          className="min-w-0 flex-[1_1_17.5rem]"
+        />
+        <NativeSelect
+          label="Source"
+          value={filters.source}
+          onChange={(e) =>
+            setFilters({
+              ...filters,
+              source: e.target.value as CatalogFilters["source"],
+            })
+          }
+        >
+          <option value="">All sources</option>
+          <option value="dashboard">Dashboard</option>
+          <option value="cli">CLI</option>
+        </NativeSelect>
+        <NativeSelect
+          label="Status"
+          value={filters.status}
+          onChange={(e) =>
+            setFilters({
+              ...filters,
+              status: e.target.value as CatalogFilters["status"],
+            })
+          }
+        >
+          <option value="">All statuses</option>
+          <option value="complete">Complete</option>
+          <option value="partial">Partial</option>
+          <option value="malformed">Malformed</option>
+          <option value="failed">Integrity failed</option>
+        </NativeSelect>
         <Text size="sm" className="basis-full">
           Select 2–{maxCompare} runs to compare; the baseline is the run the
           others are checked against. "Compare with previous" pairs this run
@@ -170,16 +151,16 @@ export function Catalog({
           driver — not an SPT product version. Falls back to the next older
           complete run when no shape match exists.
         </Text>
-      </section>
+      </Paper>
       {error && (
-        <div data-spt-legacy="" className="error" role="alert">
+        <Alert color="red" role="alert">
           {error}
-        </div>
+        </Alert>
       )}
       {data?.truncated && (
-        <div data-spt-legacy="" className="notice notice-warn">
+        <Alert color="yellow" role="note">
           The results folder is large; only part of it was scanned.
-        </div>
+        </Alert>
       )}
       <Paper component="section" className="mb-panel">
         {loading && !data ? (
@@ -235,7 +216,7 @@ export function Catalog({
             </Table>
           </Table.ScrollContainer>
         ) : (
-          <div data-spt-legacy="" className="history-empty">
+          <div className="px-section py-xxl text-center">
             <Title order={2}>No runs found</Title>
             <Text className="mt-xs">
               {filters.q || filters.source || filters.status
@@ -307,7 +288,7 @@ function CatalogRow({
         <Table.Td
           ff="monospace"
           fz="caption"
-          className="min-w-[180px] max-w-[300px] whitespace-normal wrap-anywhere"
+          className="min-w-45 max-w-75 whitespace-normal wrap-anywhere"
         >
           {run.id}
           <Text
@@ -315,7 +296,7 @@ function CatalogRow({
             size="caption"
             c="var(--spt-text-muted)"
             lh="normal"
-            className="mt-[3px] block"
+            className="mt-0.75 block"
           >
             {run.source === "dashboard" ? "Dashboard" : "CLI"}
             {run.label ? ` · ${run.label}` : ""}
@@ -329,7 +310,7 @@ function CatalogRow({
                 .replace("Z", "")
             : "—"}
         </Table.Td>
-        <Table.Td className="min-w-[160px] whitespace-normal">
+        <Table.Td className="min-w-40 whitespace-normal">
           {runSettings(run)}
         </Table.Td>
         <Table.Td>
@@ -339,7 +320,7 @@ function CatalogRow({
             size="caption"
             c="var(--spt-text-muted)"
             lh="normal"
-            className="mt-[3px] block"
+            className="mt-0.75 block"
           >
             {integrityText[run.integrity]}
           </Text>
@@ -352,7 +333,7 @@ function CatalogRow({
                 size="caption"
                 c="var(--spt-text-secondary)"
                 lh="normal"
-                className="my-[3px] mr-compact inline-block"
+                className="my-0.75 mr-compact inline-block"
                 key={p.key}
               >
                 {p.key} {fmt(p.iops, 1)}
@@ -400,32 +381,44 @@ function CatalogRow({
             colSpan={8}
           >
             {run.issues.length > 0 && (
-              <ul data-spt-legacy="" className="catalog-issues">
+              <ul className="mx-0 mt-0 mb-sm text-[#9a4b16] text-sm/[inherit]">
                 {run.issues.map((i) => (
-                  <li data-spt-legacy="" key={i}>
-                    {i}
-                  </li>
+                  <li key={i}>{i}</li>
                 ))}
               </ul>
             )}
-            <dl data-spt-legacy="" className="record-grid">
-              <div data-spt-legacy="">
-                <dt data-spt-legacy="">Endpoint host</dt>
-                <dd data-spt-legacy="">{run.endpoint_host ?? "—"}</dd>
+            <dl className="grid grid-cols-2 gap-lg max-[47.5rem]:grid-cols-1">
+              <div>
+                <dt className="text-muted text-caption/[inherit] mb-1.75">
+                  Endpoint host
+                </dt>
+                <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                  {run.endpoint_host ?? "—"}
+                </dd>
               </div>
-              <div data-spt-legacy="">
-                <dt data-spt-legacy="">S3 driver</dt>
-                <dd data-spt-legacy="">{run.s3_driver ?? "—"}</dd>
+              <div>
+                <dt className="text-muted text-caption/[inherit] mb-1.75">
+                  S3 driver
+                </dt>
+                <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                  {run.s3_driver ?? "—"}
+                </dd>
               </div>
-              <div data-spt-legacy="">
-                <dt data-spt-legacy="">CLI / engine</dt>
-                <dd data-spt-legacy="">
+              <div>
+                <dt className="text-muted text-caption/[inherit] mb-1.75">
+                  CLI / engine
+                </dt>
+                <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
                   {run.cli_version ?? "—"} / {run.engine_version ?? "—"}
                 </dd>
               </div>
-              <div data-spt-legacy="">
-                <dt data-spt-legacy="">Summary file</dt>
-                <dd data-spt-legacy="">{run.summary_file ?? "—"}</dd>
+              <div>
+                <dt className="text-muted text-caption/[inherit] mb-1.75">
+                  Summary file
+                </dt>
+                <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                  {run.summary_file ?? "—"}
+                </dd>
               </div>
             </dl>
             {run.phases.length > 0 && (
@@ -502,12 +495,8 @@ function RunArtifacts({ runId }: { runId: string }) {
   const items = artifacts.data?.artifacts;
   const error = artifacts.error?.message ?? "";
   return (
-    <section
-      data-spt-legacy=""
-      className="catalog-artifacts"
-      aria-label="Run artifacts"
-    >
-      <Title order={3} size="md" className="mb-[5px]">
+    <section className="mt-lg" aria-label="Run artifacts">
+      <Title order={3} size="md" className="mb-1.25">
         Artifacts
       </Title>
       <Text size="sm" className="my-comfortable">
@@ -515,19 +504,16 @@ function RunArtifacts({ runId }: { runId: string }) {
         dashboard recognizes are listed.
       </Text>
       {error && (
-        <div data-spt-legacy="" className="error" role="alert">
+        <Alert color="red" role="alert">
           {error}
-        </div>
+        </Alert>
       )}
       {items === undefined && !error ? (
         <Text size="xs" c="var(--spt-text-subtle)">
           Loading artifacts…
         </Text>
       ) : items && items.length === 0 ? (
-        <div
-          data-spt-legacy=""
-          className="history-empty catalog-artifacts-empty"
-        >
+        <div className="px-0 py-sm text-center">
           <Title order={4} size="md">
             No downloadable artifacts
           </Title>
@@ -537,9 +523,12 @@ function RunArtifacts({ runId }: { runId: string }) {
           </Text>
         </div>
       ) : (
-        <ul data-spt-legacy="" className="artifact-list">
+        <ul className="mx-0 p-0 list-none mt-sm mb-0 grid gap-[0.65rem]">
           {(items ?? []).map((a) => (
-            <li data-spt-legacy="" key={a.name}>
+            <li
+              className="flex flex-wrap items-center gap-y-xs gap-x-md"
+              key={a.name}
+            >
               <Button
                 component="a"
                 href={`/api/catalog/artifact?id=${encodeURIComponent(runId)}&file=${encodeURIComponent(a.name)}`}
@@ -547,14 +536,12 @@ function RunArtifacts({ runId }: { runId: string }) {
               >
                 Download {a.type}
               </Button>
-              <span data-spt-legacy="" className="artifact-meta">
-                <span data-spt-legacy="" className="artifact-kind">
+              <span className="flex flex-wrap gap-y-xs gap-x-sm items-baseline">
+                <span className="px-[0.4rem] py-[0.1rem] text-sm/[inherit] font-semibold tracking-[0.04em] rounded-[0.25rem] bg-[#e8eef9] text-[#1e3a8a]">
                   {a.kind.toUpperCase()}
                 </span>
-                <span data-spt-legacy="" className="subtle">
-                  {a.name}
-                </span>
-                <span data-spt-legacy="" className="subtle">
+                <span className="text-subtle text-xs/[inherit]">{a.name}</span>
+                <span className="text-subtle text-xs/[inherit]">
                   {formatBytes(a.size)}
                 </span>
               </span>

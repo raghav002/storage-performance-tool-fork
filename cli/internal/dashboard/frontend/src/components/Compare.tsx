@@ -1,4 +1,15 @@
-import { Badge, Button, Paper, Table, Text, Title } from "@mantine/core";
+import {
+  Alert,
+  Badge,
+  Button,
+  NativeSelect,
+  Paper,
+  SegmentedControl,
+  Table,
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core";
 import { useState } from "react";
 import type { CompareDelta, CompareResult, SeriesPoint } from "../types";
 import { useComparison, useLastSuccessfulData } from "../api/queries";
@@ -73,7 +84,7 @@ export function Compare({
   };
   if (ids.length < 2)
     return (
-      <div data-spt-legacy="" className="history-empty">
+      <div className="px-section py-xxl text-center">
         <Title order={2}>Select runs to compare</Title>
         <Text className="mt-xs">
           Choose at least two runs in the results catalog.
@@ -87,9 +98,9 @@ export function Compare({
   const regressions = data ? regressionCount(data.deltas) : 0;
   return (
     <>
-      <div data-spt-legacy="" className="page-heading">
-        <div data-spt-legacy="">
-          <span data-spt-legacy="" className="eyebrow">
+      <div className="flex justify-between items-center mb-6.5 gap-md max-[47.5rem]:items-start max-[47.5rem]:flex-col">
+        <div className="min-w-0">
+          <span className="block text-xs/[inherit] tracking-[0.08125rem] text-[#6b7f99] font-heading mb-compact">
             COMPARE · {ids.length} RUNS
           </span>
           <Title order={1}>Compare runs</Title>
@@ -98,14 +109,14 @@ export function Compare({
             baseline run.
           </Text>
         </div>
-        <div data-spt-legacy="" className="actions">
+        <div className="flex flex-wrap items-center gap-compact max-[47.5rem]:w-full">
           <Button onClick={onBack}>Back to catalog</Button>
         </div>
       </div>
       {error && (
-        <div data-spt-legacy="" className="error" role="alert">
+        <Alert color="red" role="alert">
           {error}
-        </div>
+        </Alert>
       )}
       {!data ? (
         !error && (
@@ -115,75 +126,67 @@ export function Compare({
         )
       ) : (
         <>
-          <section
-            data-spt-legacy=""
-            className="panel compare-rule"
+          <Paper
+            component="section"
+            p="panel"
+            mb="comfortable"
+            className="flex flex-wrap items-end gap-3.5"
             aria-label="Regression rule"
           >
-            <div data-spt-legacy="">
-              <strong data-spt-legacy="">{data.rule.label}</strong>
+            <div className="basis-full">
+              <strong>{data.rule.label}</strong>
               <Text size="sm" className="mt-xxs">
                 {data.rule.description}
               </Text>
             </div>
-            <label data-spt-legacy="">
-              Baseline
-              <select
-                data-spt-legacy=""
-                value={data.baseline}
-                onChange={(e) => setBase(e.target.value)}
-              >
-                {data.runs.map((r) => (
-                  <option data-spt-legacy="" key={r.id} value={r.id}>
-                    {r.id}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label data-spt-legacy="">
-              Threshold %
-              <input
-                data-spt-legacy=""
-                type="number"
-                min={0}
-                step={1}
-                value={draft.threshold_pct ?? ""}
-                onChange={(e) =>
-                  setDraft({ ...draft, threshold_pct: e.target.value })
-                }
-              />
-            </label>
-            <label data-spt-legacy="">
-              Latency floor µs
-              <input
-                data-spt-legacy=""
-                type="number"
-                min={0}
-                value={draft.latency_floor_us ?? ""}
-                onChange={(e) =>
-                  setDraft({ ...draft, latency_floor_us: e.target.value })
-                }
-              />
-            </label>
-            <label data-spt-legacy="">
-              Min operations
-              <input
-                data-spt-legacy=""
-                type="number"
-                min={0}
-                value={draft.min_ops ?? ""}
-                onChange={(e) =>
-                  setDraft({ ...draft, min_ops: e.target.value })
-                }
-              />
-            </label>
+            <NativeSelect
+              label="Baseline"
+              className="min-w-0 max-w-full"
+              value={data.baseline}
+              onChange={(e) => setBase(e.target.value)}
+            >
+              {data.runs.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.id}
+                </option>
+              ))}
+            </NativeSelect>
+            <TextInput
+              label="Threshold %"
+              className="w-27.5"
+              type="number"
+              min={0}
+              step={1}
+              value={draft.threshold_pct ?? ""}
+              onChange={(e) =>
+                setDraft({ ...draft, threshold_pct: e.target.value })
+              }
+            />
+            <TextInput
+              label="Latency floor µs"
+              className="w-27.5"
+              type="number"
+              min={0}
+              value={draft.latency_floor_us ?? ""}
+              onChange={(e) =>
+                setDraft({ ...draft, latency_floor_us: e.target.value })
+              }
+            />
+            <TextInput
+              label="Min operations"
+              className="w-27.5"
+              type="number"
+              min={0}
+              value={draft.min_ops ?? ""}
+              onChange={(e) => setDraft({ ...draft, min_ops: e.target.value })}
+            />
             <Button variant="filled" onClick={apply}>
               Apply
             </Button>
             <Text
               fw="var(--mantine-font-weight-semibold)"
               c={regressions ? "#b42318" : "#1f7a4d"}
-              className="basis-full"
+              className="min-w-0 basis-full wrap-anywhere"
               role="status"
             >
               {regressions
@@ -191,53 +194,41 @@ export function Compare({
                 : `No metric past the threshold vs ${data.baseline}.`}{" "}
               Threshold check, not statistical significance.
             </Text>
-          </section>
+          </Paper>
           {Object.entries(data.settings_differences ?? {}).some(
             ([, d]) => d.length,
           ) && (
-            <section
-              data-spt-legacy=""
-              className="notice notice-warn"
-              aria-label="Settings differences"
-            >
-              <strong data-spt-legacy="">
+            <Alert color="yellow" role="note" aria-label="Settings differences">
+              <strong>
                 Settings differ from the baseline; deltas may reflect
                 configuration, not storage.
               </strong>
-              <ul data-spt-legacy="">
+              <ul>
                 {Object.entries(data.settings_differences).map(([id, diffs]) =>
                   diffs.map((d) => (
-                    <li data-spt-legacy="" key={id + d}>
+                    <li key={id + d}>
                       {id}: {d}
                     </li>
                   )),
                 )}
               </ul>
-            </section>
+            </Alert>
           )}
-          <section data-spt-legacy="" className="panel">
+          <Paper
+            component="section"
+            className="mb-panel p-panel max-[47.5rem]:p-4.25"
+          >
             <div data-spt-legacy="" className="run-log-heading">
               <Title order={2} className="flex-auto">
                 Time series
               </Title>
-              <div
-                data-spt-legacy=""
-                className="mode-switch"
-                role="group"
-                aria-label="Metric"
-              >
-                {metrics.map((m) => (
-                  <button
-                    data-spt-legacy=""
-                    key={m.key}
-                    className={metric === m.key ? "active" : ""}
-                    aria-pressed={metric === m.key}
-                    onClick={() => setMetric(m.key)}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
+              <SegmentedControl<OverlayMetric>
+                aria-label="Comparison metric"
+                value={metric}
+                onChange={setMetric}
+                data={metrics.map((m) => ({ value: m.key, label: m.label }))}
+                className="max-w-full flex-wrap"
+              />
             </div>
             <ul data-spt-legacy="" className="compare-legend">
               {data.runs.map((r) => (
@@ -268,7 +259,7 @@ export function Compare({
                 </Text>
               )}
             </div>
-          </section>
+          </Paper>
           <DeltaTable deltas={data.deltas} baseline={data.baseline} />
         </>
       )}
@@ -364,7 +355,6 @@ export function OverlayChart({
             segments(l.points, metric).map((seg, i) =>
               seg.length === 1 ? (
                 <circle
-                  data-spt-legacy=""
                   key={l.id + i}
                   cx={x(seg[0].t)}
                   cy={y(seg[0][metric] as number)}
@@ -401,7 +391,9 @@ export function DeltaTable({
   const grouped = groupDeltas(deltas);
   return (
     <Paper component="section" className="mb-panel" aria-label="Delta table">
-      <Title order={2}>Deltas vs {baseline}</Title>
+      <Title order={2} className="wrap-anywhere">
+        Deltas vs {baseline}
+      </Title>
       {deltas.length === 0 ? (
         <Text size="xs" c="var(--spt-text-subtle)">
           No shared phases to compare.
@@ -468,7 +460,7 @@ export function DeltaTable({
                             size="caption"
                             c="var(--spt-text-muted)"
                             lh="normal"
-                            className="mt-[3px] block"
+                            className="mt-0.75 block"
                           >
                             {d.reason}
                           </Text>

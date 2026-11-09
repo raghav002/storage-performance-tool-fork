@@ -1,4 +1,13 @@
-import { Button, Code, Fieldset, Text, TextInput } from "@mantine/core";
+import { Plus } from "lucide-react";
+import {
+  Accordion,
+  Alert,
+  Button,
+  Code,
+  Fieldset,
+  Text,
+  TextInput,
+} from "@mantine/core";
 import { useEffect, useState } from "react";
 import type { State } from "../types";
 import { useVerifyStorage } from "../api/mutations";
@@ -77,26 +86,27 @@ export function StorageConfiguration({
 
   return (
     <>
-      <div data-spt-legacy="" className="target-summary">
-        <div data-spt-legacy="">
-          <span data-spt-legacy="">S3 endpoint in use</span>
-          <strong data-spt-legacy="">
+      <div className="mx-0 my-section p-comfortable flex gap-6.5 items-center flex-wrap bg-surface-subtle border-[0.0625rem] border-border rounded-md max-[47.5rem]:gap-comfortable">
+        <div className="grid gap-1.75 min-w-0">
+          <span className="text-xs/[inherit] text-muted">
+            S3 endpoint in use
+          </span>
+          <strong className="text-sm/[inherit] wrap-anywhere">
             {target.endpoint_label || "Not configured"}
           </strong>
         </div>
-        <div data-spt-legacy="">
-          <span data-spt-legacy="">Bucket</span>
-          <strong data-spt-legacy="">{target.bucket || "Not reported"}</strong>
+        <div className="grid gap-1.75 min-w-0">
+          <span className="text-xs/[inherit] text-muted">Bucket</span>
+          <strong className="text-sm/[inherit] wrap-anywhere">
+            {target.bucket || "Not reported"}
+          </strong>
         </div>
         <Status status={target.ready ? "ready" : "needs setup"} />
       </div>
       {!!target.reasons?.length && (
-        <div data-spt-legacy="" className="notice">
-          {target.reasons.join(" ")}
-        </div>
+        <Alert role="note">{target.reasons.join(" ")}</Alert>
       )}
       <form
-        data-spt-legacy=""
         onSubmit={(e) => {
           e.preventDefault();
           void verify();
@@ -145,11 +155,12 @@ export function StorageConfiguration({
             ))}
           </ul>
           <Button
+            leftSection={<Plus size="1rem" aria-hidden="true" />}
             type="button"
             disabled={form.hosts.length >= saved.max_hosts}
             onClick={() => setForm({ ...form, hosts: [...form.hosts, ""] })}
           >
-            ＋ Add machine
+            Add machine
           </Button>
           <Text
             component="span"
@@ -160,7 +171,7 @@ export function StorageConfiguration({
             {form.hosts.length} of {saved.max_hosts}
           </Text>
           <TextInput
-            className="mt-[26px] mb-panel"
+            className="mt-6.5 mb-panel"
             label="S3 endpoint (optional)"
             type="url"
             placeholder={
@@ -177,7 +188,7 @@ export function StorageConfiguration({
             onChange={(e) => setForm({ ...form, endpoint: e.target.value })}
           />
         </Fieldset>
-        <div data-spt-legacy="" className="actions">
+        <div className="flex flex-wrap items-center gap-compact">
           <Button
             variant="filled"
             loading={locked}
@@ -188,7 +199,7 @@ export function StorageConfiguration({
           >
             {locked ? "Verifying…" : "Verify connection"}
           </Button>
-          <span data-spt-legacy="" className="subtle" role="status">
+          <span className="text-subtle text-xs/[inherit]" role="status">
             {running
               ? "Checking each machine. This can take a few minutes."
               : dirty
@@ -200,9 +211,9 @@ export function StorageConfiguration({
         </div>
       </form>
       {error && (
-        <div data-spt-legacy="" className="error run-error" role="alert">
+        <Alert color="red" role="alert" mt="lg">
           {error}
-        </div>
+        </Alert>
       )}
       {v.status !== "idle" && !dirty && (
         <>
@@ -218,30 +229,47 @@ export function StorageConfiguration({
           ]
             .filter((n) => n.status === "failed")
             .map((n) => (
-              <details
-                data-spt-legacy=""
-                className="verify-failure"
+              <Accordion
                 key={n.host}
-                open
+                defaultValue="section"
+                classNames={{ label: "wrap-anywhere" }}
+                mt="md"
+                styles={{
+                  item: {
+                    backgroundColor: "var(--spt-status-error-background)",
+                    borderColor: "var(--spt-status-error-border)",
+                  },
+                  control: { color: "var(--spt-status-error-text)" },
+                }}
               >
-                <summary data-spt-legacy="">
-                  {n.host} failed{n.message ? `: ${n.message}` : ""}
-                </summary>
-                {n.checks.length > 0 && (
-                  <ul data-spt-legacy="">
-                    {n.checks.map((c) => (
-                      <li
-                        data-spt-legacy=""
-                        key={c.name}
-                        className={`check-${c.status}`}
-                      >
-                        <strong data-spt-legacy="">{c.name}</strong>{" "}
-                        {c.status.toUpperCase()} · {c.message}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </details>
+                <Accordion.Item value="section">
+                  <Accordion.Control>
+                    {n.host} failed{n.message ? `: ${n.message}` : ""}
+                  </Accordion.Control>
+                  <Accordion.Panel>
+                    {n.checks.length > 0 && (
+                      <ul className="mt-compact pl-comfortable text-secondary leading-code">
+                        {n.checks.map((c) => (
+                          <Text
+                            component="li"
+                            key={c.name}
+                            size="sm"
+                            lh="code"
+                            c={
+                              c.status === "fail"
+                                ? "var(--spt-threshold-failure)"
+                                : "var(--spt-text-secondary)"
+                            }
+                          >
+                            <strong>{c.name}</strong> {c.status.toUpperCase()} ·{" "}
+                            {c.message}
+                          </Text>
+                        ))}
+                      </ul>
+                    )}
+                  </Accordion.Panel>
+                </Accordion.Item>
+              </Accordion>
             ))}
         </>
       )}

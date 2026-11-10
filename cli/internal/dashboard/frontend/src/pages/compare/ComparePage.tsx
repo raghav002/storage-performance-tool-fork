@@ -301,8 +301,8 @@ export function ComparePage({
               </Alert>
             )}
             <Text size="xs" c="var(--spt-text-subtle)" className="mt-md">
-              Missing values remain gaps. Each phase uses its own scale. Long
-              histories may be averaged.
+              Missing values remain gaps. Each phase uses its own scale. Points
+              may be averaged when a phase has more than 2,000 samples.
             </Text>
           </Paper>
           <DeltaTable deltas={data.deltas} baseline={data.baseline} />

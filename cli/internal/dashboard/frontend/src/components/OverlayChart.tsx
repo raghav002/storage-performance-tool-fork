@@ -144,7 +144,7 @@ export function OverlayChart({
       {count > 0 ? (
         <EChart
           option={option}
-          label={`${phase} ${title} over elapsed seconds for ${lines.length} runs, in ${unit}. Baseline: ${baseline}. Exact values are available in the sample inspector below.`}
+          label={`${phase} ${title} over elapsed seconds for ${lines.length} runs, in ${unit}. Baseline: ${baseline}. Plotted values are available in the inspector below.`}
           className="h-70 w-full min-w-0 max-[47.5rem]:h-60"
           onReady={inspect}
         />
@@ -215,8 +215,9 @@ export function OverlayChart({
             })}
           </ul>
           <Text size="xs" c="var(--spt-text-subtle)" className="mt-sm">
-            Use the slider or arrow keys to read exact sample times. Values are
-            not interpolated between runs.
+            Use the slider or arrow keys to inspect plotted values. Points may
+            be averaged when a phase has more than 2,000 samples. Values are not
+            interpolated between runs.
           </Text>
         </Box>
       )}

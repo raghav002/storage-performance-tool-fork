@@ -120,7 +120,7 @@ func (a *app) handleRunCSV(w http.ResponseWriter, r *http.Request) {
 				if started.IsZero() {
 					// Match the chart's fallback to the first available phase sample.
 					for _, row := range all {
-						if phaseCodeForBackend(str(row[keyOpType])) != phase {
+						if phaseCodeForBackend(str(row[keyOpType])) != phaseCodeForBackend(phase) {
 							continue
 						}
 						t, err := time.Parse(time.RFC3339Nano, str(row[keyTimestamp]))

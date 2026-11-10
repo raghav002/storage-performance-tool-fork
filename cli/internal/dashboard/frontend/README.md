@@ -1,6 +1,6 @@
 # SPT dashboard frontend
 
-React UI using Mantine, Tailwind CSS, and TanStack Query. The production output is a single `../server/index.html`, embedded by the shared Go server.
+React UI using Mantine, Tailwind CSS, Apache ECharts, and TanStack Query. The production output is a single `../server/index.html`, embedded by the shared Go server.
 
 ## Build
 

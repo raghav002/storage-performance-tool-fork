@@ -1,9 +1,9 @@
 import { Alert, Button, NativeSelect, Paper, Text, Title } from "@mantine/core";
 import { useState } from "react";
-import type { State } from "../types";
-import { useAttachRun, useDetachRun } from "../api/mutations";
+import type { State } from "../../types";
+import { useAttachRun, useDetachRun } from "../../api/mutations";
 
-export function ConnectRun({
+export function ConnectPage({
   state,
   offline,
   onConnected,
@@ -40,7 +40,7 @@ export function ConnectRun({
   };
 
   return (
-    <>
+    <div className="mx-auto w-full max-w-220">
       <div className="flex justify-between items-center mb-6.5 gap-md max-[47.5rem]:items-start max-[47.5rem]:flex-col">
         <div className="min-w-0">
           <span className="block text-xs/[inherit] tracking-[0.08125rem] text-[#6b7f99] font-heading mb-compact">
@@ -68,7 +68,7 @@ export function ConnectRun({
       )}
       <Paper
         component="section"
-        className="mb-panel max-w-220 p-wide max-[47.5rem]:p-4.25"
+        className="mb-panel p-wide max-[47.5rem]:p-4.25"
       >
         {attached ? (
           <>
@@ -151,6 +151,6 @@ export function ConnectRun({
           </>
         )}
       </Paper>
-    </>
+    </div>
   );
 }

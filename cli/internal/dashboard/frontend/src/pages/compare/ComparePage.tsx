@@ -11,10 +11,10 @@ import {
   Title,
 } from "@mantine/core";
 import { useState } from "react";
-import { dashboardTokens } from "../theme";
-import type { CompareDelta, CompareResult } from "../types";
-import { useComparison, useLastSuccessfulData } from "../api/queries";
-import { formatNumber as fmt } from "../utils/metrics";
+import type { CompareDelta, CompareResult } from "../../types";
+import { useComparison, useLastSuccessfulData } from "../../api/queries";
+import { dashboardTokens } from "../../theme";
+import { formatNumber as fmt } from "../../utils/metrics";
 import {
   deltaText,
   flagText,
@@ -23,9 +23,9 @@ import {
   regressionCount,
   type OverlayMetric,
   type RuleOverrides,
-} from "../utils/catalog";
+} from "../../utils/catalog";
 
-import { OverlayChart } from "./OverlayChart";
+import { OverlayChart } from "../../components/OverlayChart";
 
 const palette = dashboardTokens.charts.comparison;
 const metrics: { key: OverlayMetric; label: string; unit: string }[] = [
@@ -35,7 +35,7 @@ const metrics: { key: OverlayMetric; label: string; unit: string }[] = [
   { key: "p99_latency_us", label: "P99 latency", unit: "µs" },
 ];
 
-export function Compare({
+export function ComparePage({
   ids,
   baseline,
   onBack,
@@ -301,8 +301,8 @@ export function Compare({
               </Alert>
             )}
             <Text size="xs" c="var(--spt-text-subtle)" className="mt-md">
-              Missing values remain gaps. Each phase uses its own scale. Long
-              histories may be averaged.
+              Missing values remain gaps. Each phase uses its own scale. Points
+              may be averaged when a phase has more than 2,000 samples.
             </Text>
           </Paper>
           <DeltaTable deltas={data.deltas} baseline={data.baseline} />

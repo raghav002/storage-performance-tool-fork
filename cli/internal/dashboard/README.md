@@ -4,11 +4,13 @@ A small Go web server with an embedded React dashboard for running a bounded SPT
 
 ## Build
 
-Requirements: Go 1.25+, Node.js 22.6+ (22.22.2+ for the Vitest suite, because jsdom 30 requires it), and npm.
+Use Go 1.25.14 or newer, npm, and a Node.js version supported by `frontend/package.json`. CI uses Node.js 22. Run lint and formatting checks before building the frontend.
 
 ```sh
 cd cli/internal/dashboard/frontend
 npm ci
+npm run lint
+npm run format:check
 npm run typecheck
 npm test
 npm run build
@@ -114,10 +116,10 @@ With more than one client machine, the live dashboard also shows a **per-machine
 
 **Results catalog** lists every SPT run found under the results root, both dashboard runs and runs started with the SPT CLI. The default root is `~/results`; set `DASHBOARD_RESULTS_ROOT` to scan another directory. The catalog is read only: it never changes, moves, or deletes results.
 
+Search runs by name, label, object size, or endpoint host. Filter by source and status. Open **Details** to see settings, phase results, logs, and available file downloads.
+
 - A folder is a run when it holds SPT's `spt_run_params.json` or a results totals file. Folders are scanned at most 3 levels deep (symlinks and hidden folders are skipped); up to 1,000 runs are listed.
 - Malformed or partial folders are listed with what is missing instead of being hidden. A folder without a recorded start time sorts by its modification time.
-- Search matches the run name, label, size, and endpoint host. Filter by source (dashboard or CLI), workload, and status.
-- **Details** shows the recorded settings, per-phase totals, integrity, and the run's engine logs.
 - Credentials are never read into the catalog. `spt_run_params.json` is decoded through an allow-list of non-secret fields, so access and secret keys are not parsed, stored, or returned.
 
 ## Compare runs and regression flags
@@ -157,6 +159,8 @@ All endpoints answer only on loopback with a loopback `Host` header; any other h
 | `GET /api/catalog/run?id=` | One catalog run |
 | `GET /api/catalog/compare?id=A&id=B[&id=…]&baseline=A&threshold_pct=&latency_floor_us=&min_ops=` | Compare 2–6 runs |
 | `GET /api/catalog/log?id=&level=&tail=` | Engine logs for a catalog run |
+
+`GET /api/catalog/artifacts?id=` lists files available for a run, and `GET /api/catalog/artifact?id=&file=` downloads a file.
 
 Catalog IDs are paths relative to the results root, for example `cli-baseline/base-20261020.100000.000`; URL-encode the `/`.
 

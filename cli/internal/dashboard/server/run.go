@@ -334,7 +334,10 @@ func (a *app) buildArgv(runDir, runID string, o options, target map[string]any) 
 
 func (a *app) childEnvironment(o options, target map[string]any) []string {
 	values := a.configValues()
-	set := map[string]string{"S3_ENDPOINT": fmt.Sprint(target["endpoint"]), "S3_ENDPOINTS": fmt.Sprint(target["endpoint"]), "S3_BUCKET": fmt.Sprint(target["bucket"]), "HOSTS": targetHosts(target), "THREADS": strconv.Itoa(o.Threads), "SPT_ENGINE_OVERRIDES": "", "SPT_SERVICE_THREADS": strconv.Itoa(o.Threads), "SPT_S3_DRIVER": "default", "SPT_IMAGE": "", "SPT_SKIP_IMAGE_PULL": "false", "SPT_OBJECT_DATA_COMPRESSIBILITY": "0", "SPT_OBJECT_DATA_DEDUPABLE": "true", "SPT_DEFER_VERIFICATION": "false", "SPT_CHECKSUM": "", "AWS_EC2_METADATA_DISABLED": "true"}
+	set := map[string]string{"S3_ENDPOINT": fmt.Sprint(target["endpoint"]), "S3_ENDPOINTS": fmt.Sprint(target["endpoint"]), "S3_BUCKET": fmt.Sprint(target["bucket"]), "HOSTS": targetHosts(target), "THREADS": strconv.Itoa(o.Threads), "SPT_ENGINE_OVERRIDES": "", "SPT_SERVICE_THREADS": strconv.Itoa(o.Threads), "SPT_S3_DRIVER": "default", "SPT_IMAGE": "", "SPT_SKIP_IMAGE_PULL": "false", "SPT_OBJECT_DATA_COMPRESSIBILITY": "0", "SPT_OBJECT_DATA_DEDUPABLE": "true", "SPT_DEFER_VERIFICATION": "false", "SPT_CHECKSUM": "", "AWS_EC2_METADATA_DISABLED": "true",
+		// Dashboard runs don't support NIC sets. SPT rejects a mock run that has one, and a NIC
+		// set would change an S3 run, so an operator's .env must not pass one to SPT.
+		"SPT_INTERFACES": "", "SPT_HOST_INTERFACES": ""}
 	for k, v := range set {
 		values[k] = v
 	}

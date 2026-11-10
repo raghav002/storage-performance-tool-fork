@@ -23,6 +23,22 @@ export function formatMetric(
   }
   return formatNumber(value, digits);
 }
+export function formatChartValue(value: unknown): string {
+  const n = numeric(value);
+  if (n === null) return "—";
+  if (n !== 0 && Math.abs(n) < 0.001) return n.toExponential(2);
+  return Math.abs(n) < 1
+    ? new Intl.NumberFormat("en-US", { maximumSignificantDigits: 3 }).format(n)
+    : formatNumber(n, 2);
+}
+export function formatChartAxisValue(value: number): string {
+  return value !== 0 && Math.abs(value) < 0.001
+    ? value.toExponential(1)
+    : new Intl.NumberFormat("en-US", {
+        notation: "compact",
+        maximumSignificantDigits: 3,
+      }).format(value);
+}
 export function elapsed(value: unknown): string {
   const n = numeric(value);
   if (n === null) return "—";

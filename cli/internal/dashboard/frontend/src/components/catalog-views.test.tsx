@@ -24,7 +24,9 @@ import {
 } from "@testing-library/react";
 import type { CatalogRun, CompareResult, LogResponse } from "../types";
 import { Catalog } from "./Catalog";
-import { Compare, DeltaTable, OverlayChart } from "./Compare";
+import { Compare, DeltaTable } from "./Compare";
+import { OverlayChart } from "./OverlayChart";
+import { Charts } from "./RunCharts";
 import { RunLog } from "./RunLog";
 import { NodeTable } from "./NodeTable";
 import { RunWarnings } from "./RunWarnings";
@@ -373,6 +375,42 @@ describe("Catalog", () => {
   });
 });
 
+describe("Charts", () => {
+  it("includes a fractional-time sample exactly on the exported window boundary", () => {
+    const startedAt = "2026-11-04T12:00:00.000Z";
+    render(
+      <Charts
+        phase="CREATE"
+        startedAt={startedAt}
+        metrics={{
+          run_id: "boundary",
+          is_active: false,
+          is_aggregate: false,
+          samples: [],
+          chart_samples: [0, 2.2, 5, 62.2].map((time) => ({
+            timestamp: new Date(
+              Date.parse(startedAt) + time * 1000,
+            ).toISOString(),
+            op_type: "CREATE",
+            interval_iops: 1,
+          })),
+        }}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Time window"), {
+      target: { value: "60" },
+    });
+    expect(screen.getByText(/3 visible samples/)).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Export window CSV" })
+        .getAttribute("href"),
+    ).toBe(
+      "/api/runs/boundary/csv?kind=window&phase=CREATE&start=2.2&end=62.2",
+    );
+  });
+});
+
 describe("Compare", () => {
   it("labels the rule honestly and shows settings differences", async () => {
     const calls = stubRequests(() => compareResult);
@@ -396,28 +434,41 @@ describe("Compare", () => {
     render(<Compare ids={["only"]} baseline="" onBack={() => {}} />);
     expect(screen.getByText("Select runs to compare")).toBeTruthy();
   });
-  it("draws one line per run and a dot for a single sample", () => {
-    const { container } = render(
+  it("reads exact samples without inventing values for another run", () => {
+    render(
       <OverlayChart
         phase="WRITE"
         metric="iops"
-        unit="IOPS"
+        title="IOPS"
+        unit="ops/s"
+        baseline="base"
         lines={[
           {
             id: "base",
+            label: "Run 1",
             color: "#000",
             points: compareResult.series.base.WRITE,
           },
           {
             id: "next",
+            label: "Run 2",
             color: "#111",
             points: compareResult.series.next.WRITE,
           },
         ]}
       />,
     );
-    expect(container.querySelectorAll("polyline")).toHaveLength(1);
-    expect(container.querySelectorAll("circle")).toHaveLength(1);
+    expect(screen.getByText("40 ops/s")).toBeTruthy();
+    expect(screen.getByText("30 ops/s")).toBeTruthy();
+    fireEvent.keyDown(
+      screen.getByRole("slider", { name: "Inspect WRITE comparison sample" }),
+      {
+        key: "ArrowRight",
+      },
+    );
+    expect(screen.getByText("50 ops/s")).toBeTruthy();
+    expect(screen.getByText("No sample at this time")).toBeTruthy();
+    expect(screen.queryByText("30 ops/s")).toBeNull();
   });
   it("shows the footnote and reasons in the delta table", () => {
     render(<DeltaTable deltas={compareResult.deltas} baseline="base" />);

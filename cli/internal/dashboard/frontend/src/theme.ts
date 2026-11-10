@@ -83,8 +83,15 @@ export const dashboardTokens = {
     latencyP50: "#7a63ce",
     latencyP99: "#b096e7",
     grid: "#eaf0f6",
-    axis: "#78899e",
     inspector: "#8393a8",
+    comparison: [
+      "#1d4ed8",
+      "#c2410c",
+      "#15803d",
+      "#7e22ce",
+      "#b91c1c",
+      "#0f766e",
+    ],
   },
   connectionGraph: {
     pending: "#ffffff",
@@ -543,8 +550,6 @@ export const cssVariablesResolver: CSSVariablesResolver = (theme) => {
       "--spt-chart-throughput": tokens.charts.throughput,
       "--spt-chart-bandwidth": tokens.charts.bandwidth,
       "--spt-chart-latency-p50": tokens.charts.latencyP50,
-      "--spt-chart-grid": tokens.charts.grid,
-      "--spt-chart-axis": tokens.charts.axis,
     },
     dark: {},
   };

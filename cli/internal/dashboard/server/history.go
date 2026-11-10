@@ -117,6 +117,18 @@ func (a *app) handleRunCSV(w http.ResponseWriter, r *http.Request) {
 					writeJSON(w, http.StatusBadRequest, map[string]any{keyError: "Choose a valid visible time window."})
 					return
 				}
+				if started.IsZero() {
+					// Match the chart's fallback to the first available phase sample.
+					for _, row := range all {
+						if phaseCodeForBackend(str(row[keyOpType])) != phaseCodeForBackend(phase) {
+							continue
+						}
+						t, err := time.Parse(time.RFC3339Nano, str(row[keyTimestamp]))
+						if err == nil && (started.IsZero() || t.Before(started)) {
+							started = t
+						}
+					}
+				}
 			}
 			for _, row := range all {
 				if phaseCodeForBackend(str(row["op_type"])) != phaseCodeForBackend(phase) {
@@ -127,7 +139,8 @@ func (a *app) handleRunCSV(w http.ResponseWriter, r *http.Request) {
 					if e != nil || started.IsZero() {
 						continue
 					}
-					elapsed := t.Sub(started).Seconds()
+					// Date.parse in the chart uses milliseconds and clamps negative elapsed time.
+					elapsed := math.Max(0, float64(t.UnixMilli()-started.UnixMilli())/1000)
 					if elapsed < lo || elapsed > hi {
 						continue
 					}

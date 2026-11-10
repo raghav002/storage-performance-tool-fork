@@ -1,16 +1,13 @@
-import { Title } from "@mantine/core";
-// Adapted from the upstream TrendChart (MIT). Keep nulls as gaps and show isolated measurements.
-import { useState } from "react";
+import { Box, Text, Title, useMantineTheme } from "@mantine/core";
+import { useCallback, useMemo } from "react";
+import type { ElementEvent } from "echarts/core";
+import type { ChartOption, EChartsType } from "../charts/echarts";
+import { lineSymbols } from "../charts/lineSymbols";
 import type { Sample } from "../types";
-import { elapsed, formatNumber, numeric } from "../utils/metrics";
-export function TrendChart({
-  samples,
-  title,
-  unit,
-  series,
-  active,
-  onInspect,
-}: {
+import { elapsed, formatChartValue } from "../utils/metrics";
+import { EChart } from "./EChart";
+
+type Props = {
   samples: Sample[];
   title: string;
   unit: string;
@@ -19,182 +16,188 @@ export function TrendChart({
     label: string;
     color: string;
   }[];
+  start: number;
+  end: number;
   active: number | null;
-  onInspect: (index: number | null) => void;
-}) {
-  const [focused, setFocused] = useState(false);
-  const values = samples.flatMap((s) =>
-    series.map((l) => s[l.key]).filter((v): v is number => numeric(v) !== null),
-  );
-  const max = values.reduce((largest, v) => Math.max(largest, v), 1) * 1.12;
-  const first = samples[0]?.elapsed ?? 0,
-    last = samples.at(-1)?.elapsed ?? first,
-    span = Math.max(1, last - first);
-  const x = (s: Sample) =>
-    samples.length === 1 ? 406 : 60 + ((s.elapsed - first) / span) * 692;
-  const y = (v: number) => 154 - (v / max) * 130;
+  pinned: boolean;
+  onInspect: (index: number | null, pinned?: boolean) => void;
+};
+
+export function TrendChart({
+  samples,
+  title,
+  unit,
+  series,
+  start,
+  end,
+  active,
+  pinned,
+  onInspect,
+}: Props) {
+  const theme = useMantineTheme();
   const inspected = active === null ? samples.at(-1) : samples[active];
-  const tick = (v: number) =>
-    v >= 1e6
-      ? `${formatNumber(v / 1e6, 1)}M`
-      : v >= 1e3
-        ? `${formatNumber(v / 1e3, 1)}k`
-        : formatNumber(v, 1);
+  const hasValues = samples.some((sample) =>
+    series.some((line) => sample[line.key] !== null),
+  );
+  const option = useMemo<ChartOption>(
+    () => ({
+      tooltip: {
+        trigger: "axis",
+        triggerOn: "none",
+        valueFormatter: (value) => `${formatChartValue(value)} ${unit}`,
+      },
+      axisPointer: { triggerOn: "none" },
+      xAxis: {
+        type: "value",
+        min: start,
+        max: end > start ? end : start + 1,
+        axisLine: { show: true },
+        splitLine: { show: false },
+        axisLabel: { formatter: elapsed },
+        axisPointer: {
+          show: true,
+          status: "hide",
+          snap: false,
+          animation: false,
+          triggerTooltip: true,
+          label: { show: false },
+          lineStyle: {
+            color: theme.other.dashboard.charts.inspector,
+            type: "dashed",
+            width: 1,
+          },
+        },
+      },
+      yAxis: {
+        type: "value",
+        axisLine: { show: false },
+      },
+      series: series.map((line) => {
+        const points: [number, number | null][] = samples.map((sample) => [
+          sample.elapsed,
+          sample[line.key],
+        ]);
+        return {
+          id: line.key,
+          name: line.label,
+          type: "line",
+          data: points,
+          encode: { x: 0, y: 1, tooltip: [1] },
+          ...lineSymbols(points, line.color),
+          lineStyle: { color: line.color },
+          itemStyle: { color: line.color },
+        };
+      }),
+    }),
+    [samples, series, start, end, unit, theme],
+  );
+
+  const bindInspection = useCallback(
+    (chart: EChartsType) => {
+      const selected = active === null ? undefined : samples[active];
+      chart.dispatchAction(
+        selected
+          ? {
+              type: "updateAxisPointer",
+              currTrigger: "mousemove",
+              x: chart.convertToPixel({ xAxisIndex: 0 }, selected.elapsed),
+              y: chart.getHeight() / 2,
+            }
+          : { type: "updateAxisPointer", currTrigger: "leave" },
+      );
+      const inspect = (event: ElementEvent, pinned: boolean) => {
+        const point = [event.offsetX, event.offsetY];
+        if (!chart.containPixel({ gridIndex: 0 }, point)) return;
+        const time = chart.convertFromPixel({ xAxisIndex: 0 }, event.offsetX);
+        if (
+          typeof time !== "number" ||
+          !Number.isFinite(time) ||
+          !samples.length
+        )
+          return;
+        const index = samples.reduce(
+          (best, sample, i) =>
+            Math.abs(sample.elapsed - time) <
+            Math.abs(samples[best].elapsed - time)
+              ? i
+              : best,
+          0,
+        );
+        onInspect(index, pinned);
+      };
+      const move = (event: ElementEvent) => {
+        if (!pinned) inspect(event, false);
+      };
+      const click = (event: ElementEvent) => inspect(event, true);
+      const leave = () => onInspect(null);
+      chart.getZr().on("mousemove", move);
+      chart.getZr().on("click", click);
+      chart.getZr().on("globalout", leave);
+      return () => {
+        if (chart.isDisposed()) return;
+        chart.getZr().off("mousemove", move);
+        chart.getZr().off("click", click);
+        chart.getZr().off("globalout", leave);
+      };
+    },
+    [samples, onInspect, active, pinned],
+  );
+
   return (
-    <article data-spt-legacy="" className="chart">
-      <div data-spt-legacy="" className="chart-heading">
-        <Title order={3}>{title}</Title>
-        <span data-spt-legacy="">{unit}</span>
-      </div>
-      <div data-spt-legacy="" className="legend">
-        {series.map((l) => (
-          <span data-spt-legacy="" key={l.key}>
-            <i data-spt-legacy="" style={{ background: l.color }} />
-            {l.label}
-            <strong data-spt-legacy="">
-              {formatNumber(inspected?.[l.key], 2)}
-            </strong>
-          </span>
-        ))}
-      </div>
-      {!values.length ? (
-        <div data-spt-legacy="" className="empty-chart">
-          No measured {title.toLowerCase()} in this window
+    <section
+      aria-label={`${title} trend`}
+      tabIndex={-1}
+      className="min-w-0 border-t-[0.0625rem] border-subtle-border pt-lg"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-sm">
+        <div>
+          <Title order={3} size="lg">
+            {title}
+          </Title>
+          <Text size="caption" c="var(--spt-text-muted)">
+            {unit}
+          </Text>
         </div>
-      ) : (
-        <>
-          <svg
-            data-spt-legacy=""
-            viewBox="0 0 780 190"
-            role="img"
-            aria-label={`${title} over elapsed time`}
-            onPointerMove={(e) => {
-              const r = e.currentTarget.getBoundingClientRect(),
-                t =
-                  first +
-                  Math.min(
-                    1,
-                    Math.max(
-                      0,
-                      (((e.clientX - r.left) / r.width) * 780 - 60) / 692,
-                    ),
-                  ) *
-                    span;
-              onInspect(
-                samples.reduce(
-                  (best, s, i) =>
-                    Math.abs(s.elapsed - t) <
-                    Math.abs(samples[best].elapsed - t)
-                      ? i
-                      : best,
-                  0,
-                ),
-              );
-            }}
-            onPointerLeave={() => {
-              if (!focused) onInspect(null);
-            }}
-          >
-            {[0, 0.5, 1].map((f) => (
-              <g key={f}>
-                <line
-                  data-spt-legacy=""
-                  x1="60"
-                  x2="752"
-                  y1={y(max * f)}
-                  y2={y(max * f)}
-                  className="chart-grid-line"
-                />
-                <text
-                  data-spt-legacy=""
-                  x="50"
-                  y={y(max * f) + 4}
-                  textAnchor="end"
-                >
-                  {tick(max * f)}
-                </text>
-              </g>
-            ))}
-            {series.map((l) => {
-              const segments: Sample[][] = [];
-              let part: Sample[] = [];
-              for (const s of samples) {
-                if (s[l.key] === null) {
-                  if (part.length) segments.push(part);
-                  part = [];
-                } else part.push(s);
-              }
-              if (part.length) segments.push(part);
-              return (
-                <g key={l.key}>
-                  {segments.map((ss, i) => (
-                    <g key={i}>
-                      <polyline
-                        data-spt-legacy=""
-                        fill="none"
-                        stroke={l.color}
-                        strokeWidth="2.5"
-                        points={ss
-                          .map((s) => `${x(s)},${y(s[l.key]!)}`)
-                          .join(" ")}
-                      />
-                      {ss.length === 1 && (
-                        <circle
-                          cx={x(ss[0])}
-                          cy={y(ss[0][l.key]!)}
-                          r="4"
-                          fill={l.color}
-                        />
-                      )}
-                    </g>
-                  ))}
-                </g>
-              );
-            })}
-            {(samples.length === 1 ? [0.5] : [0, 0.5, 1]).map((f) => (
-              <text
-                data-spt-legacy=""
-                key={f}
-                x={60 + 692 * f}
-                y="179"
-                textAnchor={f === 0 ? "start" : f === 1 ? "end" : "middle"}
-              >
-                {elapsed(
-                  samples.length === 1 ? first : first + (last - first) * f,
-                )}
-              </text>
-            ))}
-            {active !== null && samples[active] && (
-              <line
-                data-spt-legacy=""
-                x1={x(samples[active])}
-                x2={x(samples[active])}
-                y1="24"
-                y2="154"
-                stroke="#8393a8"
-                strokeDasharray="4 4"
+        <div
+          className="flex flex-wrap items-center gap-lg"
+          aria-label={`${title} values`}
+          role="group"
+        >
+          {series.map((line) => (
+            <div key={line.key} className="flex items-center gap-xs">
+              <Box
+                component="span"
+                aria-hidden="true"
+                bg={line.color}
+                className="h-0.75 w-4.5 rounded-full"
               />
-            )}
-          </svg>
-          <label data-spt-legacy="" className="chart-inspector">
-            Inspect time
-            <input
-              data-spt-legacy=""
-              aria-label={`Inspect ${title} sample`}
-              type="range"
-              min="0"
-              max={Math.max(0, samples.length - 1)}
-              value={active ?? Math.max(0, samples.length - 1)}
-              onFocus={() => setFocused(true)}
-              onBlur={() => {
-                setFocused(false);
-                onInspect(null);
-              }}
-              onChange={(e) => onInspect(Number(e.target.value))}
-            />
-          </label>
-        </>
+              <Text component="span" size="sm">
+                {line.label}
+              </Text>
+              <Text
+                component="strong"
+                size="md"
+                c="var(--spt-text-primary)"
+                className="tabular-nums"
+              >
+                {formatChartValue(inspected?.[line.key])}
+              </Text>
+            </div>
+          ))}
+        </div>
+      </div>
+      {hasValues ? (
+        <EChart
+          option={option}
+          label={`${title} over elapsed time, in ${unit}`}
+          className="h-65 w-full min-w-0 max-[47.5rem]:h-60"
+          onReady={bindInspection}
+        />
+      ) : (
+        <Text size="sm" className="flex h-45 items-center justify-center">
+          No measured {title.toLowerCase()} in this window.
+        </Text>
       )}
-    </article>
+    </section>
   );
 }

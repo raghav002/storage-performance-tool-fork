@@ -57,20 +57,20 @@ export function DashboardPage({
   // the server no longer holds its SPT process, so it cannot stop it.
   const canStop = ownRun && job?.can_stop === true;
   // SPT's own cancel steps take about 2 minutes at most, so 3 minutes after
-  // the stop request point the user at the VM. The dashboard never
-  // force-kills SPT. <DashboardPage> is keyed by run ID, so the flag starts
-  // false for every run.
+  // the page sees the accepted stop, point the user at the VM. The dashboard
+  // never force-kills SPT. The countdown runs on this page alone, not from the
+  // server's stop_requested_at: that time comes from the VM's clock, and a
+  // browser clock set ahead or behind would show the notice at once or never.
+  // A reload during the stop restarts the countdown, which only delays the
+  // notice. <DashboardPage> is keyed by run ID, so the flag starts false for
+  // every run.
   const stopWaiting = ownRun && !!job?.stop_requested;
-  const stopRequestedAt = Date.parse(job?.stop_requested_at ?? "");
   const [stopDeadlinePassed, setStopDeadlinePassed] = useState(false);
   useEffect(() => {
-    if (!stopWaiting || !Number.isFinite(stopRequestedAt)) return;
-    const timer = setTimeout(
-      () => setStopDeadlinePassed(true),
-      Math.max(0, stopRequestedAt + SLOW_STOP_MS - Date.now()),
-    );
+    if (!stopWaiting) return;
+    const timer = setTimeout(() => setStopDeadlinePassed(true), SLOW_STOP_MS);
     return () => clearTimeout(timer);
-  }, [stopWaiting, stopRequestedAt]);
+  }, [stopWaiting]);
   const stopSlow = stopWaiting && stopDeadlinePassed;
   // isSuccess keeps the stop pending once the server has accepted it, even if
   // the state refetch after it fails and the cached job still lacks

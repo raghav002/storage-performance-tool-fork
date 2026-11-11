@@ -255,11 +255,14 @@ admission while its driver initializes; after every slice is ready, the controll
 the same requested interval everywhere and then releases scheduling in a separate concurrent phase
 on each worker's local monotonic clock.
 Remote drains start once and expose a short status-poll RPC, keeping control calls below the shipped
-RMI response timeout even when the configured drain bound is longer. The generator records source-monotonic scheduling
-exhaustion. Each worker compares that timestamp with its own deadline and retains a semantic
-verdict; after admission closes, the controller requires every slice to report that it reached its
-deadline. Remote monotonic timestamps are never compared, and delayed, missing, or failed evidence
-fails closed. Exhaustion is invalid only when it is strictly earlier than the scheduled deadline. The lifecycle invariant must reconcile after normal completion, deadline stop,
+RMI response timeout even when the configured drain bound is longer. A slice ran out of inventory
+if it attempted every object in its frozen input, which each worker decides from its final counts
+after the drain, and that invalidates the run. Handing the inventory to the driver's input queue is
+not running out. A worker ends the run early once the generator has handed over everything and
+every request has been dispatched, comparing the handoff's source-monotonic time with its own
+deadline. Each worker retains a semantic verdict; after admission closes, the controller requires every slice to
+report that it reached its deadline. Remote monotonic timestamps are never compared, and delayed,
+missing, or failed evidence fails closed. The lifecycle invariant must reconcile after normal completion, deadline stop,
 cancellation, and bounded drain. Monotonic scheduled and drain intervals are observable separately.
 Storage concurrency (`--threads` in CLI-generated scenarios) limits logical DELETE requests rather
 than the number of object targets held by those requests.
@@ -331,3 +334,71 @@ node sources and fail aggregation. Repeated stop publishes once; a stale existin
 artifact is rejected. Publication uses an atomic file move after stop, independent
 of asynchronous logger queues, and adds no per-operation logging or completed-work
 identity retention.
+
+## Per-path NIC evidence
+
+A step whose storage driver has a NIC set (`storage.net.interfaces`, which a host override in
+`storage.net.nodeInterfaces` sets per node) publishes
+`nic.paths.csv` after its contexts have stopped, through a staging file and an atomic
+move. A step without a NIC set writes no file. In a distributed step the Entry Node
+copies each node's file, unmerged, as `nic.paths.node-NNN.csv`, where NNN is the slice
+index; 000 is the Entry Node, whose own file moves there. A node file that cannot be
+copied is logged at WARN and does not fail the step. The logs API exposes a single
+engine's file as `NicPaths` and the node copies by file name; the CLI fetches them
+with the step ID prefixed, and the run summary names them in one line.
+
+Schema version 1 has the columns `schema_version`, `engine_run_id`, `step_id`,
+`worker_id`, `context_index`, `row`, `interface`, `ipv4`, `rdma_device`, `rdma_port`,
+`gid_index`, `numa_node`, `shared_port`, `permit_share`, `endpoint`, `endpoint_ip`,
+`endpoint_port`, `attempts`, `succeeded`, `failed`, `interrupted`, `unresolved`,
+`bytes`, `complete`, and `missing_contexts`. Each NIC-set context of the step adds,
+in plan order, a `path` row per Path (one NIC and one endpoint), a `nic` row per NIC
+for attempts that ended before their Path was chosen, and a `none` row for attempts
+that ended before a NIC was. One `end` record follows with the totals of every row;
+a file without it is truncated. Only the `end` record fills `complete` and
+`missing_contexts`.
+
+The unit is the request attempt, so a retry on another NIC is a new attempt on that
+NIC's row. Each attempt adds to `attempts` when it is admitted and, when it ends, to
+one of `succeeded`, `failed`, or `interrupted` (ended before any request was sent).
+`unresolved` is the remainder, such as a request still in flight when the step's
+stop deadline passed, so on every row:
+
+```
+attempts = succeeded + failed + interrupted + unresolved
+```
+
+`bytes` is the payload of successful attempts. `complete=false` means a context
+stopped without handing over its counts, named by index in `missing_contexts`
+(separated by `;`), or its dispatch task or I/O event loops did not stop in time, so
+a late update may be absent. The rows carry no operation identities, and the
+per-attempt route takes no lock: the counts are read once every update has stopped.
+
+### NIC-set report
+
+Beside the CSV, the same step publishes `nic.set.json`, the engine's event loops for
+its NIC set, through the same staging file and atomic move. The Entry Node copies each
+node's report as `nic.set.node-NNN.json` and warns for a missing one, and the logs API
+exposes a single engine's report as `NicSet`. Schema version 1 is one JSON object:
+
+```json
+{"schema_version":1,"engine_run_id":7,"step_id":"read1","worker_id":"worker-a",
+ "hardware_threads":64,"driver_threads":0,"event_loops_per_nic":8,
+ "nics":["ens1f0","ens1f1"],"event_loops":16,"base_event_loops":2,
+ "total_event_loops":18}
+```
+
+`driver_threads` is the configured `storage.driver.threads`, with 0 for the default.
+`event_loops_per_nic` is each NIC's group size: `driver_threads` when set, otherwise
+`max(4, hardware_threads / 8)`. `nics` lists the NICs that opened, in plan order, and
+is empty when the NIC set never opened, so `event_loops`, the loops of the per-NIC
+groups, is then 0. `base_event_loops` is the driver's base group, which carries its
+control requests, counted from the group as created, and `total_event_loops` is every
+loop the driver owns, the two summed. A step with several NIC-set drivers (a weighted
+or pipeline step) adds `contexts`, one object per NIC-set context with
+`context_index`, `driver_threads`, `event_loops_per_nic`, `nics`, `event_loops`,
+`base_event_loops` and `total_event_loops`. Its top-level fields are then those every
+context agrees on, and the three event-loop counts are the engine's totals over its
+NIC-set drivers. A step that also has driver contexts without a NIC set adds
+`contexts_without_nic_set`, how many, because the counts leave out their loops. Added
+fields keep schema version 1.

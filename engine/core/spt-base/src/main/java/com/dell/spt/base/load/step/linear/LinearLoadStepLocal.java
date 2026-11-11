@@ -1,6 +1,7 @@
 package com.dell.spt.base.load.step.linear;
 
 import com.dell.spt.base.config.IllegalConfigurationException;
+import com.dell.spt.base.config.NicSetConfig;
 import com.dell.spt.base.data.DataInput;
 import com.dell.spt.base.env.Extension;
 import com.dell.spt.base.item.Item;
@@ -16,6 +17,7 @@ import com.dell.spt.base.item.op.OpType;
 import com.dell.spt.base.load.generator.LoadGenerator;
 import com.dell.spt.base.load.generator.LoadGeneratorBuilder;
 import com.dell.spt.base.load.generator.LoadGeneratorBuilderImpl;
+import com.dell.spt.base.load.generator.PacedRateThrottle;
 import com.dell.spt.base.load.step.local.LoadStepLocalBase;
 import com.dell.spt.base.load.step.local.context.LoadStepContext;
 import com.dell.spt.base.load.step.local.context.LoadStepContextImpl;
@@ -24,7 +26,7 @@ import com.dell.spt.base.logging.Loggers;
 import com.dell.spt.base.metrics.MetricsManager;
 import com.dell.spt.base.storage.driver.StorageDriver;
 import com.dell.spt.base.util.BinarySizeFormat;
-import com.github.akurilov.commons.concurrent.throttle.RateThrottle;
+import com.dell.spt.base.storage.driver.bucket.TargetBucketSet;
 import com.github.akurilov.commons.io.Output;
 import com.github.akurilov.commons.reflection.TypeUtil;
 import com.github.akurilov.commons.system.SizeInBytes;
@@ -110,6 +112,8 @@ public class LinearLoadStepLocal
 
 			try {
 
+				NicSetConfig.requireSupportedWorkload(
+								storageConfig, opType, itemConfig.configVal("input").stringVal("path"));
 				final StorageDriver driver = StorageDriver.instance(
 								extensions, storageConfig, dataInput, effectiveVerifyFlag, batchSize, testStepId,
 								com.dell.spt.base.config.RangeReadConfig.fromLoad(loadConfig));
@@ -126,9 +130,11 @@ public class LinearLoadStepLocal
 									.itemFactory((ItemFactory) itemFactory)
 									.loadOperationsOutput(driver)
 									.authConfig(storageConfig.configVal("auth"))
+									.targetBucketCount(TargetBucketSet.countOfStorage(storageConfig))
+									.targetBucketNames(TargetBucketSet.namesOfStorage(storageConfig))
 									.originIndex(0);
 					if (rateLimit > 0) {
-						generatorBuilder.addThrottle(new RateThrottle(rateLimit));
+						generatorBuilder.addThrottle(new PacedRateThrottle(rateLimit));
 					}
 					final LoadGenerator generator = generatorBuilder.build();
 					final var shardMetrics = generatorBuilder.listShardMetricsRecorder();
@@ -147,6 +153,8 @@ public class LinearLoadStepLocal
 									shardMetrics,
 									immutableListRootPrefix,
 									itemConfig);
+					((LoadStepContextImpl<?, ?>) stepCtx).bucketRecorder(
+									initBucketMetrics(config, metricsContexts.get(0), null));
 					stepContexts.add(stepCtx);
 
 					final String itemOutputFile = itemConfig.stringVal("output-file");

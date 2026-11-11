@@ -120,10 +120,18 @@ load:
     node:
       addrs: []
       port: 1099
+    # How long a step in which any engine has a NIC set may take to reach admission: seconds or a
+    # duration such as 10m. It covers the entry node's item distribution and each engine's
+    # preparation, and counts in neither the step's duration nor its rates.
+    preparation:
+      timeout: 10m
 
 output:
   color: true
   metrics:
+    # Per-bucket counters and timings for a step with more than one target bucket.
+    bucket:
+      enabled: true
     average:
       aggregation:
         period: 100
@@ -137,6 +145,14 @@ output:
     trace:
       persist: false
     threshold: 0
+    # Steady-State Window: starts once completions reach warmup.turnovers x operations in
+    # flight; "valid" needs at least min.turnovers and min.duration (0 disables either).
+    steady:
+      warmup:
+        turnovers: 1
+      min:
+        turnovers: 20
+        duration: 20s
     timing:
       persist: false
     quantiles:
@@ -152,7 +168,7 @@ run:
   node: false
   port: 9999
   scenario: null
-  version: 5.16.1
+  version: 5.16.2
 
 log:
   level: info
@@ -197,8 +213,28 @@ storage:
     endpoint:
       # default, round-robin or per-request-dns; non-default modes require the Netty s3 driver
       selection: default
+    # Client NICs the s3 driver binds its connections to: [] keeps the kernel's route, [auto] picks
+    # them, or list interface names, their IPv4 addresses or RDMA devices. Each engine resolves the
+    # value on its own host when the step starts.
+    interfaces: []
     node:
       slice: false
+    # Host overrides: a node's address as load.step.node.addrs lists it, or entry, to that engine's
+    # value for storage.net.interfaces. none turns its NICs off. The entry node applies them when
+    # it slices the step; each slice then holds only its own storage.net.interfaces.
+    nodeInterfaces: {}
+  # Before a step starts, the controller engine checks its S3 target buckets and creates a missing
+  # one for a step that writes new objects. false still checks them but never creates one.
+  targetBucket:
+    # Number of buckets a step writes new objects into: 1 writes under item.output.path; N > 1
+    # spreads new objects over <base>-0 ... <base>-<N-1>, where <base> is the output path's bucket.
+    # Existing objects keep the bucket their input records. At most 1000.
+    count: 1
+    # Names of the buckets a step writes new objects into, used as written and in this order, in
+    # place of the generated names. Empty generates the set from count. A non-empty list is the
+    # whole set, so it cannot be combined with a count above 1. At most 1000, each name distinct.
+    names: []
+    provision: true
 
 aliasing:
 # common

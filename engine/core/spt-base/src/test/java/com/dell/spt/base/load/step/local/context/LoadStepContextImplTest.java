@@ -37,16 +37,19 @@ import com.dell.spt.base.item.op.list.ListedObject;
 import com.dell.spt.base.item.op.list.shard.ListShard;
 import com.dell.spt.base.item.op.list.shard.ListShardMetricsRecorder;
 import com.dell.spt.base.item.op.list.shard.ListShardMetricsRecorderImpl;
+import com.dell.spt.base.control.run.RunTerminalException;
 import com.dell.spt.base.load.generator.LoadGenerator;
 import com.dell.spt.base.load.generator.LoadGeneratorBuilder;
 import com.dell.spt.base.load.generator.LoadGeneratorBuilderImpl;
 import com.dell.spt.base.load.generator.LoadGeneratorImpl;
 import com.dell.spt.base.load.lifecycle.OperationLifecycleState;
 import com.dell.spt.base.load.lifecycle.OperationLifecycleTracker;
+import com.dell.spt.base.load.lifecycle.StalledTerminalTransition;
 import com.dell.spt.base.metrics.context.MetricsContext;
 import com.dell.spt.base.metrics.context.MetricsContextImpl;
 import com.dell.spt.base.metrics.snapshot.AllMetricsSnapshot;
 import com.dell.spt.base.logging.LogUtil;
+import com.dell.spt.base.storage.driver.AdmissionPreparable;
 import com.dell.spt.base.storage.driver.StorageDriver;
 import com.dell.spt.base.storage.driver.StandaloneDeletePreparable;
 import com.dell.spt.base.storage.driver.ListOptions;
@@ -184,6 +187,134 @@ public class LoadStepContextImplTest {
 			verify((StandaloneDeletePreparable) driver, never()).prepareStandaloneDelete();
 			verify(generator).openAdmission();
 			verify(generator).start();
+		} finally {
+			context.close();
+		}
+	}
+
+	@SuppressWarnings("unchecked")
+	private static StorageDriver<DataItem, Operation<DataItem>> barrierDriver() throws Exception {
+		final StorageDriver<DataItem, Operation<DataItem>> driver = mock(StorageDriver.class);
+		when(driver.operationLifecycle()).thenReturn(new OperationLifecycleTracker<>());
+		doNothing().when(driver).operationResultOutput(any());
+		return driver;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static LoadGenerator<DataItem, Operation<DataItem>> barrierGenerator() throws Exception {
+		final LoadGenerator<DataItem, Operation<DataItem>> generator = mock(LoadGenerator.class);
+		when(generator.isNothingPendingRetry()).thenReturn(true);
+		return generator;
+	}
+
+	@Test
+	void theAdmissionBarrierHoldsTheDriverAndGeneratorUntilItsSteps() throws Exception {
+		testConfig.val("load-op-retry", false);
+		final var driver = barrierDriver();
+		final var generator = barrierGenerator();
+		final var context = new LoadStepContextImpl<>(
+						"barrier-context", generator, driver, null, testConfig.configVal("load"), false);
+		try {
+			context.holdForAdmissionBarrier();
+			context.start();
+			verify(generator).holdAdmission();
+			verify(driver, never()).start();
+			verify(generator, never()).start();
+			verify(generator, never()).openAdmission();
+
+			context.prepareForAdmission(mock(AdmissionPreparable.Preparation.class));
+			verify(driver).start();
+			verify(generator, never()).start();
+			verify(generator, never()).openAdmission();
+
+			context.releaseAdmissionBarrier();
+			final var order = org.mockito.Mockito.inOrder(generator);
+			order.verify(generator).openAdmission();
+			order.verify(generator).start();
+		} finally {
+			context.close();
+		}
+	}
+
+	@Test
+	void aReleaseAfterTheStepClosedAdmissionDoesNotRestartTheGenerator() throws Exception {
+		testConfig.val("load-op-retry", false);
+		final var driver = barrierDriver();
+		final var generator = barrierGenerator();
+		final var context = new LoadStepContextImpl<>(
+						"barrier-late-release", generator, driver, null, testConfig.configVal("load"), false);
+		try {
+			context.holdForAdmissionBarrier();
+			context.start();
+			context.prepareForAdmission(mock(AdmissionPreparable.Preparation.class));
+			context.closeOperationAdmissionForStepStop();
+
+			context.releaseAdmissionBarrier();
+
+			verify(generator, never()).openAdmission();
+			verify(generator, never()).start();
+		} finally {
+			context.close();
+		}
+	}
+
+	@Test
+	void theAdmissionBarrierPassesADriverStartFailureToItsCaller() throws Exception {
+		testConfig.val("load-op-retry", false);
+		final var driver = barrierDriver();
+		final var failure = new RunTerminalException(
+						IntegrityTerminalException.Category.EXECUTION, "storage.net.interfaces: no route", null);
+		when(driver.start()).thenThrow(failure);
+		final var context = new LoadStepContextImpl<>(
+						"barrier-failure", barrierGenerator(), driver, null, testConfig.configVal("load"), false);
+		try {
+			context.holdForAdmissionBarrier();
+			context.start();
+			assertEquals(
+							failure,
+							assertThrows(
+											RunTerminalException.class,
+											() -> context.prepareForAdmission(mock(AdmissionPreparable.Preparation.class))));
+		} finally {
+			context.close();
+		}
+	}
+
+	@Test
+	void aStalledCompletionCannotEndTheDrainedEdgeWhileAnOperationIsQueued() throws Exception {
+		testConfig.val("load-op-retry", false);
+		final var tracker = new OperationLifecycleTracker<Operation<DataItem>>();
+		@SuppressWarnings("unchecked")
+		final StorageDriver<DataItem, Operation<DataItem>> driver = mock(StorageDriver.class);
+		when(driver.operationLifecycle()).thenReturn(tracker);
+		@SuppressWarnings("unchecked")
+		final LoadGenerator<DataItem, Operation<DataItem>> generator = mock(LoadGenerator.class);
+		final var context = new LoadStepContextImpl<>(
+						"stalled-completion-drained-edge",
+						generator,
+						driver,
+						null,
+						testConfig.configVal("load"),
+						false);
+		final var schedulingDrained = LoadStepContextImpl.class.getDeclaredMethod("schedulingDrained");
+		schedulingDrained.setAccessible(true);
+		final Operation<DataItem> queued = new DataOperationImpl<DataItem>(
+						0, OpType.DELETE, new DataItemImpl("queued", 0, 1), null, "/bucket", null, null, 0);
+		final Operation<DataItem> completing = new DataOperationImpl<DataItem>(
+						0, OpType.DELETE, new DataItemImpl("completing", 0, 1), null, "/bucket", null, null, 0);
+		try {
+			assertTrue(tracker.driverQueued(queued));
+			assertTrue(tracker.dispatched(completing));
+			assertTrue(tracker.completionStarted(completing));
+			completing.status(Operation.Status.SUCC);
+			try (var stalled = StalledTerminalTransition.stall(tracker, completing)) {
+				assertEquals(0, tracker.awaitingDispatchCount(), "the stalled completion hides the queued operation");
+				assertFalse((boolean) schedulingDrained.invoke(context));
+				assertFalse((boolean) schedulingDrained.invoke(context), "a queued operation keeps the window open");
+			}
+			assertTrue(tracker.dispatched(queued));
+			assertFalse((boolean) schedulingDrained.invoke(context), "the first drained observation");
+			assertTrue((boolean) schedulingDrained.invoke(context), "the second drained observation");
 		} finally {
 			context.close();
 		}
@@ -1255,6 +1386,55 @@ public class LoadStepContextImplTest {
 	}
 
 	@Test
+	public void aDriverThatFailsToStartFailsTheContext() throws Exception {
+		testConfig.val("load-op-retry", false);
+		final var driver = barrierDriver();
+		final var generator = barrierGenerator();
+		when(driver.start()).thenThrow(new IllegalStateException("driver-start"));
+		final var ctx = new LoadStepContextImpl<>(
+						"ctx-driver-fails", generator, driver, null, testConfig.configVal("load"), false);
+		try {
+			assertEquals("driver-start", assertThrows(IllegalStateException.class, ctx::doStart).getMessage());
+			verify(generator, never()).start();
+		} finally {
+			ctx.doStop();
+		}
+	}
+
+	@Test
+	public void aGeneratorThatFailsToStartFailsTheContext() throws Exception {
+		testConfig.val("load-op-retry", false);
+		final var generator = barrierGenerator();
+		doThrow(new IllegalStateException("generator-start")).when(generator).start();
+		final var ctx = new LoadStepContextImpl<>(
+						"ctx-generator-fails", generator, barrierDriver(), null, testConfig.configVal("load"), false);
+		try {
+			assertEquals("generator-start", assertThrows(IllegalStateException.class, ctx::doStart).getMessage());
+		} finally {
+			ctx.doStop();
+		}
+	}
+
+	@Test
+	public void aStartThatLosesToAStopIsNotAFailure() throws Exception {
+		testConfig.val("load-op-retry", false);
+		final var generator = barrierGenerator();
+		final var ctx = new LoadStepContextImpl<>(
+						"ctx-stopped", generator, barrierDriver(), null, testConfig.configVal("load"), false);
+		final var shuttingDown = LoadStepContextImpl.class.getDeclaredField("stepShuttingDown");
+		shuttingDown.setAccessible(true);
+		doAnswer(call -> {
+			((java.util.concurrent.atomic.AtomicBoolean) shuttingDown.get(ctx)).set(true);
+			throw new IllegalStateException("generator-stopped");
+		}).when(generator).start();
+		try {
+			assertDoesNotThrow(ctx::doStart);
+		} finally {
+			ctx.doStop();
+		}
+	}
+
+	@Test
 	public void stoppedContextRejectsSameInstanceRestartInsteadOfStartingWithoutItsGenerator() throws Exception {
 		testConfig.val("load-op-retry", false);
 		final LoadGenerator<DataItem, Operation<DataItem>> generatorMock = mock(LoadGenerator.class);
@@ -2050,6 +2230,48 @@ public class LoadStepContextImplTest {
 			assertEquals(1123, trackingMetrics.successCount.get());
 			assertEquals(0, trackingMetrics.byteCount.get());
 		}
+	}
+
+	@Test
+	public void bucketMetersReceiveWhatTheAggregateReceivesOnEachResultRoute() throws Exception {
+		testConfig.val("load-op-retry", false);
+		@SuppressWarnings("unchecked")
+		final LoadGenerator<DataItem, Operation<DataItem>> generatorMock = mock(LoadGenerator.class);
+		final MetricsContext<AllMetricsSnapshot> metrics = buildMetricsCtx("bucketRoutes");
+		final LoadStepContextImpl<DataItem, Operation<DataItem>> stepCtx = new LoadStepContextImpl<>(
+						"step-bucket-routes", generatorMock, mockDriver, metrics, testConfig.configVal("load"), false);
+		final var meters = new com.dell.spt.base.metrics.bucket.BucketMeters(OpType.CREATE, List.of("another-bucket"));
+		stepCtx.bucketRecorder(new com.dell.spt.base.metrics.bucket.BucketRecorder(List.of("another-bucket"), meters, null));
+
+		assertTrue(stepCtx.put((Operation<DataItem>) newSuccDataOp("single", 1024)));
+		final List<Operation<DataItem>> batch = new ArrayList<>();
+		batch.add(newSuccDataOp("batch-1", 10));
+		batch.add(newSuccDataOp("batch-2", 20));
+		assertEquals(2, stepCtx.put(batch, 0, 2));
+		final DataOperation<DataItem> failed = baseDataOp("failed", 1);
+		((Operation<DataItem>) failed).status(Operation.Status.FAIL_IO);
+		assertTrue(stepCtx.put((Operation<DataItem>) failed));
+		final DataOperation<DataItem> corrupt = baseDataOp("corrupt", 1);
+		((Operation<DataItem>) corrupt).status(Operation.Status.RESP_FAIL_CORRUPT);
+		assertTrue(stepCtx.put((Operation<DataItem>) corrupt));
+
+		metrics.refreshLastSnapshot();
+		final AllMetricsSnapshot aggregate = metrics.lastSnapshot();
+		final var records = meters.terminalRecords();
+		assertEquals(aggregate.successSnapshot().count(), records.stream()
+						.mapToLong(com.dell.spt.base.metrics.bucket.BucketTerminalRecord::succeeded).sum());
+		assertEquals(aggregate.failsSnapshot().count(), records.stream()
+						.mapToLong(com.dell.spt.base.metrics.bucket.BucketTerminalRecord::failed).sum());
+		assertEquals(aggregate.corruptSnapshot().count(), records.stream()
+						.mapToLong(com.dell.spt.base.metrics.bucket.BucketTerminalRecord::corrupt).sum());
+		assertEquals(aggregate.byteSnapshot().count(), records.stream()
+						.mapToLong(com.dell.spt.base.metrics.bucket.BucketTerminalRecord::bytes).sum());
+		assertEquals(3, aggregate.successSnapshot().count());
+		assertEquals(2, aggregate.failsSnapshot().count());
+		assertEquals(1, aggregate.corruptSnapshot().count());
+		assertEquals(aggregate.durationSnapshot().count(), records.stream()
+						.mapToLong(record -> record.duration().count()).sum());
+		metrics.close();
 	}
 
 	/* Helpers for tests */

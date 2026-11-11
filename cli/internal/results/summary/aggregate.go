@@ -11,6 +11,7 @@ import (
 
 	"github.com/dell/storage-performance-tool/cli/internal/constants"
 	"github.com/dell/storage-performance-tool/cli/internal/deletemetrics"
+	"github.com/dell/storage-performance-tool/cli/internal/driverstats"
 	"github.com/dell/storage-performance-tool/cli/internal/engineinfo"
 	"github.com/dell/storage-performance-tool/cli/internal/results"
 	"github.com/dell/storage-performance-tool/cli/internal/scenario"
@@ -98,21 +99,32 @@ type HostSummary struct {
 
 // WorkloadSummary records key scenario parameters.
 type WorkloadSummary struct {
-	Type              string
-	ObjectSizeBytes   int64
-	ObjectSizeMiB     float64
-	ObjectSizeGiB     float64
-	ObjectSizeHuman   string
-	ObjectCount       int64
-	Threads           int
-	Endpoints         []string
-	Bucket            string
-	Prefix            string
-	DurationRequest   string
-	CleanupEnabled    bool
-	KeepScenario      bool
-	SliceEndpoints    bool
+	Type            string
+	ObjectSizeBytes int64
+	ObjectSizeMiB   float64
+	ObjectSizeGiB   float64
+	ObjectSizeHuman string
+	ObjectCount     int64
+	Threads         int
+	Endpoints       []string
+	Bucket          string
+	// BucketSet lists the members of a target bucket set of more than one bucket, in order; nil
+	// for a single bucket. Bucket is then the set's base or the list's placeholder.
+	BucketSet       []string
+	Prefix          string
+	DurationRequest string
+	CleanupEnabled  bool
+	KeepScenario    bool
+	SliceEndpoints  bool
+	// Interfaces is the run's --interfaces value; HostInterfaces its --host-interfaces values;
+	// EventLoops describes its NIC-set reports.
+	Interfaces        []string
+	HostInterfaces    string
+	EventLoops        string
 	MixedDistribution MixedDistribution
+	// S3Driver is the stored S3 driver selection; empty for a custom scenario and for results
+	// stored before the selection was kept.
+	S3Driver string
 }
 
 // StepSummary aggregates per-step metrics and artifact health.
@@ -133,6 +145,9 @@ type StepSummary struct {
 	Notes              []string
 	Delete             *deletemetrics.Metrics
 	DeleteEvidence     *DeleteArtifactEvidence
+	DriverStats        *driverstats.Stats
+	NicPaths           *NicPathsEvidence
+	NicSetMissing      []results.NicNodeFile
 }
 
 // MixedDistribution stores the configured mixed-workload share for each known operation.
@@ -186,6 +201,7 @@ type PhaseMetrics struct {
 	ConcurrencyMean    float64
 	NodeCount          int64
 	SampleTimestamp    string
+	Steady             SteadyRates
 }
 
 // RunTotals aggregates run-wide duration and data transfer metrics.
@@ -195,6 +211,7 @@ type RunTotals struct {
 	DataBytes       int64
 	DataMiB         float64
 	DataGiB         float64
+	FailureCount    int64
 }
 
 const (
@@ -248,6 +265,11 @@ func Aggregate(data *RunData) (*RunSummary, error) {
 	summary.Steps = steps
 	summary.Totals = totals
 	summary.Warnings = append(summary.Warnings, stepWarnings...)
+	if !summary.Rejected {
+		// A rejected run submitted no scenario: no driver ran, so nothing is missing.
+		summary.Warnings = append(summary.Warnings, rdmaDataPathWarnings(steps, workload, data.Params.DriverStatsError)...)
+	}
+	summary.Warnings = append(summary.Warnings, nicEnginesWarnings(data.Params.NicEnginesError)...)
 
 	if len(summary.MissingExpected) > 1 {
 		sort.Strings(summary.MissingExpected)
@@ -324,6 +346,20 @@ const (
 	objectSizeAverageSuffix = " avg"
 )
 
+// workloadBucketSet returns the members of a run's target bucket set in order when it has more
+// than one bucket: the listed names, or the names generated from the base bucket and the count.
+func workloadBucketSet(params ScenarioParams) []string {
+	if len(params.BucketNames) > 1 {
+		return append([]string(nil), params.BucketNames...)
+	}
+	if params.BucketCount > 1 {
+		if names, err := scenario.TargetBucketMemberNames(params.Bucket, params.BucketCount); err == nil {
+			return names
+		}
+	}
+	return nil
+}
+
 func buildWorkloadSummary(data *RunData) (WorkloadSummary, []string) {
 	params := data.Params.ScenarioParams
 	warnings := make([]string, 0, 1)
@@ -350,12 +386,17 @@ func buildWorkloadSummary(data *RunData) (WorkloadSummary, []string) {
 		Threads:           params.Threads,
 		Endpoints:         append([]string(nil), params.Endpoints...),
 		Bucket:            params.Bucket,
+		BucketSet:         workloadBucketSet(params),
 		Prefix:            params.Prefix,
 		DurationRequest:   params.Duration,
 		CleanupEnabled:    params.Cleanup,
 		KeepScenario:      params.KeepScenario,
 		SliceEndpoints:    params.SliceEndpoints,
+		Interfaces:        append([]string(nil), params.Interfaces...),
+		HostInterfaces:    hostInterfacesLine(data.Params.HostInterfaces),
+		EventLoops:        nicEventLoops(data.Params.NicEngines, data.StepOrder, nicReportsIncomplete(data)),
 		MixedDistribution: mixedDistributionFromParams(workloadType, params),
+		S3Driver:          params.S3Driver,
 	}
 	if isList {
 		summary.ObjectSizeHuman = ""
@@ -367,6 +408,7 @@ func buildStepSummaries(data *RunData, workload WorkloadSummary, integrity *resu
 	steps := make([]StepSummary, 0, len(data.StepOrder))
 	totals := RunTotals{}
 	warnings := make([]string, 0)
+	steadyAbsent := steadyAbsentReason(data.EngineInfo)
 
 	for idx, stepID := range data.StepOrder {
 		stepData := data.Steps[stepID]
@@ -385,6 +427,9 @@ func buildStepSummaries(data *RunData, workload WorkloadSummary, integrity *resu
 			Notes:           append([]string(nil), stepData.Notes...),
 			Delete:          stepData.Delete,
 			DeleteEvidence:  stepData.DeleteEvidence,
+			DriverStats:     stepData.DriverStats,
+			NicPaths:        stepData.NicPaths,
+			NicSetMissing:   append([]results.NicNodeFile(nil), stepData.NicSetMissing...),
 		}
 
 		var metrics *PhaseMetrics
@@ -401,6 +446,12 @@ func buildStepSummaries(data *RunData, workload WorkloadSummary, integrity *resu
 			metrics = deriveMetrics(stepData, workload.ObjectSizeBytes)
 		}
 		summary.SuccessUnit = successUnitForOperation(summary.Operation)
+		if metrics != nil {
+			metrics.Steady = deriveSteadyRates(stepData, summary.IsMixed, steadyAbsent)
+			if warning := steadyInstabilityWarning(summary.PhaseLabel, metrics.Steady.Unsteady); warning != "" {
+				warnings = append(warnings, warning)
+			}
+		}
 		if metrics != nil && strings.EqualFold(summary.Operation, workloadreg.List) {
 			normalizeListMetrics(metrics, integrity)
 		}
@@ -408,6 +459,11 @@ func buildStepSummaries(data *RunData, workload WorkloadSummary, integrity *resu
 			summary.Metrics = metrics
 			totals.DurationSeconds += metrics.DurationSeconds
 			totals.DataBytes += metrics.DataBytes
+			totals.FailureCount += metrics.FailureCount
+			// A warning wraps in the narrow TUI, which clips the Failed column.
+			if metrics.FailureCount > 0 {
+				warnings = append(warnings, fmt.Sprintf("%s: %s %s failed", summary.PhaseLabel, formatInt(metrics.FailureCount), requestWord(metrics.FailureCount)))
+			}
 		} else if !stepData.MetricsSuppressed {
 			statusLabel := string(stepData.Status)
 			if statusLabel == "" {
@@ -428,6 +484,68 @@ func buildStepSummaries(data *RunData, workload WorkloadSummary, integrity *resu
 	totals.DataMiB = bytesToMiB(totals.DataBytes)
 	totals.DataGiB = bytesToGiB(totals.DataBytes)
 	return steps, totals, warnings
+}
+
+// AllFailedPhase is a phase, or one operation of a mixed phase, that measured nothing because its
+// requests failed.
+type AllFailedPhase struct {
+	Label        string
+	Operation    string
+	FailureCount int64
+	// EmptyListing marks a LIST phase, which counts objects as successes rather than requests.
+	EmptyListing bool
+}
+
+func requestWord(count int64) string {
+	if count == 1 {
+		return "request"
+	}
+	return "requests"
+}
+
+// String gives the reason a run exits 1.
+func (p AllFailedPhase) String() string {
+	switch {
+	case p.EmptyListing:
+		return fmt.Sprintf("phase %s found no objects and %d %s failed", p.Label, p.FailureCount, requestWord(p.FailureCount))
+	case p.Operation != "":
+		return fmt.Sprintf("every %s request of phase %s failed (%d failed, 0 succeeded)", p.Operation, p.Label, p.FailureCount)
+	}
+	return fmt.Sprintf("every request of phase %s failed (%d failed, 0 succeeded)", p.Label, p.FailureCount)
+}
+
+// AllFailedPhases lists what has failures and no successes: each ordinary phase, and each operation
+// of a mixed phase. In an ordinary workload a DELETE phase is its --cleanup, which is best-effort.
+// A LIST phase with no objects and a failed request can't show that a listing was empty, so it's here.
+func (s *RunSummary) AllFailedPhases() []AllFailedPhase {
+	if s == nil {
+		return nil
+	}
+	var phases []AllFailedPhase
+	for _, step := range s.Steps {
+		label := step.PhaseLabel
+		if label == "" {
+			label = step.StepID
+		}
+		if step.IsMixed {
+			for _, op := range step.OperationBreakdown {
+				if op.Metrics.SuccessCount == 0 && op.Metrics.FailureCount > 0 {
+					phases = append(phases, AllFailedPhase{Label: label, Operation: op.Operation, FailureCount: op.Metrics.FailureCount})
+				}
+			}
+			continue
+		}
+		if step.Metrics == nil || step.Metrics.SuccessCount != 0 || step.Metrics.FailureCount <= 0 ||
+			strings.EqualFold(step.Operation, reportOperationDelete) {
+			continue
+		}
+		phases = append(phases, AllFailedPhase{
+			Label:        label,
+			FailureCount: step.Metrics.FailureCount,
+			EmptyListing: strings.EqualFold(step.Operation, workloadTypeList),
+		})
+	}
+	return phases
 }
 
 func successUnitForOperation(operation string) string {
@@ -727,7 +845,7 @@ func deriveMetrics(stepData *StepData, objectSizeBytes int64) *PhaseMetrics {
 		return nil
 	}
 	operationHint := operationFromStep(stepData.StepID, stepData.Metrics)
-	row := selectMetricsRow(stepData.Metrics, operationHint)
+	row := stepData.Metrics.Rows[selectMetricsRowIndex(stepData.Metrics, operationHint)]
 
 	metrics := &PhaseMetrics{
 		SuccessCount:       row.SuccessCount,
@@ -802,23 +920,22 @@ func preferredLatencyMicros(row MetricsTotalsRow) float64 {
 	return row.LatencyAvgMicros
 }
 
-func selectMetricsRow(totals *MetricsTotals, operationHint string) MetricsTotalsRow {
-	if totals == nil || len(totals.Rows) == 0 {
-		return MetricsTotalsRow{}
-	}
+// selectMetricsRowIndex returns the position of the row a single-operation phase reports;
+// totals must contain at least one row.
+func selectMetricsRowIndex(totals *MetricsTotals, operationHint string) int {
 	if operationHint != "" {
 		upperHint := strings.ToUpper(operationHint)
-		for _, row := range totals.Rows {
+		for i, row := range totals.Rows {
 			if strings.ToUpper(strings.TrimSpace(row.Operation)) == upperHint {
-				return row
+				return i
 			}
 		}
 	}
 	// Fallback: choose the row with the highest success count, otherwise the first row.
-	best := totals.Rows[0]
-	for _, row := range totals.Rows[1:] {
-		if row.SuccessCount > best.SuccessCount {
-			best = row
+	best := 0
+	for i, row := range totals.Rows {
+		if row.SuccessCount > totals.Rows[best].SuccessCount {
+			best = i
 		}
 	}
 	return best

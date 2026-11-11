@@ -11,6 +11,7 @@ public interface Loggers {
 	String BASE = Loggers.class.getPackage().getName() + '.';
 	String BASE_METRICS = BASE + "metrics.";
 	String BASE_METRICS_THRESHOLD = BASE_METRICS + "threshold.";
+	String BASE_METRICS_STEADY = BASE_METRICS + "steady.";
 	Logger CLI = LogManager.getLogger(BASE + "Cli");
 	Logger CONFIG = LogManager.getLogger(BASE + "Config");
 	Logger DELETE_COMPLETION = LogManager.getLogger(BASE + "DeleteCompletion");
@@ -31,11 +32,16 @@ public interface Loggers {
 	Logger METRICS_STD_OUT = LogManager.getLogger(BASE_METRICS + "StdOut");
 	Logger METRICS_THRESHOLD_EXT_RESULTS_FILE = LogManager.getLogger(BASE_METRICS_THRESHOLD + "ExtResultsFile");
 	Logger METRICS_THRESHOLD_FILE_TOTAL = LogManager.getLogger(BASE_METRICS_THRESHOLD + "FileTotal");
+	Logger METRICS_STEADY_FILE_TOTAL = LogManager.getLogger(BASE_METRICS_STEADY + "FileTotal");
+	Logger METRICS_BUCKET_FILE_TOTAL = LogManager.getLogger(BASE_METRICS + "bucket.FileTotal");
+	Logger METRICS_BUCKET_STEADY_FILE_TOTAL = LogManager.getLogger(BASE_METRICS + "bucket.steady.FileTotal");
 	Logger MSG = LogManager.getLogger(BASE + "Messages");
 	Logger MULTIPART = LogManager.getLogger(BASE + "Multipart");
 	Logger RANGE_READ = LogManager.getLogger(BASE + "RangeRead");
 	Logger OPERATION_LIFECYCLE = LogManager.getLogger(BASE + "OperationLifecycle");
 	Logger MULTIPART_LIFECYCLE = LogManager.getLogger(BASE + "MultipartLifecycle");
+	Logger NIC_PATHS = LogManager.getLogger(BASE + "NicPaths");
+	Logger NIC_SET = LogManager.getLogger(BASE + "NicSet");
 	Logger TABLES_METRICS = LogManager.getLogger(BASE + "TablesMetrics");
 	Logger SCENARIO = LogManager.getLogger(BASE + "Scenario");
 	Logger TEST = LogManager.getLogger(BASE + "Test");
@@ -68,11 +74,20 @@ public interface Loggers {
 					Map.entry(
 									METRICS_THRESHOLD_FILE_TOTAL.getName().substring(BASE.length()),
 									"Threshold Metrics Total"),
+					Map.entry(
+									METRICS_STEADY_FILE_TOTAL.getName().substring(BASE.length()),
+									"Steady-State Metrics Total"),
+					Map.entry(METRICS_BUCKET_FILE_TOTAL.getName().substring(BASE.length()), "Bucket Metrics Total"),
+					Map.entry(
+									METRICS_BUCKET_STEADY_FILE_TOTAL.getName().substring(BASE.length()),
+									"Steady-State Bucket Metrics Total"),
 					Map.entry(MSG.getName().substring(BASE.length()), "Messages"),
 					Map.entry(MULTIPART.getName().substring(BASE.length()), "Multipart Upload Phases"),
 					Map.entry(RANGE_READ.getName().substring(BASE.length()), "Terminal Partial READ v1"),
 					Map.entry(OPERATION_LIFECYCLE.getName().substring(BASE.length()), "Terminal Operation Lifecycle v1"),
 					Map.entry(MULTIPART_LIFECYCLE.getName().substring(BASE.length()), "Multipart Upload Lifecycle"),
+					Map.entry(NIC_PATHS.getName().substring(BASE.length()), "Terminal NIC Paths v1"),
+					Map.entry(NIC_SET.getName().substring(BASE.length()), "Terminal NIC Set v1"),
 					Map.entry(SCENARIO.getName().substring(BASE.length()), "Scenario"),
 					Map.entry(TABLES_METRICS.getName().substring(BASE.length()), "S3 Tables Metrics"));
 }

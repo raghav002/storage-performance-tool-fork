@@ -102,6 +102,46 @@ func TestMockRunStartsWithoutS3SettingsOrCredentials(t *testing.T) {
 	}
 }
 
+// SPT rejects a mock run that has a NIC set, so NIC settings in a shared .env
+// must reach a dashboard mock run as explicit empty values, which SPT ignores
+// and its own .env loading cannot replace.
+func TestMockRunIgnoresInheritedNicSettings(t *testing.T) {
+	a, _ := newRunHandlerTestApp(t)
+	passNodes(a, false)
+	if err := os.WriteFile(filepath.Join(a.root, ".env"), []byte("SPT_INTERFACES=auto\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SPT_HOST_INTERFACES", "127.0.0.1=eth1")
+	capture := filepath.Join(a.root, "capture.txt")
+	t.Setenv("DASHBOARD_TEST_CAPTURE", capture)
+	// Shell builtins only: the test PATH holds just the stub directory.
+	stub := "#!/bin/sh\n{\n" +
+		"printf 'SPT_INTERFACES set=%s value=%s\\n' \"${SPT_INTERFACES+x}\" \"${SPT_INTERFACES-}\"\n" +
+		"printf 'SPT_HOST_INTERFACES set=%s value=%s\\n' \"${SPT_HOST_INTERFACES+x}\" \"${SPT_HOST_INTERFACES-}\"\n" +
+		"} > \"$DASHBOARD_TEST_CAPTURE\"\nexit 0\n"
+	if err := os.WriteFile(a.sptBin, []byte(stub), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if rec := postRun(a, mockRunRequest); rec.Code != http.StatusAccepted {
+		t.Fatalf("mock run status %d: %s", rec.Code, rec.Body.String())
+	}
+	done := make(chan struct{})
+	go func() { a.processes.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("mock run did not finish")
+	}
+	out, err := os.ReadFile(capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "SPT_INTERFACES set=x value=\nSPT_HOST_INTERFACES set=x value=\n"
+	if string(out) != want {
+		t.Errorf("mock run NIC settings:\n%s\nwant both set and empty", out)
+	}
+}
+
 func TestJobWorkloadAndMockArgv(t *testing.T) {
 	if jobWorkload(map[string]any{"options": options{Driver: driverMock}}) != "mock" || jobWorkload(map[string]any{"options": map[string]any{"driver": "mock"}}) != "mock" || jobWorkload(map[string]any{}) != "write-verify" {
 		t.Error("jobWorkload")

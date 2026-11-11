@@ -5,16 +5,94 @@ import com.github.akurilov.confuse.Config;
 import com.github.akurilov.confuse.impl.BasicConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("ConfigSliceUtil item naming slicing")
+@DisplayName("ConfigSliceUtil slicing")
 class ConfigSliceUtilTest {
+
+	private static final List<String> ENDPOINTS = List.of(
+					"10.0.0.1:9000", "10.0.0.2:9000", "10.0.0.3:9000",
+					"10.0.0.4:9000", "10.0.0.5:9000", "10.0.0.6:9000");
+
+	/**
+	 * Each row: slice count, endpoint count, and for every slice the indexes of the endpoints it
+	 * targets after slicing. Slices are split into gcd(slices, endpoints) groups, and every slice of
+	 * group g targets group g's endpoints.
+	 */
+	static Stream<Arguments> storageNodeAddrsSlices() {
+		return Stream.of(
+						Arguments.of(1, 1, List.of(List.of(0))),
+						Arguments.of(2, 4, List.of(List.of(0, 1), List.of(2, 3))),
+						Arguments.of(4, 2, List.of(List.of(0), List.of(0), List.of(1), List.of(1))),
+						Arguments.of(4, 4, List.of(List.of(0), List.of(1), List.of(2), List.of(3))),
+						Arguments.of(
+										4, 6,
+										List.of(List.of(0, 1, 2), List.of(0, 1, 2), List.of(3, 4, 5), List.of(3, 4, 5))),
+						Arguments.of(3, 2, List.of(List.of(0, 1), List.of(0, 1), List.of(0, 1))),
+						Arguments.of(2, 3, List.of(List.of(0, 1, 2), List.of(0, 1, 2))));
+	}
+
+	@ParameterizedTest(name = "{0} slices, {1} endpoints")
+	@MethodSource("storageNodeAddrsSlices")
+	@DisplayName("Every slice targets its own endpoint group")
+	void sliceStorageNodeAddrsAssignsEverySliceItsGroup(
+					final int sliceCount, final int endpointCount, final List<List<Integer>> expectedIndexes) {
+		final List<String> endpoints = ENDPOINTS.subList(0, endpointCount);
+		final Config base = configWithStorageNodeAddrs(endpoints);
+		final List<Config> slices = new ArrayList<>();
+		for (int i = 0; i < sliceCount; i++) {
+			slices.add(ConfigSliceUtil.initSlice(base));
+		}
+
+		ConfigSliceUtil.sliceStorageNodeAddrs(slices, endpoints);
+
+		assertEquals(sliceCount, slices.size());
+		for (int i = 0; i < sliceCount; i++) {
+			final List<String> expected = expectedIndexes.get(i).stream().map(endpoints::get).toList();
+			assertEquals(
+							expected,
+							slices.get(i).<String> listVal("storage-net-node-addrs"),
+							"slice #" + i + " of " + sliceCount + " with " + endpointCount + " endpoints");
+		}
+	}
+
+	/**
+	 * The base schema leaves storage.net.node.addrs to the Netty driver extension, so the test adds
+	 * it, copying each map on the way so the schema cached by {@link TestConfigBuilder} is untouched.
+	 */
+	@SuppressWarnings("unchecked")
+	private static Config configWithStorageNodeAddrs(final List<String> endpoints) {
+		final Config base = TestConfigBuilder.config();
+		final Map<String, Object> schemaTree = new HashMap<>(base.schema());
+		final Map<String, Object> storageSchema = new HashMap<>((Map<String, Object>) schemaTree.get("storage"));
+		final Map<String, Object> netSchema = new HashMap<>((Map<String, Object>) storageSchema.get("net"));
+		final Map<String, Object> nodeSchema = new HashMap<>((Map<String, Object>) netSchema.get("node"));
+		nodeSchema.put("addrs", List.class);
+		netSchema.put("node", nodeSchema);
+		storageSchema.put("net", netSchema);
+		schemaTree.put("storage", storageSchema);
+		final Map<String, Object> tree = new HashMap<>(Config.deepToMap(base));
+		final Map<String, Object> storage = new HashMap<>((Map<String, Object>) tree.get("storage"));
+		final Map<String, Object> net = new HashMap<>((Map<String, Object>) storage.get("net"));
+		final Map<String, Object> node = new HashMap<>((Map<String, Object>) net.get("node"));
+		node.put("addrs", endpoints);
+		node.put("slice", true);
+		net.put("node", node);
+		storage.put("net", net);
+		tree.put("storage", storage);
+		return new BasicConfig(base.pathSep(), schemaTree, tree);
+	}
 
 	@Test
 	@DisplayName("Serial item naming distributes seed and step per slice")
@@ -73,5 +151,74 @@ class ConfigSliceUtilTest {
 
 		assertThrows(NoSuchElementException.class, () -> slices.get(0).val("item-naming-seed"));
 		assertThrows(NoSuchElementException.class, () -> slices.get(1).val("item-naming-step"));
+	}
+
+	private static Config nicConfig(final String... addrs) throws Exception {
+		final var config = TestConfigBuilder.config();
+		config.val("load-step-node-addrs", List.of(addrs));
+		config.val("load-step-node-port", 1099);
+		return config;
+	}
+
+	private static List<Config> nicSlices(final Config config, final int count) {
+		final var slices = new ArrayList<Config>(count);
+		for (var i = 0; i < count; i++) {
+			slices.add(ConfigSliceUtil.initSlice(config));
+		}
+		return slices;
+	}
+
+	@Test
+	@DisplayName("each slice gets its host override, by address, and no slice keeps the map")
+	void hostOverridesBecomeEachSlicesInterfaces() throws Exception {
+		final var config = nicConfig("198.51.100.12:1099", "198.51.100.13:1099", "198.51.100.14:1099");
+		config.val("storage-net-interfaces", List.of("auto"));
+		config.val("storage-net-nodeInterfaces-entry", "none");
+		config.val("storage-net-nodeInterfaces-198.51.100.12:1099", "mlx5_0,mlx5_1");
+		final var slices = nicSlices(config, 4);
+		ConfigSliceUtil.sliceNodeInterfaces(
+						config, slices, List.of("198.51.100.12:1099", "198.51.100.13:1099", "198.51.100.14:1099"));
+		assertEquals(List.of(), slices.get(0).listVal("storage-net-interfaces"));
+		assertEquals(List.of("mlx5_0", "mlx5_1"), slices.get(1).listVal("storage-net-interfaces"));
+		assertEquals(List.of("auto"), slices.get(2).listVal("storage-net-interfaces"));
+		assertEquals(List.of("auto"), slices.get(3).listVal("storage-net-interfaces"));
+		for (final var slice : slices) {
+			assertEquals(Map.of(), slice.mapVal("storage-net-nodeInterfaces"));
+		}
+		assertEquals(2, config.<Object> mapVal("storage-net-nodeInterfaces").size(), "the stored configuration keeps the map");
+	}
+
+	@Test
+	@DisplayName("a prefix of the configured nodes changes no other slice")
+	void participatingPrefixKeepsEachNodesOverride() throws Exception {
+		final var config = nicConfig("198.51.100.12:1099", "198.51.100.13:1099", "198.51.100.14:1099");
+		config.val("storage-net-interfaces", List.of());
+		config.val("storage-net-nodeInterfaces-198.51.100.12:1099", "eth0");
+		config.val("storage-net-nodeInterfaces-198.51.100.14:1099", "eth1");
+		final var slices = nicSlices(config, 2);
+		ConfigSliceUtil.sliceNodeInterfaces(config, slices, List.of("198.51.100.12:1099"));
+		assertEquals(List.of(), slices.get(0).listVal("storage-net-interfaces"));
+		assertEquals(List.of("eth0"), slices.get(1).listVal("storage-net-interfaces"));
+	}
+
+	@Test
+	@DisplayName("a lone engine's override is its entry key")
+	void aLoneEngineUsesTheEntryKey() throws Exception {
+		final var config = nicConfig();
+		config.val("storage-net-nodeInterfaces-entry", "eth0,eth1");
+		final var slices = nicSlices(config, 1);
+		ConfigSliceUtil.sliceNodeInterfaces(config, slices, List.of());
+		assertEquals(List.of("eth0", "eth1"), slices.get(0).listVal("storage-net-interfaces"));
+	}
+
+	@Test
+	@DisplayName("without host overrides the slices keep the step's value")
+	void noHostOverridesLeaveTheStepsValue() throws Exception {
+		final var config = nicConfig("198.51.100.12:1099");
+		config.val("storage-net-interfaces", List.of("auto"));
+		final var slices = nicSlices(config, 2);
+		ConfigSliceUtil.sliceNodeInterfaces(config, slices, List.of("198.51.100.12:1099"));
+		assertEquals(List.of("auto"), slices.get(0).listVal("storage-net-interfaces"));
+		assertEquals(List.of("auto"), slices.get(1).listVal("storage-net-interfaces"));
 	}
 }

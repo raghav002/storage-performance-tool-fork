@@ -44,6 +44,7 @@ func newLaunchContractApp(t *testing.T) (*app, string, string, string) {
 		"SPT_ENGINE_OVERRIDES", "SPT_S3_DRIVER", "SPT_IMAGE", "SPT_SKIP_IMAGE_PULL",
 		"SPT_OBJECT_DATA_COMPRESSIBILITY", "SPT_OBJECT_DATA_DEDUPABLE", "SPT_DEFER_VERIFICATION",
 		"SPT_CHECKSUM", "AWS_EC2_METADATA_DISABLED", "S3_ACCESS_KEY", "S3_SECRET_KEY",
+		"SPT_INTERFACES", "SPT_HOST_INTERFACES",
 	} {
 		script.WriteString("printf '%s\\000' '" + key + "' \"${" + key + "+x}\" \"${" + key + "-}\"\n")
 	}
@@ -102,6 +103,7 @@ func TestS3LaunchContract(t *testing.T) {
 				"SPT_DEFER_VERIFICATION": "true", "SPT_CHECKSUM": "unexpected",
 				"AWS_EC2_METADATA_DISABLED": "false",
 				"S3_ACCESS_KEY":             "ACCESS_PRIVATE_CANARY", "S3_SECRET_KEY": "SECRET_PRIVATE_CANARY;$(id)",
+				"SPT_INTERFACES": "auto", "SPT_HOST_INTERFACES": "node-b=eth1",
 			} {
 				t.Setenv(key, value)
 			}
@@ -154,6 +156,7 @@ func TestS3LaunchContract(t *testing.T) {
 				"SPT_OBJECT_DATA_COMPRESSIBILITY": "0", "SPT_OBJECT_DATA_DEDUPABLE": "true", "SPT_DEFER_VERIFICATION": "false",
 				"SPT_CHECKSUM": "", "AWS_EC2_METADATA_DISABLED": "true",
 				"S3_ACCESS_KEY": "ACCESS_PRIVATE_CANARY", "S3_SECRET_KEY": "SECRET_PRIVATE_CANARY;$(id)",
+				"SPT_INTERFACES": "", "SPT_HOST_INTERFACES": "",
 			}
 			if !reflect.DeepEqual(gotEnv, wantEnv) {
 				t.Fatal("child environment disagrees with validated workload or safety settings")

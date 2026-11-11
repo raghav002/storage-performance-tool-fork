@@ -102,9 +102,9 @@ export const attachRun = (host: string) =>
     "Could not connect to the SPT run.",
   );
 
-export const stopRun = () =>
+export const stopRun = (runID: string) =>
   request<StopRunResponse>(
-    { url: "/api/runs/stop", method: "POST" },
+    { url: `/api/runs/${encodeURIComponent(runID)}/stop`, method: "POST" },
     "Stop request failed.",
   );
 

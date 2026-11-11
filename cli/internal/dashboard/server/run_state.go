@@ -101,7 +101,11 @@ func (a *app) currentState() (map[string]any, error) {
 			result = a.attachWarnings(result, time.Now())
 		}
 		a.activeJob = state
-		return a.stateResponse(publicJob(state), result), nil
+		job := publicJob(state)
+		// can_stop is computed, never saved: after a dashboard restart the run
+		// may still be going, but this process no longer holds its handle.
+		job[keyCanStop] = a.activeCmd != nil && a.activeCmd.Process != nil
+		return a.stateResponse(job, result), nil
 	}
 	if state != nil && str(state[keyStatus]) == jobRunning && !a.lockBusy() {
 		state = a.readStateFile()

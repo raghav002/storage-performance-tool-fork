@@ -205,7 +205,7 @@ func (a *app) writeState(state map[string]any) error {
 }
 
 func publicJob(state map[string]any) map[string]any {
-	keys := []string{keyRunID, keyStatus, "created_at", keyStartedAt, "finished_at", keyElapsedSeconds, "returncode", keyMessage, keyOptions, "prefix", keyPhase, keyStopRequested}
+	keys := []string{keyRunID, keyStatus, "created_at", keyStartedAt, "finished_at", keyElapsedSeconds, "returncode", keyMessage, keyOptions, "prefix", keyPhase, keyStopRequested, keyStopRequestedAt}
 	out := map[string]any{}
 	for _, k := range keys {
 		if v, ok := state[k]; ok {

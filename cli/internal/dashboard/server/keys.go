@@ -27,6 +27,8 @@ const (
 	keySourceFile        = "source_file"
 	keyIntervalIOPS      = "interval_iops"
 	keyStopRequested     = "stop_requested"
+	keyStopRequestedAt   = "stop_requested_at"
+	keyCanStop           = "can_stop"
 
 	metricBandwidth  = "bandwidth_mib_s"
 	metricP50Latency = "p50_latency_us"

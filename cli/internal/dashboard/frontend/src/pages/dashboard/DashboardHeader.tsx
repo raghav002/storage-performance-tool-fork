@@ -1,4 +1,4 @@
-import { Button, Text, Title } from "@mantine/core";
+import { Button, Menu, Text, Title } from "@mantine/core";
 import { Plus, Square } from "lucide-react";
 import type { State } from "../../types";
 
@@ -21,7 +21,10 @@ export function DashboardHeader({
 }) {
   const job = state?.job,
     m = state?.metrics;
-  const summaries = m?.phase_summaries ?? [];
+  const canDownload = job?.status === "completed" && !!m?.run_id;
+  const csvUrl = m?.run_id
+    ? `/api/runs/${encodeURIComponent(m.run_id)}/csv`
+    : "";
   return (
     <div className="flex justify-between items-center mb-6.5 gap-md max-[47.5rem]:items-start max-[47.5rem]:flex-col">
       <div className="min-w-0">
@@ -43,15 +46,19 @@ export function DashboardHeader({
         {historical && (
           <Button onClick={onBackHistory}>Back to run history</Button>
         )}
-        {job?.status === "completed" && summaries.length > 0 && m && (
-          <Button
-            component="a"
-            href={`/api/runs/${encodeURIComponent(m.run_id)}/csv?kind=summary`}
-            download
-          >
-            Download CSV report
-          </Button>
-        )}
+        <Menu shadow="sm" width={240} position="bottom-end">
+          <Menu.Target>
+            <Button disabled={!canDownload}>Download CSV report</Button>
+          </Menu.Target>
+          <Menu.Dropdown>
+            <Menu.Item component="a" href={`${csvUrl}?kind=samples`} download>
+              Download all samples CSV
+            </Menu.Item>
+            <Menu.Item component="a" href={`${csvUrl}?kind=summary`} download>
+              Download summary CSV
+            </Menu.Item>
+          </Menu.Dropdown>
+        </Menu>
         {canStop && (
           <Button
             color="red"

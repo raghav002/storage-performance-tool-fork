@@ -29,6 +29,7 @@ import {
   type ExpertProfile,
 } from "../../flags/profiles";
 import {
+  appliedWorkloads,
   changedFlags,
   driverForWorkload,
   workloadForDriver,
@@ -92,6 +93,7 @@ export function ExpertWorkspace({
   const workloadName = driver === "mock" ? "Mock driver" : "Write + verify";
   const workload = workloadForDriver(driver);
   const advancedChanged = changedFlags(workload, advanced);
+  const applied = appliedWorkloads.has(workload);
   const advancedValid = Object.keys(advancedErrors).length === 0;
   const [start, setStart] = useState<ExpertStart>("new");
   const [profiles, setProfiles] = useState(readExpertProfiles);
@@ -138,7 +140,7 @@ export function ExpertWorkspace({
       setProfileName("");
       setSaveMessage(
         advancedChanged.length
-          ? `Saved in this browser with ${advancedChanged.length} preview-only flag${advancedChanged.length === 1 ? "" : "s"}. Storage credentials are not saved.`
+          ? `Saved in this browser with ${advancedChanged.length} ${applied ? "" : "preview-only "}flag${advancedChanged.length === 1 ? "" : "s"}. Storage credentials are not saved.`
           : "Saved in this browser. Storage credentials are not saved.",
       );
     } catch {
@@ -459,7 +461,11 @@ export function ExpertWorkspace({
                 ))}
                 {advancedChanged.map((f) => (
                   <span
-                    className="px-1.75 py-xxs rounded-chip border border-dashed border-[#9fb3cc] text-muted text-xs/[inherit]"
+                    className={
+                      applied
+                        ? "px-1.75 py-xxs rounded-chip bg-[#e4effe] text-(--mantine-color-spt-7) text-xs/[inherit]"
+                        : "px-1.75 py-xxs rounded-chip border border-dashed border-[#9fb3cc] text-muted text-xs/[inherit]"
+                    }
                     key={f.name}
                   >
                     {f.label}
@@ -491,7 +497,8 @@ export function ExpertWorkspace({
                 {driver === "mock"
                   ? "The Go backend adds the client machines, safe flags and the results directory. No storage credentials are passed."
                   : "The Go backend adds storage credentials, safe flags and the results directory."}
-                {advancedChanged.length > 0 &&
+                {!applied &&
+                  advancedChanged.length > 0 &&
                   " Dashboard runs apply only the four core settings; copy this command to run the rest with the SPT CLI."}
               </small>
             </Accordion.Panel>

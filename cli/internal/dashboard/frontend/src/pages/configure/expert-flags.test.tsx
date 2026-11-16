@@ -158,15 +158,23 @@ const spin = (name: RegExp) =>
   screen.getByRole("spinbutton", { name }) as HTMLInputElement;
 
 describe("expert flag groups", () => {
-  it("opens the applied group and collapses the preview-only ones", () => {
+  it("applies every write-verify group and previews mock's", () => {
     renderExpert();
     expect(groupButton("Run size & limits").getAttribute("aria-expanded")).toBe(
       "true",
     );
-    expect(within(tags("run-size")).getByText("Applied to runs")).toBeTruthy();
     for (const title of ["Object data", "Multipart upload", "Endpoint routing"])
       expect(groupButton(title).getAttribute("aria-expanded")).toBe("false");
-    expect(within(tags("object-data")).getByText("Preview only")).toBeTruthy();
+    expect(within(tags("run-size")).getByText("Applied to runs")).toBeTruthy();
+    expect(
+      within(tags("object-data")).getByText("Applied to runs"),
+    ).toBeTruthy();
+    expect(screen.queryByText(/runs only the four settings above/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("radio", { name: /Mock driver/ }));
+    expect(
+      within(tags("cleanup", "mock")).getByText("Preview only"),
+    ).toBeTruthy();
     expect(screen.getByText(/runs only the four settings above/)).toBeTruthy();
   });
 
@@ -197,7 +205,7 @@ describe("expert flag groups", () => {
     expect(within(tags("object-data")).queryByText(/changed/)).toBeNull();
   });
 
-  it("shows flag errors without blocking a run", async () => {
+  it("blocks a write-verify run while a flag is invalid", async () => {
     renderExpert();
     await openGroup("Multipart upload");
     fireEvent.change(await field(/^Part size/), {
@@ -208,18 +216,56 @@ describe("expert flag groups", () => {
     expect(
       (screen.getByRole("button", { name: "Review run" }) as HTMLButtonElement)
         .disabled,
+    ).toBe(true);
+  });
+
+  it("lets a run start while a preview-only flag is invalid", async () => {
+    renderExpert();
+    fireEvent.click(screen.getByRole("radio", { name: /Mock driver/ }));
+    await openGroup("Distribution & engine");
+    fireEvent.change(await field(/^Minimum client machines/), {
+      target: { value: "99" },
+    });
+    expect(
+      within(tags("distribution", "mock")).getByText("1 to fix"),
+    ).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: "Review run" }) as HTMLButtonElement)
+        .disabled,
     ).toBe(false);
   });
 
-  it("sends only the four core settings with a run", async () => {
+  it("sends changed write-verify flags with the run", async () => {
     const { posts, onStarted } = renderExpert();
     await openGroup("Object data");
     fireEvent.click(await dedupe());
     fireEvent.click(screen.getByRole("button", { name: "Review run" }));
+    expect(screen.getByText("SPT flags (1)")).toBeTruthy();
+    expect(screen.queryByText(/preview-only flag/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Start run" }));
+    await waitFor(() => expect(onStarted).toHaveBeenCalled());
+    // Only the changed flag is sent; unchanged ones keep the server's defaults.
+    expect(posts).toEqual([
+      {
+        mode: "expert",
+        object_count: 100,
+        object_size: "64KiB",
+        threads: 1,
+        max_runtime_seconds: 60,
+        flags: { "object-data-dedupable": false },
+      },
+    ]);
+  });
+
+  it("sends only the core settings for a preview-only workload", async () => {
+    const { posts, onStarted } = renderExpert();
+    fireEvent.click(screen.getByRole("radio", { name: /Mock driver/ }));
+    await openGroup("Cleanup");
+    fireEvent.click(
+      await screen.findByRole("switch", { name: /^Add a delete phase/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Review run" }));
     expect(screen.getByText(/1 preview-only flag is set/)).toBeTruthy();
-    expect(
-      screen.getAllByText(/--object-data-dedupable/).length,
-    ).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Start run" }));
     await waitFor(() => expect(onStarted).toHaveBeenCalled());
     expect(posts).toEqual([
@@ -229,6 +275,7 @@ describe("expert flag groups", () => {
         object_size: "64KiB",
         threads: 1,
         max_runtime_seconds: 60,
+        driver: "mock",
       },
     ]);
   });

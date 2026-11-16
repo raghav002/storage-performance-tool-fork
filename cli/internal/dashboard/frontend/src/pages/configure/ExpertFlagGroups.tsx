@@ -12,6 +12,7 @@ import {
 import { RotateCcw } from "lucide-react";
 import type { ReactNode } from "react";
 import {
+  appliedWorkloads,
   flagGroups,
   type FlagDef,
   type FlagValue,
@@ -168,7 +169,8 @@ function GroupItem({
 }
 
 // Expert flags in one collapsible section per group. The first group holds
-// the four settings the dashboard applies; `core` renders their fields.
+// the four core settings; `core` renders their fields. For workloads in
+// appliedWorkloads every group reaches the run; for the rest only the first.
 export function ExpertFlagGroups({
   workload,
   core,
@@ -185,6 +187,8 @@ export function ExpertFlagGroups({
   onChange: (values: Record<string, FlagValue>) => void;
 }) {
   const [first, ...rest] = flagGroups[workload];
+  // Every group of an applied workload reaches the run; otherwise only the first.
+  const applied = appliedWorkloads.has(workload);
   const set = (name: string, value: FlagValue) =>
     onChange({ ...values, [name]: value });
   const changedIn = (g: GroupDef) =>
@@ -202,10 +206,12 @@ export function ExpertFlagGroups({
           {core}
         </GroupItem>
       </Accordion>
-      <Alert role="note" title="Preview only">
-        The groups below shape the CLI preview, but this dashboard version runs
-        only the four settings above.
-      </Alert>
+      {!applied && (
+        <Alert role="note" title="Preview only">
+          The groups below shape the CLI preview, but this dashboard version
+          runs only the four settings above.
+        </Alert>
+      )}
       <Accordion multiple variant="separated">
         {rest.map((group) => {
           const changed = changedIn(group);
@@ -214,7 +220,7 @@ export function ExpertFlagGroups({
               key={group.id}
               workload={workload}
               group={group}
-              applied={false}
+              applied={applied}
               changed={changed.length}
               invalid={group.flags.filter((f) => errors[f.name]).length}
             >

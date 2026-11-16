@@ -17,10 +17,24 @@ const wv = (changes: Record<string, FlagValue>, objectSize = "64MiB") =>
 describe("validateFlagValue", () => {
   it("checks whole numbers against the flag's range", () => {
     expect(validateFlagValue(flag("min-hosts"), "3")).toBeNull();
-    expect(validateFlagValue(flag("min-hosts"), "-1")).toMatch(/at least 0/);
+    expect(validateFlagValue(flag("min-hosts"), "-1")).toMatch(/from 0 to 8/);
+    expect(validateFlagValue(flag("min-hosts"), "9")).toMatch(/from 0 to 8/);
     expect(validateFlagValue(flag("min-hosts"), "2.5")).toMatch(/whole number/);
     expect(validateFlagValue(flag("prefix-shards"), "-1")).toBeNull();
     expect(validateFlagValue(flag("prefix-shards"), "-2")).not.toBeNull();
+    // The same limits the dashboard server enforces (expert_flags.go).
+    expect(validateFlagValue(flag("service-threads"), "0")).not.toBeNull();
+    expect(
+      validateFlagValue(flag("mpu-concurrent-parts"), "1025"),
+    ).not.toBeNull();
+  });
+
+  it("keeps durations positive and at most five minutes", () => {
+    const f = flag("dns-timeout");
+    expect(validateFlagValue(f, "1m30s")).toBeNull();
+    expect(validateFlagValue(f, "5m")).toBeNull();
+    expect(validateFlagValue(f, "5m1s")).not.toBeNull();
+    expect(validateFlagValue(f, "0s")).not.toBeNull();
   });
 
   it("checks decimals against the flag's range", () => {

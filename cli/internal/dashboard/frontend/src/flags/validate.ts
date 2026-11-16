@@ -24,7 +24,27 @@ const cliSizePattern = /^([1-9][0-9]{0,8})(KiB|MiB|GiB|KB|MB|GB)$/;
 const durationPattern = /^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$/;
 const hostnamePattern =
   /^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\.?$/;
-const regionPattern = /^[a-z0-9-]{1,64}$/;
+const regionPattern = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const durationUnits: Record<string, number> = {
+  ns: 1e-6,
+  us: 1e-3,
+  µs: 1e-3,
+  ms: 1,
+  s: 1000,
+  m: 60_000,
+  h: 3_600_000,
+};
+// The dashboard server allows timeouts up to five minutes.
+const maxDurationMs = 5 * 60_000;
+
+// Milliseconds in a Go duration such as "1m30s", or null if it is not one.
+export function durationMs(value: string): number | null {
+  if (!durationPattern.test(value)) return null;
+  let total = 0;
+  for (const m of value.matchAll(/([0-9]+(?:\.[0-9]+)?)(ns|us|µs|ms|s|m|h)/g))
+    total += Number(m[1]) * durationUnits[m[2]];
+  return total;
+}
 
 // Size in bytes for a value spt run accepts, e.g. "64MiB" or legacy "5MB".
 export function parseCliSize(value: string): number | null {
@@ -67,10 +87,12 @@ export function validateFlagValue(f: FlagDef, value: FlagValue): string | null {
       return parseCliSize(v) !== null
         ? null
         : "Enter a size such as 5MiB, 64MiB or 1GiB.";
-    case "duration":
-      return durationPattern.test(v) && !/^[0.]+[a-zµ]+$/.test(v)
+    case "duration": {
+      const ms = durationMs(v);
+      return ms !== null && ms > 0 && ms <= maxDurationMs
         ? null
-        : "Enter a duration such as 500ms, 5s or 2m.";
+        : "Enter a duration up to 5m, such as 500ms, 5s or 2m.";
+    }
     case "enum":
       return f.options?.includes(v)
         ? null

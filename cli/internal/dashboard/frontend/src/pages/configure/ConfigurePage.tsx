@@ -22,7 +22,9 @@ import {
 } from "../../utils/validation";
 import {
   advancedDefaults,
+  appliedWorkloads,
   changedFlags,
+  runFlags,
   workloadForDriver,
   type FlagValue,
   type Workload,
@@ -52,8 +54,8 @@ export function ConfigurePage({
     [review, setReview] = useState(false),
     [storageDirty, setStorageDirty] = useState(false),
     [driver, setDriver] = useState<Driver>("s3"),
-    // Preview-only flags, kept per workload so switching keeps each one's
-    // values. Never sent with a run request.
+    // Expert flags, kept per workload so switching keeps each one's values.
+    // Sent with a run only for workloads whose flags the server applies.
     [advancedByWorkload, setAdvancedByWorkload] = useState<
       Record<Workload, AdvancedValues>
     >(() => ({
@@ -68,19 +70,27 @@ export function ConfigurePage({
   const busy = startMutation.isPending;
   const error = startMutation.error?.message ?? "";
   const limits = state?.limits ?? fallbackLimits;
+  // Expert flags reach the run only where the server applies them.
+  const applied = mode === "expert" && appliedWorkloads.has(workload);
+  const flags = applied ? runFlags(workload, advanced) : {};
   const config: Options = {
     ...(mode === "expert" ? fromDraft(draft) : { ...guided, mode: "guided" }),
     ...(driver === "mock" ? { driver } : {}),
+    ...(Object.keys(flags).length ? { flags } : {}),
   };
   const errors: OptionErrors = validateOptions(config, limits);
-  const valid = Object.keys(errors).length === 0;
-  // Advanced flags are not applied to runs, so their errors never block one.
   const advancedErrors = validateAdvanced(
     workload,
     advanced,
     config.object_size,
   );
-  const previewOnly = mode === "expert" ? changedFlags(workload, advanced) : [];
+  // Applied flags must be valid to start a run; preview-only ones never block.
+  const valid =
+    Object.keys(errors).length === 0 &&
+    (!applied || Object.keys(advancedErrors).length === 0);
+  const previewOnly =
+    mode === "expert" && !applied ? changedFlags(workload, advanced) : [];
+  const appliedFlags = applied ? changedFlags(workload, advanced) : [];
   const totalBytes =
     (parseSize(config.object_size) ?? 0) *
     (Number.isFinite(config.object_count) ? config.object_count : 0);
@@ -196,6 +206,7 @@ export function ConfigurePage({
               advanced={advanced}
               advancedValid={Object.keys(advancedErrors).length === 0}
               previewOnly={previewOnly}
+              appliedFlags={appliedFlags}
               busy={busy}
               ready={ready}
               onEdit={() => setReview(false)}

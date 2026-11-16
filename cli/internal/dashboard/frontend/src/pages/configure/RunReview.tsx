@@ -14,6 +14,7 @@ export function RunReview({
   advanced,
   advancedValid,
   previewOnly,
+  appliedFlags,
   busy,
   ready,
   onEdit,
@@ -29,6 +30,8 @@ export function RunReview({
   advancedValid: boolean;
   // Changed flags that this run will not apply.
   previewOnly: FlagDef[];
+  // Changed flags that this run passes to SPT.
+  appliedFlags: FlagDef[];
   busy: boolean;
   ready: boolean;
   onEdit: () => void;
@@ -84,6 +87,18 @@ export function RunReview({
             </dd>
           </div>
         </dl>
+        {appliedFlags.length > 0 && (
+          <div className="mt-sm">
+            <span className="block text-muted text-caption/[inherit] mb-1.75">
+              SPT flags ({appliedFlags.length})
+            </span>
+            <div className="flex flex-wrap gap-1.25">
+              {appliedFlags.map((f) => (
+                <Code key={f.name}>--{f.name}</Code>
+              ))}
+            </div>
+          </div>
+        )}
         {driver === "mock" ? (
           <Text size="sm" className="mt-xs">
             Mock run: no data is written to S3. Results show SPT's mock driver,

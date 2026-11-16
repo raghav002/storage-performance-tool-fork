@@ -15,7 +15,7 @@ export const driverForWorkload = (w: Workload): Driver =>
 export type FlagKind =
   "int" | "float" | "bool" | "size" | "duration" | "enum" | "string";
 export type FlagValue = string | boolean;
-export type CoreField = Exclude<keyof Options, "mode" | "driver">;
+export type CoreField = Exclude<keyof Options, "mode" | "driver" | "flags">;
 
 export type FlagDef = {
   name: string; // without the leading "--"
@@ -94,6 +94,7 @@ const distribution: GroupDef = {
       help: "Start when at least this many machines connect. 0 requires all of them.",
       default: "0",
       min: 0,
+      max: 8,
     },
     {
       name: "service-threads",
@@ -101,7 +102,8 @@ const distribution: GroupDef = {
       label: "Engine service threads",
       help: "Carrier threads for the engine's virtual threads. Empty uses the dashboard default, the thread count.",
       default: "",
-      min: 0,
+      min: 1,
+      max: 1024,
     },
   ],
 };
@@ -160,6 +162,7 @@ const writeVerifyGroups: readonly GroupDef[] = [
         help: "How many objects may upload in parts at the same time. 0 is unlimited; needs a part size.",
         default: "0",
         min: 0,
+        max: 1024,
       },
       {
         name: "mpu-concurrent-parts",
@@ -168,6 +171,7 @@ const writeVerifyGroups: readonly GroupDef[] = [
         help: "How many parts of one object upload at the same time. 0 is unlimited; needs a part size.",
         default: "0",
         min: 0,
+        max: 1024,
       },
     ],
   },
@@ -198,6 +202,7 @@ const writeVerifyGroups: readonly GroupDef[] = [
         help: "Corruption samples printed to the console. 0 hides them.",
         default: "20",
         min: 0,
+        max: 10000,
       },
       {
         name: "integrity-runtime-identity-tier",
@@ -221,6 +226,7 @@ const writeVerifyGroups: readonly GroupDef[] = [
         help: "How many prefix directories object keys are spread over. -1 picks a count from the concurrency; 0 keeps keys flat.",
         default: "-1",
         min: -1,
+        max: 65536,
       },
     ],
   },
@@ -357,6 +363,24 @@ export function advancedDefaults(
     flagsFor(workload)
       .filter((f) => !f.core)
       .map((f) => [f.name, f.default]),
+  );
+}
+
+// Workloads whose expert flags the dashboard server applies to runs
+// (server/expert_flags.go). Other workloads' flags are preview-only: shown in
+// the CLI preview and saved in profiles, never sent with a run.
+export const appliedWorkloads: ReadonlySet<Workload> = new Set<Workload>([
+  "write-verify",
+]);
+
+// The flags a run request carries: only those that differ from the
+// dashboard default, so an unchanged flag keeps the server's own default.
+export function runFlags(
+  workload: Workload,
+  values: Record<string, FlagValue>,
+): Record<string, FlagValue> {
+  return Object.fromEntries(
+    changedFlags(workload, values).map((f) => [f.name, values[f.name]]),
   );
 }
 

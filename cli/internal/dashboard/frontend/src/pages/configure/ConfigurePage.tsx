@@ -20,7 +20,17 @@ import {
   validateOptions,
   type OptionErrors,
 } from "../../utils/validation";
+import {
+  advancedDefaults,
+  changedFlags,
+  workloadForDriver,
+  type FlagValue,
+  type Workload,
+} from "../../flags/schema";
+import { validateAdvanced } from "../../flags/validate";
 import { fromDraft, toDraft, type ExpertDraft } from "./configuration";
+
+type AdvancedValues = Record<string, FlagValue>;
 import { ExpertWorkspace } from "./ExpertWorkspace";
 import { GuidedFields } from "./GuidedFields";
 import { RunReview } from "./RunReview";
@@ -41,7 +51,19 @@ export function ConfigurePage({
     [draft, setDraft] = useState<ExpertDraft>(() => toDraft(defaults)),
     [review, setReview] = useState(false),
     [storageDirty, setStorageDirty] = useState(false),
-    [driver, setDriver] = useState<Driver>("s3");
+    [driver, setDriver] = useState<Driver>("s3"),
+    // Preview-only flags, kept per workload so switching keeps each one's
+    // values. Never sent with a run request.
+    [advancedByWorkload, setAdvancedByWorkload] = useState<
+      Record<Workload, AdvancedValues>
+    >(() => ({
+      "write-verify": advancedDefaults("write-verify"),
+      mock: advancedDefaults("mock"),
+    }));
+  const workload = workloadForDriver(driver);
+  const advanced = advancedByWorkload[workload];
+  const setAdvanced = (w: Workload, values: AdvancedValues) =>
+    setAdvancedByWorkload((all) => ({ ...all, [w]: values }));
   const startMutation = useStartRun();
   const busy = startMutation.isPending;
   const error = startMutation.error?.message ?? "";
@@ -52,6 +74,13 @@ export function ConfigurePage({
   };
   const errors: OptionErrors = validateOptions(config, limits);
   const valid = Object.keys(errors).length === 0;
+  // Advanced flags are not applied to runs, so their errors never block one.
+  const advancedErrors = validateAdvanced(
+    workload,
+    advanced,
+    config.object_size,
+  );
+  const previewOnly = mode === "expert" ? changedFlags(workload, advanced) : [];
   const totalBytes =
     (parseSize(config.object_size) ?? 0) *
     (Number.isFinite(config.object_count) ? config.object_count : 0);
@@ -164,6 +193,9 @@ export function ConfigurePage({
               clients={clients}
               totalBytes={totalBytes}
               draft={draft}
+              advanced={advanced}
+              advancedValid={Object.keys(advancedErrors).length === 0}
+              previewOnly={previewOnly}
               busy={busy}
               ready={ready}
               onEdit={() => setReview(false)}
@@ -191,6 +223,9 @@ export function ConfigurePage({
                   verified={verified}
                   clients={clients}
                   driver={driver}
+                  advanced={advanced}
+                  setAdvanced={setAdvanced}
+                  advancedErrors={advancedErrors}
                 />
               ) : (
                 <GuidedFields

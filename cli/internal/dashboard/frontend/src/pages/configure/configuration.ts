@@ -1,3 +1,5 @@
+import { buildSptCommand } from "../../flags/command";
+import { workloadForDriver, type FlagValue } from "../../flags/schema";
 import type { Driver, Options, State } from "../../types";
 import {
   parseWhole,
@@ -115,8 +117,12 @@ export function parseExpertCommand(
   return result;
 }
 
-export function expertCommand(draft: ExpertDraft, driver: Driver): string {
-  const opts = fromDraft(draft);
-  const workload = driver === "mock" ? "mock" : "write-verify";
-  return `spt run ${workload} --object-count ${opts.object_count} --object-size ${opts.object_size} --threads ${opts.threads} --auto-terminate-seconds ${opts.max_runtime_seconds}`;
+// The equivalent spt run command: the four core settings, then every
+// preview-only flag that differs from the dashboard default.
+export function expertCommand(
+  draft: ExpertDraft,
+  driver: Driver,
+  advanced: Record<string, FlagValue>,
+): string {
+  return buildSptCommand(workloadForDriver(driver), fromDraft(draft), advanced);
 }

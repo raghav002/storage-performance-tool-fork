@@ -1,4 +1,5 @@
-import { Button, Code, Text, Title } from "@mantine/core";
+import { Alert, Button, Code, Text, Title } from "@mantine/core";
+import type { FlagDef, FlagValue } from "../../flags/schema";
 import type { Driver, Options, RunMode } from "../../types";
 import { formatNumber as fmt } from "../../utils/metrics";
 import { expertCommand, type ExpertDraft } from "./configuration";
@@ -10,6 +11,9 @@ export function RunReview({
   clients,
   totalBytes,
   draft,
+  advanced,
+  advancedValid,
+  previewOnly,
   busy,
   ready,
   onEdit,
@@ -21,6 +25,10 @@ export function RunReview({
   clients: number;
   totalBytes: number;
   draft: ExpertDraft;
+  advanced: Record<string, FlagValue>;
+  advancedValid: boolean;
+  // Changed flags that this run will not apply.
+  previewOnly: FlagDef[];
   busy: boolean;
   ready: boolean;
   onEdit: () => void;
@@ -28,6 +36,14 @@ export function RunReview({
 }) {
   return (
     <>
+      {previewOnly.length > 0 && (
+        <Alert color="yellow" role="note" mb="lg">
+          {previewOnly.length} preview-only flag
+          {previewOnly.length === 1 ? " is" : "s are"} set (
+          {previewOnly.map((f) => `--${f.name}`).join(", ")}). This run applies
+          only the four core settings; the other flags are not sent.
+        </Alert>
+      )}
       <div className="p-lg bg-surface-review rounded-md mb-lg">
         <Title order={2}>
           {driver === "mock" ? "Mock driver" : "Write + verify"} ·{" "}
@@ -88,7 +104,9 @@ export function RunReview({
               p="sm"
               fz="xs"
             >
-              {expertCommand(draft, driver)}
+              {advancedValid
+                ? expertCommand(draft, driver, advanced)
+                : "Correct the advanced flags to generate a command preview."}
             </Code>
             <small className="font-normal text-[#738198] text-xs/[inherit]">
               The server generates the complete command and validates all

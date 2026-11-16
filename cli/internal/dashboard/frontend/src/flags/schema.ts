@@ -360,6 +360,16 @@ export function advancedDefaults(
   );
 }
 
+// The preview-only flags whose value differs from the dashboard default.
+export function changedFlags(
+  workload: Workload,
+  values: Record<string, FlagValue>,
+): FlagDef[] {
+  return flagsFor(workload).filter(
+    (f) => !f.core && (values[f.name] ?? f.default) !== f.default,
+  );
+}
+
 // Short options that spt run accepts, mapped to their long names.
 export const shortAliases: Record<string, string> = {
   e: "endpoints",

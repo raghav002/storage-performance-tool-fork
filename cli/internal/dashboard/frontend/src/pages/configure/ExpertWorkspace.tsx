@@ -24,8 +24,18 @@ import {
   toDraft,
   type ExpertDraft,
 } from "./configuration";
+import {
+  changedFlags,
+  workloadForDriver,
+  type FlagValue,
+  type Workload,
+} from "../../flags/schema";
+import type { FlagErrors } from "../../flags/validate";
 import { ExpertFields } from "./ExpertFields";
+import { ExpertFlagGroups } from "./ExpertFlagGroups";
 import { PreviousRunPicker } from "./PreviousRunPicker";
+
+type AdvancedValues = Record<string, FlagValue>;
 
 type ExpertStart = "new" | "saved" | "previous" | "command";
 type SavedExpertProfile = { name: string; options: Options };
@@ -63,6 +73,9 @@ export function ExpertWorkspace({
   verified,
   clients,
   driver,
+  advanced,
+  setAdvanced,
+  advancedErrors,
 }: {
   draft: ExpertDraft;
   setDraft: (d: ExpertDraft) => void;
@@ -71,8 +84,14 @@ export function ExpertWorkspace({
   verified: boolean;
   clients: number;
   driver: Driver;
+  advanced: AdvancedValues;
+  setAdvanced: (workload: Workload, values: AdvancedValues) => void;
+  advancedErrors: FlagErrors;
 }) {
   const workloadName = driver === "mock" ? "Mock driver" : "Write + verify";
+  const workload = workloadForDriver(driver);
+  const advancedChanged = changedFlags(workload, advanced);
+  const advancedValid = Object.keys(advancedErrors).length === 0;
   const [start, setStart] = useState<ExpertStart>("new");
   const [profiles, setProfiles] = useState(readExpertProfiles);
   const [chosenProfile, setChosenProfile] = useState("");
@@ -294,64 +313,41 @@ export function ExpertWorkspace({
 
         <div className="flex flex-col gap-1.25 mt-5.75">
           <strong className="text-base/[inherit] text-foreground">
-            {workloadName} · Essential settings
+            {workloadName} · SPT flags
           </strong>
           <span className="text-[#6b7b90] text-sm/[inherit]">
-            The current dashboard API supports this workload and these four run
-            settings.
+            Open a group to change its flags. Each flag shows its SPT name and
+            default.
           </span>
         </div>
-        <ExpertFields
-          draft={draft}
-          setDraft={setDraft}
-          errors={errors}
-          limits={limits}
+        <ExpertFlagGroups
+          workload={workload}
+          coreChanged={changed.length}
+          values={advanced}
+          errors={advancedErrors}
+          onChange={(values) => setAdvanced(workload, values)}
+          core={
+            <>
+              <ExpertFields
+                draft={draft}
+                setDraft={setDraft}
+                errors={errors}
+                limits={limits}
+              />
+              <Accordion>
+                <Accordion.Item value="section">
+                  <Accordion.Control>Host limits</Accordion.Control>
+                  <Accordion.Panel>
+                    <Text size="caption" className="pt-sm">
+                      The dashboard server enforces these limits on every run.
+                    </Text>
+                    <HostLimits limits={limits} />
+                  </Accordion.Panel>
+                </Accordion.Item>
+              </Accordion>
+            </>
+          }
         />
-        <Accordion>
-          <Accordion.Item value="section">
-            <Accordion.Control>
-              Host limits &amp; advanced settings
-            </Accordion.Control>
-            <Accordion.Panel>
-              <Text size="caption" className="pt-sm">
-                Other SPT CLI flags are not available through this version of
-                the Dashboard API. Defaults are enforced by the Go server.
-              </Text>
-              <dl className="mx-0 mt-compact mb-0">
-                <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
-                  <dt className="text-muted">Maximum objects</dt>
-                  <dd className="m-0 font-heading text-right wrap-anywhere">
-                    {limits.expert.object_count.max.toLocaleString("en-US")}
-                  </dd>
-                </div>
-                <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
-                  <dt className="text-muted">Maximum threads / client</dt>
-                  <dd className="m-0 font-heading text-right wrap-anywhere">
-                    {limits.expert.threads.max}
-                  </dd>
-                </div>
-                <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
-                  <dt className="text-muted">Maximum object size</dt>
-                  <dd className="m-0 font-heading text-right wrap-anywhere">
-                    {formatBytes(limits.expert.object_size_bytes.max)}
-                  </dd>
-                </div>
-                <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
-                  <dt className="text-muted">Maximum runtime</dt>
-                  <dd className="m-0 font-heading text-right wrap-anywhere">
-                    {limits.expert.max_runtime_seconds.max}s
-                  </dd>
-                </div>
-                <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
-                  <dt className="text-muted">Maximum data</dt>
-                  <dd className="m-0 font-heading text-right wrap-anywhere">
-                    {formatBytes(limits.expert.max_total_bytes)}
-                  </dd>
-                </div>
-              </dl>
-            </Accordion.Panel>
-          </Accordion.Item>
-        </Accordion>
       </div>
       <aside
         className="p-lg border-[0.0625rem] border-[#dbe5f0] rounded-lg bg-[#f7fafe] sticky top-lg min-w-0 max-[62.5rem]:static"
@@ -410,15 +406,25 @@ export function ExpertWorkspace({
         <div className="mx-0 my-md text-caption/[inherit]">
           <strong>Modified from defaults</strong>
           <div className="flex gap-1.25 flex-wrap mt-2.25">
-            {changed.length ? (
-              changed.map(([, label]) => (
-                <span
-                  className="px-1.75 py-xxs rounded-chip bg-[#e4effe] text-(--mantine-color-spt-7) text-xs/[inherit]"
-                  key={label}
-                >
-                  {label}
-                </span>
-              ))
+            {changed.length || advancedChanged.length ? (
+              <>
+                {changed.map(([, label]) => (
+                  <span
+                    className="px-1.75 py-xxs rounded-chip bg-[#e4effe] text-(--mantine-color-spt-7) text-xs/[inherit]"
+                    key={label}
+                  >
+                    {label}
+                  </span>
+                ))}
+                {advancedChanged.map((f) => (
+                  <span
+                    className="px-1.75 py-xxs rounded-chip border border-dashed border-[#9fb3cc] text-muted text-xs/[inherit]"
+                    key={f.name}
+                  >
+                    {f.label}
+                  </span>
+                ))}
+              </>
             ) : (
               <span className="px-1.75 py-xxs rounded-chip bg-[#e8edf3] text-muted text-xs/[inherit]">
                 Using defaults
@@ -436,14 +442,16 @@ export function ExpertWorkspace({
                 p="sm"
                 fz="xs"
               >
-                {valid
-                  ? expertCommand(draft, driver)
+                {valid && advancedValid
+                  ? expertCommand(draft, driver, advanced)
                   : "Correct the settings to generate a command preview."}
               </Code>
               <small className="font-normal text-[#738198] text-xs/[inherit]">
                 {driver === "mock"
                   ? "The Go backend adds the client machines, safe flags and the results directory. No storage credentials are passed."
                   : "The Go backend adds storage credentials, safe flags and the results directory."}
+                {advancedChanged.length > 0 &&
+                  " Dashboard runs apply only the four core settings; copy this command to run the rest with the SPT CLI."}
               </small>
             </Accordion.Panel>
           </Accordion.Item>
@@ -476,5 +484,43 @@ export function ExpertWorkspace({
         </div>
       </aside>
     </div>
+  );
+}
+
+// The server's expert limits, shown next to the four settings they bound.
+function HostLimits({ limits }: { limits: NonNullable<State["limits"]> }) {
+  return (
+    <dl className="mx-0 mt-compact mb-0">
+      <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
+        <dt className="text-muted">Maximum objects</dt>
+        <dd className="m-0 font-heading text-right wrap-anywhere">
+          {limits.expert.object_count.max.toLocaleString("en-US")}
+        </dd>
+      </div>
+      <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
+        <dt className="text-muted">Maximum threads / client</dt>
+        <dd className="m-0 font-heading text-right wrap-anywhere">
+          {limits.expert.threads.max}
+        </dd>
+      </div>
+      <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
+        <dt className="text-muted">Maximum object size</dt>
+        <dd className="m-0 font-heading text-right wrap-anywhere">
+          {formatBytes(limits.expert.object_size_bytes.max)}
+        </dd>
+      </div>
+      <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
+        <dt className="text-muted">Maximum runtime</dt>
+        <dd className="m-0 font-heading text-right wrap-anywhere">
+          {limits.expert.max_runtime_seconds.max}s
+        </dd>
+      </div>
+      <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
+        <dt className="text-muted">Maximum data</dt>
+        <dd className="m-0 font-heading text-right wrap-anywhere">
+          {formatBytes(limits.expert.max_total_bytes)}
+        </dd>
+      </div>
+    </dl>
   );
 }

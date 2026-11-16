@@ -222,13 +222,6 @@ const writeVerifyGroups: readonly GroupDef[] = [
         default: "-1",
         min: -1,
       },
-      {
-        name: "create-prefix",
-        kind: "bool",
-        label: "Create prefix first",
-        help: "Create the target prefix before writing.",
-        default: false,
-      },
     ],
   },
   {
@@ -393,6 +386,10 @@ const terminal = "Terminal display options do not apply to the dashboard.";
 const debug = "Dry-run and debug switches are not available in the dashboard.";
 const destructive =
   "DELETE workload options are not available in the dashboard.";
+const buckets =
+  "Dashboard runs use the one bucket from the VM's .env; bucket sets are not available.";
+const nics =
+  "NIC sets need multi-port client machines, which the dashboard does not manage yet.";
 
 // Valid spt run flags that the GUI never sets, with the reason shown when a
 // pasted command contains one.
@@ -420,6 +417,7 @@ export const blockedFlags: Record<string, string> = {
   "network-mode": infra,
   "rmi-port-start": infra,
   "rmi-port-count": infra,
+  "rmi-registry-port": infra,
   force: infra,
   "attach-existing": infra,
   "dns-server": infra,
@@ -427,6 +425,13 @@ export const blockedFlags: Record<string, string> = {
   "auto-results-debug": results,
   "shutdown-on-complete": results,
   "shutdown-linger": results,
+  "bucket-metrics": results,
+  "bucket-count": buckets,
+  buckets: buckets,
+  "buckets-file": buckets,
+  "provision-target-bucket": buckets,
+  interfaces: nics,
+  "host-interfaces": nics,
   "use-rdma": rdma,
   "rdma-local-ip": rdma,
   "rdma-threshold": rdma,
@@ -442,6 +447,7 @@ export const blockedFlags: Record<string, string> = {
   verbose: terminal,
   "generate-only": debug,
   "keep-scenario": debug,
+  "create-prefix": "Deprecated in SPT: it has no effect and will be removed.",
   duration:
     "Dashboard runs are count-based; use Maximum objects and the safety limit.",
   "delete-batch-size": destructive,
@@ -455,8 +461,8 @@ export const blockedFlags: Record<string, string> = {
   "verification-timeout": destructive,
 };
 
-// Every flag spt run registers (cli/cmd/run.go init and endpoint_selection.go),
-// used to tell "not for this workload" apart from a typo.
+// Every flag spt run registers (cli/cmd/run.go init, bucket_set.go and
+// endpoint_selection.go), used to tell "not for this workload" apart from a typo.
 export const allRunFlags: ReadonlySet<string> = new Set([
   "endpoints",
   "endpoint",
@@ -464,6 +470,14 @@ export const allRunFlags: ReadonlySet<string> = new Set([
   "access-key",
   "secret-key",
   "bucket",
+  "bucket-count",
+  "buckets",
+  "buckets-file",
+  "provision-target-bucket",
+  "bucket-metrics",
+  "interfaces",
+  "host-interfaces",
+  "rmi-registry-port",
   "prefix",
   "region",
   "endpoint-selection",

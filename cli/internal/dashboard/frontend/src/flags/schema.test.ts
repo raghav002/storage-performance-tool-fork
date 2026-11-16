@@ -14,6 +14,41 @@ import {
 
 const workloads = Object.keys(flagGroups) as Workload[];
 
+// The CLI's Go sources, read at test time so the flag lists cannot drift from spt run.
+const goSources = import.meta.glob("../../../../../cmd/*.go", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+}) as Record<string, string>;
+
+// Flag names spt run registers: runCmd.Flags().X(...) in run.go, plus the
+// helpers run.go calls with runCmd.Flags() (bucket sets, endpoint selection).
+function registeredRunFlags(): Set<string> {
+  const files = Object.entries(goSources).filter(
+    ([path]) => !path.endsWith("_test.go"),
+  );
+  const consts = new Map<string, string>();
+  for (const [, src] of files)
+    for (const m of src.matchAll(/^\s*(\w+)\s*=\s*"([^"]+)"/gm))
+      consts.set(m[1], m[2]);
+  const helpers = ["bucket_set.go", "endpoint_selection.go"];
+  const names = new Set<string>();
+  for (const [path, src] of files) {
+    const receiver = helpers.some((h) => path.endsWith(`/${h}`))
+      ? "flags"
+      : "runCmd\\.Flags\\(\\)";
+    const pattern = new RegExp(
+      `${receiver}\\.(?:String|Bool|Int|Int64|Float64|Duration|StringSlice|StringArray)(?:P|Var|VarP)?\\(\\s*(?:&[\\w.]+,\\s*)?(?:"([^"]+)"|(\\w+))`,
+      "g",
+    );
+    for (const m of src.matchAll(pattern)) {
+      const name = m[1] ?? consts.get(m[2]);
+      if (name) names.add(name);
+    }
+  }
+  return names;
+}
+
 function defaultFits(f: FlagDef): boolean {
   const v = f.default;
   switch (f.kind) {
@@ -66,6 +101,24 @@ describe("expert flag schema", () => {
       expect(blockedFlags[f.name], f.name).toBeUndefined();
       if (f.short) expect(shortAliases[f.short]).toBe(f.name);
     }
+  });
+
+  it("lists exactly the flags spt run registers", () => {
+    const registered = registeredRunFlags();
+    expect(registered.size).toBeGreaterThan(100);
+    expect([...registered].filter((n) => !allRunFlags.has(n))).toEqual([]);
+    expect([...allRunFlags].filter((n) => !registered.has(n))).toEqual([]);
+  });
+
+  it("blocks deprecated and bucket-set flags with a reason", () => {
+    for (const name of [
+      "create-prefix",
+      "bucket-count",
+      "buckets",
+      "interfaces",
+      "host-interfaces",
+    ])
+      expect(blockedFlags[name], name).toBeTruthy();
   });
 
   it("blocks only real flags and aliases real names", () => {

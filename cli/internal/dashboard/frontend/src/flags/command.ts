@@ -71,6 +71,8 @@ const boolRunFlags = new Set([
   "rdma-allow-missing-bytes-header",
   "rdma-buffer-pool",
   "no-provision",
+  "provision-target-bucket",
+  "bucket-metrics",
   "minimal",
   "headless",
   "trace-append",

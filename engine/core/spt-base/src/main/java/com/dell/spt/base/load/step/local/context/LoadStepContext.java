@@ -11,6 +11,7 @@ import com.dell.spt.base.concurrent.AsyncRunnable;
 import com.github.akurilov.commons.io.Input;
 import com.github.akurilov.commons.io.Output;
 import java.io.IOException;
+import com.dell.spt.base.storage.driver.AdmissionPreparable;
 import java.util.OptionalLong;
 
 /** Created on 11.07.16. */
@@ -34,6 +35,21 @@ public interface LoadStepContext<I extends Item, O extends Operation<I>> extends
 
 	/** Range counters, or null for an ordinary context. Read only after stop for terminal evidence. */
 	default com.dell.spt.base.metrics.range.RangeReadSnapshot rangeReadSnapshot() {
+		return null;
+	}
+
+	/** Whether this context's driver has a NIC set, so its step writes the per-path CSV (item 18). */
+	default boolean hasNicSet() {
+		return false;
+	}
+
+	/** The driver's terminal per-path rows once it stopped, or null: no NIC set, not stopped, or never opened. */
+	default com.dell.spt.base.nic.NicPathRows nicPathRows() {
+		return null;
+	}
+
+	/** The driver's event loops (D64), or null without a NIC set. */
+	default com.dell.spt.base.nic.NicSetResources nicSetResources() {
 		return null;
 	}
 
@@ -70,6 +86,15 @@ public interface LoadStepContext<I extends Item, O extends Operation<I>> extends
 	}
 
 	/**
+	 * Whether a standalone DELETE duration slice attempted every object in its frozen input, read from
+	 * its counts once it has recovered its queues and drained. Nothing was left for the rest of the
+	 * duration, so the slice ran out, whatever any earlier poll saw.
+	 */
+	default boolean durationInventoryRanOut() {
+		return false;
+	}
+
+	/**
 	 * Returns the scheduling-exhaustion transition with explicit presence.
 	 *
 	 * <p>The compatibility default adapts the historical {@link Long#MAX_VALUE} sentinel.
@@ -80,6 +105,15 @@ public interface LoadStepContext<I extends Item, O extends Operation<I>> extends
 						? OptionalLong.empty()
 						: OptionalLong.of(exhaustedAtNanos);
 	}
+
+	/** Makes the next start hold admission and leave the driver to {@link #prepareForAdmission}. */
+	default void holdForAdmissionBarrier() {}
+
+	/** Starts the driver and runs its preparation, on the step's preparation thread. */
+	default void prepareForAdmission(final AdmissionPreparable.Preparation preparation) throws Exception {}
+
+	/** Ends the barrier's hold; admission opens now unless another hold still applies. */
+	default void releaseAdmissionBarrier() {}
 
 	/** Releases duration scheduling against a step-local monotonic interval. */
 	default void startDurationInterval(final long startNanos, final long deadlineNanos) {}

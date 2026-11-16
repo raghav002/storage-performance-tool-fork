@@ -8,6 +8,7 @@ import static com.github.akurilov.commons.lang.Exceptions.throwUnchecked;
 import com.dell.spt.base.concurrent.ServiceTaskExecutor;
 import com.dell.spt.base.concurrent.TaskBase;
 import com.dell.spt.base.item.Item;
+import com.dell.spt.base.item.TransferConvertBuffer;
 import com.dell.spt.base.item.io.RemainingItemCountInput;
 import com.dell.spt.base.item.io.TerminalItemInputException;
 import com.dell.spt.base.integrity.IntegrityTerminalException;
@@ -137,8 +138,17 @@ public class LoadGeneratorImpl<I extends Item, O extends Operation<I>> extends T
 	private final LongAdder outputOpCounter = new LongAdder();
 	private final AtomicReference<IntegrityTerminalException> terminalFailure = new AtomicReference<>();
 	private final AtomicReference<SchedulingExhaustion> schedulingExhaustion = new AtomicReference<>();
+	// Set once before the generator starts; read only when scheduling ends for the step.
+	private volatile Runnable schedulingExhaustionListener;
+	private final AtomicBoolean schedulingEndNotified = new AtomicBoolean();
+	private boolean countLimitReached;
 	private final AtomicBoolean admissionOpen = new AtomicBoolean(true);
 	private final OutputBackoff outputBackoff = new OutputBackoff();
+	// A pipeline handoff is empty while the previous context has not handed over more; only its
+	// EOF ends it. Any other input ends at its first empty read.
+	private final boolean handoffInput;
+	private final OutputBackoff handoffBackoff = new OutputBackoff();
+	private long consumedAtLastHandoffWait = -1;
 	private volatile long admissionDeadlineNanos;
 	private volatile boolean admissionDeadlineSet;
 	private final AtomicBoolean assemblerFinished = new AtomicBoolean(false);
@@ -238,6 +248,7 @@ public class LoadGeneratorImpl<I extends Item, O extends Operation<I>> extends T
 					final boolean retryFlag) {
 		super(ServiceTaskExecutor.TASK_EXECUTOR);
 		this.itemInput = itemInput;
+		this.handoffInput = itemInput instanceof TransferConvertBuffer;
 		this.opAssembler = opAssembler;
 		if (opAssembler instanceof DeleteRequestAssembler) {
 			if (!(itemInput instanceof RemainingItemCountInput<?> countInput)) {
@@ -291,6 +302,7 @@ public class LoadGeneratorImpl<I extends Item, O extends Operation<I>> extends T
 		final var opBuff = operationBuffer();
 		var pendingOpCount = opBuff.size();
 		var n = batchSize - pendingOpCount;
+		var handoffEmpty = false;
 
 		try {
 
@@ -371,6 +383,8 @@ public class LoadGeneratorImpl<I extends Item, O extends Operation<I>> extends T
 										final long newlyBuilt = buildOps(items, opBuff, n);
 										pendingOpCount = (int) (pendingOpCount + newlyBuilt);
 										pendingOpCount += finishKnownStandaloneInput(opBuff);
+									} else if (handoffInput) {
+										handoffEmpty = true;
 									} else {
 										itemInputFinishFlag = true;
 										pendingOpCount += finishAssemblerNormally(opBuff);
@@ -410,8 +424,9 @@ public class LoadGeneratorImpl<I extends Item, O extends Operation<I>> extends T
 						} else {
 							throw new AssertionError("Unexpected throttle type: " + throttle.getClass());
 						}
-						// RateThrottle reports an exhausted quota as a negative count (the schedule
-						// deficit) rather than zero. That is a refusal, not a contract violation.
+						// Some throttles, such as java-commons' RateThrottle, report an exhausted quota as
+						// a negative count (the schedule deficit) rather than zero. That is a refusal, not
+						// a contract violation. SPT's own PacedRateThrottle never returns one.
 						permittedCount = Math.max(0, permittedCount);
 					}
 					assertOutputRange("Throttle permit", permittedCount, pendingOpCount, opBuff.size());
@@ -486,6 +501,8 @@ public class LoadGeneratorImpl<I extends Item, O extends Operation<I>> extends T
 					if (parkNanos > 0) {
 						LockSupport.parkNanos(parkNanos);
 					}
+				} else if (handoffEmpty) {
+					awaitHandoff();
 				} else if (retryFlag) {
 					// Nothing pending to dispatch (e.g. item input just exhausted). With
 					// load-op-retry enabled, isFinished() deliberately won't self-stop on
@@ -500,7 +517,9 @@ public class LoadGeneratorImpl<I extends Item, O extends Operation<I>> extends T
 				}
 			} else if (!retryFlag) { // operations count limit is reached
 				outputFinishFlag = true;
+				onCountLimitReached();
 			} else {
+				onCountLimitReached();
 				// Count limit reached, but load-op-retry is enabled: a dispatch that just
 				// consumed the last slot in the count budget may still turn into a retry
 				// once it completes - that decision happens later (by whoever is watching
@@ -566,10 +585,36 @@ public class LoadGeneratorImpl<I extends Item, O extends Operation<I>> extends T
 	}
 
 	private void recordSchedulingExhaustion() {
-		if (schedulingExhaustion.get() == null) {
-			schedulingExhaustion.compareAndSet(
-							null, new SchedulingExhaustion(schedulingExhaustionTimeNanos()));
+		if (schedulingExhaustion.get() == null
+						&& schedulingExhaustion.compareAndSet(
+										null, new SchedulingExhaustion(schedulingExhaustionTimeNanos()))) {
+			notifySchedulingEnd();
 		}
+	}
+
+	/** The first iteration that finds the count limit reached ends scheduling for this step. */
+	private void onCountLimitReached() {
+		if (!countLimitReached && outputOpCounter.sum() >= countLimit) {
+			countLimitReached = true;
+			notifySchedulingEnd();
+		}
+	}
+
+	/** Runs the listener once, at the first of exhausted input and a reached count limit. */
+	private void notifySchedulingEnd() {
+		final Runnable listener = schedulingExhaustionListener;
+		if (listener != null && schedulingEndNotified.compareAndSet(false, true)) {
+			try {
+				listener.run();
+			} catch (final RuntimeException e) {
+				LogUtil.exception(Level.WARN, e, "{}: scheduling exhaustion listener failed", name);
+			}
+		}
+	}
+
+	@Override
+	public final void onSchedulingExhaustion(final Runnable listener) {
+		schedulingExhaustionListener = listener;
 	}
 
 	/** Package-local deterministic clock seam, read only for a finite scheduling transition. */
@@ -627,7 +672,13 @@ public class LoadGeneratorImpl<I extends Item, O extends Operation<I>> extends T
 								e);
 			}
 			LogUtil.exception(Level.WARN, e, "Failed to read the next load-generator items");
-			return null;
+			if (!isStarted()) {
+				// A stop closes the input under a read in progress: that read finds no more items.
+				return null;
+			}
+			// Reading this as the end of the input would end the run early, with no failure.
+			throw new IntegrityTerminalException(
+							IntegrityTerminalException.Category.INPUT, "failed to read the next items", e);
 		}
 		return items;
 	}
@@ -664,6 +715,21 @@ public class LoadGeneratorImpl<I extends Item, O extends Operation<I>> extends T
 	 */
 	private static void yieldThread() {
 		LockSupport.parkNanos(OutputBackoff.INITIAL_NANOS);
+	}
+
+	/**
+	 * Waits for the previous pipeline context to hand over more items. The wait grows while the
+	 * handoff stays empty, so a reader waiting on a slow writer is not woken at tens of kHz, and
+	 * starts short again once items have arrived since the last wait. A wake takes every item
+	 * waiting, up to a batch, so the wait does not cap the reader's rate.
+	 */
+	private void awaitHandoff() {
+		final var consumed = consumedItemsCounter.sum();
+		if (consumed != consumedAtLastHandoffWait) {
+			consumedAtLastHandoffWait = consumed;
+			handoffBackoff.onProgress(1, 1);
+		}
+		LockSupport.parkNanos(handoffBackoff.nextParkNanos());
 	}
 
 	private void assertOutputRange(

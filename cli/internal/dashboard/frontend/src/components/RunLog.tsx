@@ -1,6 +1,14 @@
-import { useEffect, useState } from "react";
+import {
+  Accordion,
+  Button,
+  Paper,
+  SegmentedControl,
+  Text,
+  Title,
+} from "@mantine/core";
+import { useState } from "react";
 import type { LogLevel, LogResponse } from "../types";
-import { logURL } from "../utils/catalog";
+import { useLog } from "../api/queries";
 
 const levels: { value: LogLevel; label: string }[] = [
   { value: "all", label: "All" },
@@ -24,97 +32,136 @@ export function RunLog({
   sources?: ("console" | "results")[];
   title?: string;
   refreshMs?: number;
-  /** Render inside a closed <details> so long traces stay hidden until asked for. */
+  /** Start collapsed so long traces stay hidden until requested. */
   collapsed?: boolean;
 }) {
   const [open, setOpen] = useState(!collapsed);
   const [level, setLevel] = useState<LogLevel>("all");
-  const [source, setSource] = useState(sources?.[0] ?? "");
-  const [data, setData] = useState<LogResponse | null>(null);
-  const [error, setError] = useState("");
-  const [version, setVersion] = useState(0);
-  useEffect(() => {
-    if (!open) return;
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const load = async () => {
-      try {
-        const r = await fetch(
-          logURL(base, level, 200, source ? { source } : {}),
-          { cache: "no-store", signal: controller.signal },
-        );
-        const body = await r.json();
-        if (!r.ok) throw new Error(body.error ?? "Could not read the log.");
-        setData(body as LogResponse);
-        setError("");
-      } catch (e) {
-        if (!controller.signal.aborted) {
-          setData(null);
-          setError(e instanceof Error ? e.message : "Could not read the log.");
-        }
-      }
-      if (refreshMs > 0 && !controller.signal.aborted)
-        timer = setTimeout(load, refreshMs);
-    };
-    void load();
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
-  }, [base, level, source, refreshMs, version, open]);
+  const [source, setSource] = useState<LogResponse["source"] | "">(
+    sources?.[0] ?? "",
+  );
+  // Unmount the query observer on close so its in-flight request is cancelled.
+  const body = open ? (
+    <LogContents
+      base={base}
+      sources={sources}
+      title={title}
+      refreshMs={refreshMs}
+      collapsed={collapsed}
+      level={level}
+      source={source}
+      setLevel={setLevel}
+      setSource={setSource}
+    />
+  ) : null;
+  return collapsed ? (
+    <Accordion
+      mb="panel"
+      aria-label={title}
+      value={open ? "log" : null}
+      onChange={(value) => setOpen(value === "log")}
+      keepMounted={false}
+    >
+      <Accordion.Item value="log">
+        <Accordion.Control>{title}</Accordion.Control>
+        <Accordion.Panel>{body}</Accordion.Panel>
+      </Accordion.Item>
+    </Accordion>
+  ) : (
+    <Paper component="section" p="panel" mb="panel" aria-label={title}>
+      {body}
+    </Paper>
+  );
+}
+
+function LogContents({
+  base,
+  sources,
+  title,
+  refreshMs,
+  collapsed,
+  level,
+  source,
+  setLevel,
+  setSource,
+}: {
+  base: string;
+  sources?: LogResponse["source"][];
+  title: string;
+  refreshMs: number;
+  collapsed: boolean;
+  level: LogLevel;
+  source: LogResponse["source"] | "";
+  setLevel: (level: LogLevel) => void;
+  setSource: (source: LogResponse["source"] | "") => void;
+}) {
+  const log = useLog(base, level, source, refreshMs);
+  const data = log.isError ? undefined : log.data;
+  const error = log.error?.message ?? "";
   const files = [...new Set(data?.lines.map((l) => l.file) ?? [])];
-  const body = (
+  return (
     <>
-      <div className="run-log-heading">
-        {!collapsed && <h3>{title}</h3>}
-        <div className="mode-switch" role="group" aria-label="Log level">
-          {levels.map((l) => (
-            <button
-              key={l.value}
-              className={level === l.value ? "active" : ""}
-              aria-pressed={level === l.value}
-              onClick={() => setLevel(l.value)}
-            >
-              {l.label}
-            </button>
-          ))}
-        </div>
-        {sources && sources.length > 1 && (
-          <div className="mode-switch" role="group" aria-label="Log source">
-            {sources.map((s) => (
-              <button
-                key={s}
-                className={source === s ? "active" : ""}
-                aria-pressed={source === s}
-                onClick={() => setSource(s)}
-              >
-                {s === "console" ? "Console (interim)" : "Results logs"}
-              </button>
-            ))}
-          </div>
+      <div className="flex flex-wrap gap-sm items-center">
+        {!collapsed && (
+          <Title order={3} className="flex-auto">
+            {title}
+          </Title>
         )}
-        <button onClick={() => setVersion((v) => v + 1)}>Reload</button>
+        <SegmentedControl<LogLevel>
+          aria-label="Log level"
+          value={level}
+          onChange={setLevel}
+          data={levels}
+        />
+        {sources && sources.length > 1 && (
+          <SegmentedControl<LogResponse["source"] | "">
+            aria-label="Log source"
+            value={source}
+            onChange={setSource}
+            data={sources.map((s) => ({
+              value: s,
+              label: s === "console" ? "Console (interim)" : "Results logs",
+            }))}
+          />
+        )}
+        <Button onClick={() => void log.refetch()}>Reload</Button>
       </div>
       {data?.interim && (
-        <p className="form-help">
+        <Text size="sm" className="my-comfortable">
           Interim console output captured by the dashboard. The engine’s results
           logs are the record once the run finishes.
-        </p>
+        </Text>
       )}
       {error ? (
-        <p className="subtle">{error}</p>
+        <Text size="xs" c="var(--spt-text-subtle)">
+          {error}
+        </Text>
       ) : !data ? (
-        <p className="subtle">Loading log…</p>
+        <Text size="xs" c="var(--spt-text-subtle)">
+          Loading log…
+        </Text>
       ) : data.lines.length === 0 ? (
-        <p className="subtle">
+        <Text size="xs" c="var(--spt-text-subtle)">
           {level === "all"
             ? "No log lines recorded."
             : `No ${level === "warn" ? "warning or error" : "error"} lines recorded.`}
-        </p>
+        </Text>
       ) : (
-        <pre className="log-lines" tabIndex={0}>
+        <pre
+          className="p-sm max-h-90 overflow-auto bg-[#101827] text-[#dbe4f0] rounded-md text-sm/help whitespace-pre-wrap wrap-anywhere"
+          tabIndex={0}
+        >
           {data.lines.map((l, i) => (
-            <span key={i} className={`log-line log-${l.level}`}>
+            <span
+              key={i}
+              className={
+                l.level === "warn"
+                  ? "text-[#f5c46b]"
+                  : l.level === "error"
+                    ? "text-[#ff8a80]"
+                    : undefined
+              }
+            >
               {l.text}
               {"\n"}
             </span>
@@ -122,31 +169,19 @@ export function RunLog({
         </pre>
       )}
       {data?.truncated && (
-        <p className="form-help">
+        <Text size="sm" className="my-comfortable">
           Showing the end of a large log; older lines were not read.
-        </p>
+        </Text>
       )}
       {files.length > 0 && (
-        <p className="form-help">From: {files.join(", ")}</p>
+        <Text size="sm" className="my-comfortable">
+          From: {files.join(", ")}
+        </Text>
       )}
-      <p className="form-help">
+      <Text size="sm" className="my-comfortable">
         Credential-looking values are redacted. Showing up to the last 200
         matching lines.
-      </p>
+      </Text>
     </>
-  );
-  return collapsed ? (
-    <details
-      className="panel run-log"
-      aria-label={title}
-      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
-    >
-      <summary>{title}</summary>
-      {open && body}
-    </details>
-  ) : (
-    <section className="panel run-log" aria-label={title}>
-      {body}
-    </section>
   );
 }

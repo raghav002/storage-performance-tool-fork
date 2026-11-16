@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/csv"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -43,5 +44,40 @@ func TestSavedRunEndpointsNeverExposeCredentials(t *testing.T) {
 	}
 	if rec := get("/api/runs/" + fixtureDashboardRunID + "/csv?bogus=1"); rec.Code != 400 {
 		t.Errorf("unsupported csv option should be 400, got %d", rec.Code)
+	}
+}
+
+func TestWindowCSVMatchesChartTimeOrigin(t *testing.T) {
+	for _, tc := range []struct {
+		name, startedAt, window string
+		want                    int
+	}{
+		{"fractional start", "2026-10-20T10:00:00.0005Z", "start=0&end=2", 2},
+		{"missing start uses first phase sample", "", "start=0&end=2", 2},
+		{"sample before start is shown at zero", "2026-10-20T10:00:00.001Z", "start=0&end=0", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newCatalogApp(t)
+			if err := a.writeRunRecord(map[string]any{
+				keyRunID: fixtureDashboardRunID, keyStatus: jobCompleted, keyStartedAt: tc.startedAt,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodGet, "/api/runs/"+fixtureDashboardRunID+"/csv?kind=window&phase=CREATE&"+tc.window, nil)
+			req.Host = "127.0.0.1:8000"
+			req.SetPathValue("runID", fixtureDashboardRunID)
+			rec := httptest.NewRecorder()
+			a.handleRunCSV(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("window CSV status %d: %s", rec.Code, rec.Body.String())
+			}
+			rows, err := csv.NewReader(rec.Body).ReadAll()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := len(rows) - 1; got != tc.want {
+				t.Fatalf("exported %d samples, want %d shown in the chart", got, tc.want)
+			}
+		})
 	}
 }

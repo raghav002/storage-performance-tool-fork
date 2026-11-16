@@ -50,6 +50,8 @@ import com.dell.spt.base.storage.driver.StorageDriver;
 import com.dell.spt.base.storage.driver.ListDiscoveryProbe;
 import com.dell.spt.base.storage.driver.ListOptions;
 import com.dell.spt.base.util.BinarySizeFormat;
+import com.dell.spt.base.item.op.OperationsBuilderImpl;
+import com.dell.spt.base.storage.driver.bucket.TargetBucketSet;
 import com.github.akurilov.commons.collection.Range;
 import com.github.akurilov.commons.concurrent.throttle.IndexThrottle;
 import com.github.akurilov.commons.concurrent.throttle.Throttle;
@@ -85,6 +87,8 @@ public class LoadGeneratorBuilderImpl<I extends Item, O extends Operation<I>, T 
 	private ItemType itemType = null;
 	private ItemFactory<I> itemFactory = null;
 	private Config authConfig = null;
+	private int targetBucketCount = 1;
+	private List<String> targetBucketNames = List.of();
 	private Output<O> opOutput = null;
 	private Input<I> itemInput = null;
 	private long sizeEstimate = -1;
@@ -121,6 +125,18 @@ public class LoadGeneratorBuilderImpl<I extends Item, O extends Operation<I>, T 
 	@Override
 	public LoadGeneratorBuilderImpl<I, O, T> authConfig(final Config authConfig) {
 		this.authConfig = authConfig;
+		return this;
+	}
+
+	@Override
+	public LoadGeneratorBuilderImpl<I, O, T> targetBucketCount(final int count) {
+		this.targetBucketCount = count;
+		return this;
+	}
+
+	@Override
+	public LoadGeneratorBuilderImpl<I, O, T> targetBucketNames(final List<String> names) {
+		this.targetBucketNames = names == null ? List.of() : List.copyOf(names);
 		return this;
 	}
 
@@ -240,11 +256,15 @@ public class LoadGeneratorBuilderImpl<I extends Item, O extends Operation<I>, T 
 			itemInputPath = '/' + itemInputPath;
 		}
 		opsBuilder.inputPath(itemInputPath);
-		// determine the output path
+		// determine the output path; a list is the whole set: its length is the member count, whatever
+		// count the caller passed
+		final int memberCount = targetBucketNames.isEmpty() ? targetBucketCount : targetBucketNames.size();
 		final Input<String> outputPathSupplier;
-		if (OpType.CREATE.equals(opType) && ItemType.DATA.equals(itemType)) {
+		if (OpType.CREATE.equals(opType) && ItemType.DATA.equals(itemType) && memberCount <= 1) {
 			outputPathSupplier = getOutputPathSupplier();
 		} else {
+			// with several members the precomputed member paths decide every destination, so the
+			// configured path, a list's placeholder included, is never built into an input or evaluated
 			outputPathSupplier = null;
 		}
 		opsBuilder.outputPathInput(outputPathSupplier);
@@ -421,6 +441,17 @@ public class LoadGeneratorBuilderImpl<I extends Item, O extends Operation<I>, T 
 				((DataOperationsBuilder) opsBuilder).srcItemsForConcat(srcItemsBuff);
 				itemInput = newItemInput();
 			}
+		}
+		if (memberCount > 1 && OpType.CREATE.equals(opType) && ItemType.DATA.equals(itemType)) {
+			if (!(itemInput instanceof NewItemInput)) {
+				throw new IllegalConfigurationException((targetBucketNames.isEmpty()
+								? "storage.targetBucket.count " + targetBucketCount
+								: "storage.targetBucket.names (" + memberCount + " names)")
+								+ " applies only to newly generated objects, but this CREATE step has an item input");
+			}
+			((OperationsBuilderImpl<?, ?>) opsBuilder).targetBucketMembers(
+							TargetBucketSet.memberPaths(itemConfig.stringVal("output-path"), memberCount, targetBucketNames),
+							ItemNameInputFactory.shardCount(itemConfig.configVal("naming")));
 		}
 		// adjust the storage drivers for the estimated transfer size
 		if (opOutput == null) {
@@ -685,7 +716,11 @@ public class LoadGeneratorBuilderImpl<I extends Item, O extends Operation<I>, T 
 
 	private Input<String> getOutputPathSupplier() {
 		final Input<String> pathInput;
-		final var path = itemConfig.stringVal("output-path");
+		var path = itemConfig.stringVal("output-path");
+		if (targetBucketNames.size() == 1) {
+			// a one-name list is a single target bucket at that name, whatever the placeholder says
+			path = TargetBucketSet.memberPaths(path, 1, targetBucketNames).get(0);
+		}
 		if (path.contains(ASYNC_MARKER) || path.contains(SYNC_MARKER) || path.contains(INIT_MARKER)) {
 			pathInput = CompositeExpressionInputBuilder.newInstance()
 							.expression(path)

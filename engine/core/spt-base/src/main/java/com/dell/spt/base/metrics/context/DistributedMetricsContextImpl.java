@@ -1,5 +1,7 @@
 package com.dell.spt.base.metrics.context;
 
+import com.dell.spt.base.metrics.steady.SteadyAggregation;
+import com.dell.spt.base.metrics.steady.SteadyResult;
 import com.dell.spt.base.item.op.OpType;
 import com.dell.spt.base.metrics.DistributedMetricsListener;
 import com.dell.spt.base.metrics.snapshot.AllMetricsSnapshot;
@@ -7,17 +9,21 @@ import com.dell.spt.base.metrics.snapshot.ConcurrencyMetricSnapshot;
 import com.dell.spt.base.metrics.snapshot.ConcurrencyMetricSnapshotImpl;
 import com.dell.spt.base.metrics.snapshot.DistributedAllMetricsSnapshotImpl;
 import com.dell.spt.base.metrics.snapshot.DeleteMetricsSnapshot;
+import com.dell.spt.base.metrics.snapshot.DriverStatsSnapshot;
+import com.dell.spt.base.metrics.snapshot.DriverStatsTotal;
 import com.dell.spt.base.metrics.snapshot.RateMetricSnapshot;
 import com.dell.spt.base.metrics.snapshot.RateMetricSnapshotImpl;
 import com.dell.spt.base.metrics.snapshot.TimingMetricSnapshot;
 import com.dell.spt.base.metrics.snapshot.TimingMetricSnapshotImpl;
 import com.github.akurilov.commons.system.SizeInBytes;
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
@@ -39,6 +45,7 @@ public class DistributedMetricsContextImpl<S extends DistributedAllMetricsSnapsh
 
 	private final IntSupplier nodeCountSupplier;
 	private final Supplier<List<AllMetricsSnapshot>> snapshotsSupplier;
+	private BucketMetricsSource bucketMetricsSource;
 	private final boolean avgPersistFlag;
 	private final boolean sumPersistFlag;
 	private final boolean timingPersistFlag;
@@ -46,6 +53,14 @@ public class DistributedMetricsContextImpl<S extends DistributedAllMetricsSnapsh
 	private volatile List<String> nodesPresent = List.of();
 	private volatile List<String> contributorsPresent = List.of();
 	private volatile boolean partial;
+	private volatile CachedSteady cachedSteady;
+	/**
+	 * Refreshes run one at a time, so one that started earlier never publishes its snapshot or its
+	 * presence and partial state over a later one.
+	 */
+	private final ReentrantLock refreshLock = new ReentrantLock();
+	/** Whether the terminal snapshot is taken; guarded by {@link #refreshLock}. */
+	private boolean terminalTaken = false;
 	private final List<Double> quantileValues;
 
 	public DistributedMetricsContextImpl(
@@ -117,6 +132,11 @@ public class DistributedMetricsContextImpl<S extends DistributedAllMetricsSnapsh
 	public void markFail(final long count) {}
 
 	@Override
+	public BucketMetricsSource bucketMetricsSource() {
+		return bucketMetricsSource;
+	}
+
+	@Override
 	public List<String> nodeAddrs() {
 		return (List<String>) metadata.get(METADATA_NODE_LIST);
 	}
@@ -135,6 +155,40 @@ public class DistributedMetricsContextImpl<S extends DistributedAllMetricsSnapsh
 	@Override
 	public List<String> contributorsPresent() {
 		return contributorsPresent;
+	}
+
+	/**
+	 * The slices' aggregate, recomputed only when an input changed: slice results are immutable once
+	 * closed, but each RMI read deserializes new copies, so inputs are compared by a small key rather
+	 * than by identity. This keeps the drain's 100 Hz refreshes from re-merging every histogram.
+	 */
+	private SteadyResult steadyAggregate(final List<SteadyResult> results, final boolean contributorsAuthoritative) {
+		final List<Object> key = new ArrayList<>(results.size() + 2);
+		key.add(contributorsAuthoritative);
+		key.add(nodeCountSupplier.getAsInt());
+		for (final SteadyResult result : results) {
+			key.add(result == null ? null
+							: Arrays.asList(
+											result.status(), result.cause(), result.startOffsetMillis(), result.durationNanos(),
+											result.turnovers()));
+		}
+		final var cached = cachedSteady;
+		if (cached != null && cached.key().equals(key)) {
+			return cached.aggregate();
+		}
+		final SteadyResult aggregate = SteadyAggregation.aggregate(
+						results, contributorsAuthoritative, nodeCountSupplier.getAsInt());
+		cachedSteady = new CachedSteady(key, aggregate);
+		return aggregate;
+	}
+
+	private record CachedSteady(List<Object> key, SteadyResult aggregate) {}
+
+	/** The slices' aggregate steady result in the last snapshot, once any slice window closed. */
+	@Override
+	public SteadyResult steadyResult() {
+		final var snapshot = lastSnapshot;
+		return snapshot == null ? null : snapshot.steadyResult();
 	}
 
 	@Override
@@ -174,8 +228,54 @@ public class DistributedMetricsContextImpl<S extends DistributedAllMetricsSnapsh
 	}
 
 	@Override
-	@SuppressWarnings("unchecked")
 	public void refreshLastSnapshot(final boolean force) {
+		refreshLock.lock();
+		try {
+			if (!terminalTaken) {
+				publishLastSnapshot(force);
+			}
+		} finally {
+			refreshLock.unlock();
+		}
+	}
+
+	/**
+	 * Takes the terminal snapshot with one forced read of every slice. The presence and partial
+	 * state of that read stay with it: no later refresh replaces either until the context starts
+	 * again or closes.
+	 */
+	@Override
+	public S terminalSnapshot() {
+		refreshLock.lock();
+		try {
+			if (!terminalTaken) {
+				publishLastSnapshot(true);
+				terminalTaken = true;
+			}
+			return lastSnapshot;
+		} finally {
+			refreshLock.unlock();
+		}
+	}
+
+	@Override
+	public void start() {
+		super.start();
+		reopenRefreshes();
+	}
+
+	/** Lets refreshes publish again, after a new start or a close. */
+	private void reopenRefreshes() {
+		refreshLock.lock();
+		try {
+			terminalTaken = false;
+		} finally {
+			refreshLock.unlock();
+		}
+	}
+
+	@SuppressWarnings("unchecked")
+	private void publishLastSnapshot(final boolean force) {
 
 		final var suppliedSnapshots = snapshotsSupplier.get();
 		if (suppliedSnapshots == null) {
@@ -280,6 +380,11 @@ public class DistributedMetricsContextImpl<S extends DistributedAllMetricsSnapsh
 								: null;
 			}
 			final DeleteMetricsSnapshot deleteMetrics = applyFailureBudgetOutcome(suppliedDeleteMetrics);
+			final List<SteadyResult> steadyResults = new ArrayList<>(suppliedSnapshots.size());
+			for (final var supplied : suppliedSnapshots) {
+				steadyResults.add(supplied == null ? null : supplied.steadyResult());
+			}
+			final SteadyResult steadyResult = steadyAggregate(steadyResults, contributorsAuthoritative);
 
 			lastSnapshot = (S) new DistributedAllMetricsSnapshotImpl(
 							durSnapshot,
@@ -292,7 +397,9 @@ public class DistributedMetricsContextImpl<S extends DistributedAllMetricsSnapsh
 							bytesSnapshot,
 							nodeCountSupplier.getAsInt(),
 							elapsedTimeMillis(),
-							deleteMetrics);
+							deleteMetrics,
+							steadyResult,
+							driverStatsTotal(snapshots, contributorsAuthoritative));
 			if (metricsListener != null) {
 				metricsListener.notify(lastSnapshot);
 			}
@@ -302,6 +409,15 @@ public class DistributedMetricsContextImpl<S extends DistributedAllMetricsSnapsh
 		} else {
 			lastSnapshot = null;
 		}
+	}
+
+	private static DriverStatsTotal driverStatsTotal(
+					final List<AllMetricsSnapshot> snapshots, final boolean allPresent) {
+		final List<DriverStatsSnapshot> contributions = new ArrayList<>(snapshots.size());
+		for (final AllMetricsSnapshot snapshot : snapshots) {
+			contributions.add(snapshot.driverStats());
+		}
+		return DriverStatsTotal.of(contributions, allPresent);
 	}
 
 	private DeleteMetricsSnapshot applyFailureBudgetOutcome(
@@ -373,6 +489,7 @@ public class DistributedMetricsContextImpl<S extends DistributedAllMetricsSnapsh
 	@Override
 	public final void close() {
 		super.close();
+		reopenRefreshes();
 	}
 
 	public static DistributedContextBuilder builder() {
@@ -384,6 +501,7 @@ public class DistributedMetricsContextImpl<S extends DistributedAllMetricsSnapsh
 		private Map metaData = new HashMap();
 		private IntSupplier nodeCountSupplier;
 		private Supplier<List<AllMetricsSnapshot>> snapshotsSupplier;
+		private BucketMetricsSource bucketMetricsSource;
 		private boolean avgPersistFlag;
 		private boolean sumPersistFlag;
 		private boolean timingPersistFlag;
@@ -394,7 +512,7 @@ public class DistributedMetricsContextImpl<S extends DistributedAllMetricsSnapsh
 
 		@Override
 		public DistributedMetricsContextImpl build() {
-			return new DistributedMetricsContextImpl(
+			final DistributedMetricsContextImpl context = new DistributedMetricsContextImpl(
 							metaData,
 							nodeCountSupplier,
 							concurrencyThreshold,
@@ -405,6 +523,14 @@ public class DistributedMetricsContextImpl<S extends DistributedAllMetricsSnapsh
 							timingPersistFlag,
 							snapshotsSupplier,
 							quantileValues);
+			context.bucketMetricsSource = bucketMetricsSource;
+			return context;
+		}
+
+		@Override
+		public DistributedContextBuilder bucketMetricsSource(final BucketMetricsSource source) {
+			this.bucketMetricsSource = source;
+			return this;
 		}
 
 		@Override

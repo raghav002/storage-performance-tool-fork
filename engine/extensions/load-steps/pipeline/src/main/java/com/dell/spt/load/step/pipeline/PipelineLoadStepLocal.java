@@ -3,6 +3,7 @@ package com.dell.spt.load.step.pipeline;
 import com.dell.spt.base.config.TimeUtil;
 import com.dell.spt.base.env.Extension;
 import com.dell.spt.base.config.IllegalConfigurationException;
+import com.dell.spt.base.config.NicSetConfig;
 import com.dell.spt.base.data.DataInput;
 import com.dell.spt.base.item.op.OpType;
 import com.dell.spt.base.item.op.Operation;
@@ -20,14 +21,15 @@ import com.dell.spt.base.storage.driver.StorageDriver;
 import com.dell.spt.base.load.step.local.context.LoadStepContextImpl;
 import com.dell.spt.base.load.generator.LoadGeneratorBuilderImpl;
 import com.dell.spt.base.load.generator.LoadGeneratorBuilder;
+import com.dell.spt.base.load.generator.PacedRateThrottle;
 import com.dell.spt.base.logging.LogUtil;
 import com.dell.spt.base.logging.Loggers;
 import com.dell.spt.base.util.BinarySizeFormat;
+import com.dell.spt.base.storage.driver.bucket.TargetBucketSet;
 
 import com.github.akurilov.commons.io.Output;
 import com.github.akurilov.commons.reflection.TypeUtil;
 import com.github.akurilov.commons.system.SizeInBytes;
-import com.github.akurilov.commons.concurrent.throttle.RateThrottle;
 import static com.github.akurilov.commons.collection.TreeUtil.reduceForest;
 
 import com.github.akurilov.confuse.Config;
@@ -45,13 +47,19 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 public class PipelineLoadStepLocal
 				extends LoadStepLocalBase {
+
+	/** The contexts whose results are the next context's items. */
+	private final Set<LoadStepContext> handoffWriters = Collections.newSetFromMap(new IdentityHashMap<>());
 
 	public PipelineLoadStepLocal(
 					final Config baseConfig, final List<Extension> extensions, final List<Config> contextConfigs,
@@ -127,6 +135,8 @@ public class PipelineLoadStepLocal
 
 				try {
 
+					NicSetConfig.requireSupportedWorkload(
+									storageConfig, opType, itemConfig.configVal("input").stringVal("path"));
 					final StorageDriver driver = StorageDriver.instance(
 									extensions, storageConfig, dataInput, effectiveVerifyFlag, batchSize, testStepId,
 									com.dell.spt.base.config.RangeReadConfig.fromLoad(loadConfig));
@@ -143,9 +153,11 @@ public class PipelineLoadStepLocal
 										.itemFactory((ItemFactory) itemFactory)
 										.loadOperationsOutput(driver)
 										.authConfig(storageConfig.configVal("auth"))
+										.targetBucketCount(TargetBucketSet.countOfStorage(storageConfig))
+										.targetBucketNames(TargetBucketSet.namesOfStorage(storageConfig))
 										.originIndex(originIndex);
 						if (rateLimit > 0) {
-							generatorBuilder.addThrottle(new RateThrottle(rateLimit));
+							generatorBuilder.addThrottle(new PacedRateThrottle(rateLimit));
 						}
 						if (nextItemBuff != null) {
 							generatorBuilder.itemInput(nextItemBuff);
@@ -161,6 +173,8 @@ public class PipelineLoadStepLocal
 										loadConfig,
 										outputConfig.boolVal("metrics-trace-persist"),
 										shardMetrics);
+						((LoadStepContextImpl<?, ?>) stepCtx).bucketRecorder(
+										initBucketMetrics(subConfig, metricsContexts.get(originIndex), null));
 						stepContexts.add(stepCtx);
 
 						final var itemOutputConfig = itemConfig.configVal("output");
@@ -176,6 +190,7 @@ public class PipelineLoadStepLocal
 							nextItemBuff = new DelayedTransferConvertBuffer<>(
 											outputQueueLimit, itemOutputDelay, TimeUnit.SECONDS);
 							stepCtx.operationsResultsOutput(nextItemBuff);
+							handoffWriters.add(stepCtx);
 						} else {
 							final String itemOutputFile = itemOutputConfig.stringVal("file");
 							if (itemOutputFile != null && itemOutputFile.length() > 0) {
@@ -206,6 +221,18 @@ public class PipelineLoadStepLocal
 			} catch (final IOException e) {
 				throw new IllegalStateException("Failed to initialize the data input", e);
 			}
+		}
+	}
+
+	/**
+	 * Stops a done context whose results feed the next context. Its stop hands over its last results
+	 * and then ends the handoff, so the next context reads what is left and reaches the end of its
+	 * input instead of waiting for the step to stop.
+	 */
+	@Override
+	protected void contextDone(final LoadStepContext context) {
+		if (handoffWriters.contains(context)) {
+			context.stop();
 		}
 	}
 

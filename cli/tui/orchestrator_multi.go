@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1506,6 +1507,7 @@ func (m *MultiHostTestOrchestrator) metricsPollingLoop(ctx context.Context) {
 	ticker := time.NewTicker(m.pollInterval)
 	defer ticker.Stop()
 
+	completed := false
 	for {
 		select {
 		case <-ticker.C:
@@ -1518,11 +1520,43 @@ func (m *MultiHostTestOrchestrator) metricsPollingLoop(ctx context.Context) {
 					m.recordCompletionFailure(failure)
 				}
 				m.signalCompletion()
+				completed = true
+			}
+			if completed {
+				continue
+			}
+			if failure := m.observeEntryTerminalFailure(ctx); failure != nil {
+				m.recordCompletionFailure(errors.Join(terminalDeletePolicyFailure(update), failure))
+				m.signalCompletion()
+				return
 			}
 		case <-ctx.Done():
 			return
 		}
 	}
+}
+
+// observeEntryTerminalFailure returns the failure the entry engine published as FAILED for the owned
+// run, or nil. A phase that fails during setup, before its slices start, publishes no metrics of its
+// own, so metrics-driven completion alone would wait for its step forever, whether or not earlier
+// phases published metrics.
+func (m *MultiHostTestOrchestrator) observeEntryTerminalFailure(ctx context.Context) error {
+	if m.multiHost == nil || len(m.multiHost.hosts) == 0 || m.multiHost.hosts[0] == nil {
+		return nil
+	}
+	client := m.multiHost.hosts[0].APIClient
+	if client == nil {
+		return nil
+	}
+	status, err := client.GetStatusContext(ctx)
+	if err != nil || status == nil || status.State != constants.StateFailed ||
+		!client.statusMatchesOwnedRun(status) {
+		return nil
+	}
+	if m.onStatusUpdate != nil {
+		m.onStatusUpdate(status)
+	}
+	return ownedTerminalStatusFailure(status)
 }
 
 // shouldSignalCompletion reports whether an aggregated metrics sample indicates
@@ -2401,6 +2435,7 @@ func (m *MultiHostTestOrchestrator) StartTestWithLaunchHooks(
 				return failBeforeSubmission(fmt.Errorf(
 					"primary host %s has no Docker manager configured", primary.Info.Original))
 			}
+			additionalArgs = append(additionalArgs, scenario.NodeInterfacesArgs(params.HostInterfaces, primary.Info.Host, nil)...)
 			primary.SetPhase(NodePhaseContainerStarting)
 			cid, err := startEntryNodeContainerContext(
 				ctx, primary.DockerManager, image, nil, additionalArgs, m.multiHost.networkMode)
@@ -2590,7 +2625,9 @@ func (m *MultiHostTestOrchestrator) StartTestWithContentAndLaunchHooks(
 
 	m.multiHost.scenarioContent = string(scenarioContent)
 
-	if err := m.multiHost.StartContainers(ctx, runtimeImage, startupArgs); err != nil {
+	// This host is the Entry Node whichever --test-hosts entry it is.
+	engineArgs := slices.Concat(startupArgs, scenario.NodeInterfacesArgs(params.HostInterfaces, host.Info.Host, nil))
+	if err := m.multiHost.StartContainers(ctx, runtimeImage, engineArgs); err != nil {
 		return errors.Join(err, m.multiHost.cleanupManagedContainersAfterStartFailure(ctx))
 	}
 	if err := m.waitForAPIs(ctx, constants.APIReadinessTimeout); err != nil {
@@ -2957,6 +2994,7 @@ func (o *MultiHostOrchestrator) startEntryNodeContext(
 ) error {
 	// Build worker addresses for RMI using detected advertised IPs where available
 	workerAddresses := make([]string, 0, len(workers))
+	workerNodes := make([]scenario.WorkerNode, 0, len(workers))
 	for _, worker := range workers {
 		hostOrIP := worker.AdvertisedIP
 		if strings.TrimSpace(hostOrIP) == "" {
@@ -2964,6 +3002,7 @@ func (o *MultiHostOrchestrator) startEntryNodeContext(
 		}
 		addr := fmt.Sprintf("%s:%s", hostOrIP, constants.RMIRegistryPort)
 		workerAddresses = append(workerAddresses, addr)
+		workerNodes = append(workerNodes, scenario.WorkerNode{Host: worker.Info.Host, Addr: addr})
 	}
 	logging.LogInfo("orchestrator", "entry worker addresses", "csv", strings.Join(workerAddresses, ","))
 
@@ -2978,6 +3017,7 @@ func (o *MultiHostOrchestrator) startEntryNodeContext(
 		return fmt.Errorf("failed to build endpoint args: %w", err)
 	}
 	additionalArgs = append(additionalArgs, startupArgs...)
+	additionalArgs = append(additionalArgs, scenario.NodeInterfacesArgs(params.HostInterfaces, primary.Info.Host, workerNodes)...)
 
 	containerID, err := startEntryNodeContainerContext(
 		ctx, primary.DockerManager,

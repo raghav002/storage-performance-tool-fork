@@ -170,6 +170,59 @@ func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 202, map[string]any{keyJob: publicJob(job), keyMessage: "SPT run started on the VM."})
 }
 
+// handleStop asks the running SPT process to shut down gracefully. SPT handles
+// the interrupt by trying to stop the engine test, remove its containers and
+// finalize results, so the dashboard never force-kills it. The request names
+// the run it means to stop, so a page that is out of date cannot stop a newer
+// run by mistake.
+func (a *app) handleStop(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("runID")
+	if r.URL.RawQuery != "" || !runPattern.MatchString(runID) || !strings.HasPrefix(runID, "mt-dashboard-") {
+		writeJSON(w, 404, map[string]any{keyError: msgEndpointNotFound})
+		return
+	}
+	if !a.sameOrigin(r) {
+		writeJSON(w, 403, map[string]any{keyError: "Stop requests must come from this dashboard through its SSH tunnel."})
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if refusal := a.stopRefusal(runID); refusal != "" {
+		writeJSON(w, 409, map[string]any{keyError: refusal})
+		return
+	}
+	if a.activeJob[keyStopRequested] == true {
+		writeJSON(w, 202, map[string]any{keyJob: publicJob(a.activeJob), keyMessage: "Stop already requested."})
+		return
+	}
+	if err := interruptProcess(a.activeCmd.Process); err != nil {
+		writeJSON(w, 500, map[string]any{keyError: "Could not ask SPT to stop: " + err.Error()})
+		return
+	}
+	a.activeJob = cloneMap(a.activeJob)
+	a.activeJob[keyStopRequested] = true
+	a.activeJob[keyStopRequestedAt] = utcNow()
+	a.activeJob[keyMessage] = "Stopping SPT gracefully…"
+	_ = a.writeState(a.activeJob)
+	writeJSON(w, 202, map[string]any{keyJob: publicJob(a.activeJob), keyMessage: "Stop requested."})
+}
+
+// stopRefusal explains why runID cannot be stopped now, or returns "" when it
+// is the dashboard's own active run. The caller holds a.mu.
+func (a *app) stopRefusal(runID string) string {
+	switch {
+	case a.activeCmd == nil && a.attachedRunID != "":
+		// An attached CLI run is monitored read-only; the dashboard never
+		// signals a process it did not start.
+		return "This dashboard is only monitoring the attached SPT run and will not stop it. Stop it from the terminal that started it."
+	case a.activeCmd == nil || a.activeCmd.Process == nil || a.activeJob == nil || a.activeJob[keyStatus] != jobRunning:
+		return "No dashboard run is in progress."
+	case a.activeJob[keyRunID] != runID:
+		return "That run is no longer active, so it was not stopped."
+	}
+	return ""
+}
+
 func ensureEOF(dec *json.Decoder) error {
 	var extra any
 	if err := dec.Decode(&extra); err != io.EOF {
@@ -295,7 +348,10 @@ func (a *app) buildArgv(runDir, runID string, o options, target map[string]any) 
 
 func (a *app) childEnvironment(o options, target map[string]any) []string {
 	values := a.configValues()
-	set := map[string]string{"S3_ENDPOINT": fmt.Sprint(target["endpoint"]), "S3_ENDPOINTS": fmt.Sprint(target["endpoint"]), "S3_BUCKET": fmt.Sprint(target["bucket"]), "HOSTS": targetHosts(target), "THREADS": strconv.Itoa(o.Threads), "SPT_ENGINE_OVERRIDES": "", "SPT_SERVICE_THREADS": strconv.Itoa(o.Threads), "SPT_S3_DRIVER": "default", "SPT_IMAGE": "", "SPT_SKIP_IMAGE_PULL": "false", "SPT_OBJECT_DATA_COMPRESSIBILITY": "0", "SPT_OBJECT_DATA_DEDUPABLE": "true", "SPT_DEFER_VERIFICATION": "false", "SPT_CHECKSUM": "", "AWS_EC2_METADATA_DISABLED": "true"}
+	set := map[string]string{"S3_ENDPOINT": fmt.Sprint(target["endpoint"]), "S3_ENDPOINTS": fmt.Sprint(target["endpoint"]), "S3_BUCKET": fmt.Sprint(target["bucket"]), "HOSTS": targetHosts(target), "THREADS": strconv.Itoa(o.Threads), "SPT_ENGINE_OVERRIDES": "", "SPT_SERVICE_THREADS": strconv.Itoa(o.Threads), "SPT_S3_DRIVER": "default", "SPT_IMAGE": "", "SPT_SKIP_IMAGE_PULL": "false", "SPT_OBJECT_DATA_COMPRESSIBILITY": "0", "SPT_OBJECT_DATA_DEDUPABLE": "true", "SPT_DEFER_VERIFICATION": "false", "SPT_CHECKSUM": "", "AWS_EC2_METADATA_DISABLED": "true",
+		// Dashboard runs don't support NIC sets. SPT rejects a mock run that has one, and a NIC
+		// set would change an S3 run, so an operator's .env must not pass one to SPT.
+		"SPT_INTERFACES": "", "SPT_HOST_INTERFACES": ""}
 	for k, v := range set {
 		values[k] = v
 	}

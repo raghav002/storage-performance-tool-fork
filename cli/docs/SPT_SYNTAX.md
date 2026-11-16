@@ -36,9 +36,10 @@ On startup, spt loads environment variables from `$HOME/.env` and then from `./.
 
 You can use these variables to avoid repeating sensitive or commonly used parameters:
 
-- **S3 connection:** `S3_ENDPOINTS` (CSV) or `S3_ENDPOINT` (single), `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`
+- **S3 connection:** `S3_ENDPOINTS` (CSV) or `S3_ENDPOINT` (single), `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKETS` (CSV, as `--buckets`) or `S3_BUCKET` (single)
 - **Authentication:** `S3_AUTH_VERSION` (set to `2` only for legacy targets; default `4`)
 - **Hosts:** `HOSTS` (comma-separated list of `[user@]host`)
+- **NICs:** `SPT_INTERFACES` (each engine's NIC set, as `--interfaces`), `SPT_HOST_INTERFACES` (a host's own value, as `--host-interfaces`, with `;` between hosts)
 - **Workload:** `THREADS` (parallel client threads)
 - **Docker:** `SPT_SKIP_IMAGE_PULL` (skip pulling the engine image)
 - **Engine tuning:** `SPT_SERVICE_THREADS` (virtual-thread carrier parallelism)
@@ -51,7 +52,7 @@ You can use these variables to avoid repeating sensitive or commonly used parame
 
 Variable expansion: use `$VAR` or `${VAR}`. Command substitutions like `$(pwd)` are not supported; use `$PWD` instead.
 
-**Precedence:** CLI flags > OS environment > `./.env` > `$HOME/.env` > built-in defaults. For endpoints specifically: `--endpoints` > `S3_ENDPOINTS` > `S3_ENDPOINT`.
+**Precedence:** CLI flags > OS environment > `./.env` > `$HOME/.env` > built-in defaults. For endpoints specifically: `--endpoints` > `S3_ENDPOINTS` > `S3_ENDPOINT`. For target buckets: `--buckets` or `--buckets-file` ignores both variables; `--bucket` or `--bucket-count` ignores `S3_BUCKETS`, and `S3_BUCKET` still supplies a missing `--bucket`; with no bucket flag, `S3_BUCKETS` wins over `S3_BUCKET`, and spt prints a line saying so when both are set. `spt replay` reads only `S3_BUCKET`.
 
 ---
 
@@ -84,10 +85,15 @@ Required for S3 workloads, optional/ignored for `mock`.
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
 | `--endpoints` | `-e` | *(required)* | One or more S3 endpoint URLs (comma-separated or repeatable) |
-| `--region` | | *(engine selection)* | AWS region for S3 requests; passed to engine YAML `storage.region`. Empty or omitted preserves the driver’s existing selection. |
+| `--region` | | *(engine selection)* | AWS region for S3 requests (env `S3_REGION`); passed to engine YAML `storage.region`. Empty or omitted uses the region of a standard AWS endpoint, else `us-east-1`. See [Target Buckets](TARGET_BUCKETS.md#region) |
+| `--bucket-metrics` | | `true` | Record per-bucket counts and timings for a step with more than one target bucket, in `metrics.bucket.total.csv` and `metrics.bucket.steady.total.csv`. `false` records and writes none of them. See [TARGET_BUCKETS.md](TARGET_BUCKETS.md#bucket-metrics). |
+| `--provision-target-bucket` | | `true` | Create a missing target bucket before the phase that writes the run's objects. `false` still checks that every target bucket exists and is accessible. Never clears or deletes a bucket. See [Target Buckets](TARGET_BUCKETS.md) |
 | `--access-key` | `-a` | *(required)* | S3 access key credential |
 | `--secret-key` | `-s` | *(required)* | S3 secret key credential |
-| `--bucket` | `-b` | *(required)* | Target bucket to use for the test. In explicit-manifest DELETE mode it is an optional safety assertion checked against every source row; omit it to permit multiple buckets |
+| `--bucket` | `-b` | *(required unless a list names the buckets)* | Target bucket to use for the test. In explicit-manifest DELETE mode it is an optional safety assertion checked against every source row; omit it to permit multiple buckets |
+| `--bucket-count` | | `1` | Spread the run's new objects over `N` buckets `<bucket>-0` ... `<bucket>-<N-1>` (1 to 1000). Existing objects keep the bucket their items file records. For `write`, `write-verify`, seeded `read`, seeded `delete` (with `--delete-batch-size=1`) and `mixed`. See [Target Buckets](TARGET_BUCKETS.md#bucket-sets) |
+| `--buckets` | | from `S3_BUCKETS` | Spread the run's new objects over these buckets, comma-separated or repeated (1 to 1000), used as written and in this order. Missing ones are created unless `--provision-target-bucket=false`. Excludes `--bucket`, `--bucket-count` (even `1`) and `--buckets-file`. One name is the same as `--bucket NAME`; two or more allow the workloads of `--bucket-count`. See [Bucket lists](TARGET_BUCKETS.md#bucket-lists) |
+| `--buckets-file` | | | Read the `--buckets` names from a regular file, one per line; blank lines and lines starting with `#` are ignored. Same rules and exclusions as `--buckets` |
 | `--prefix` | | `""` | Literal generated-key prefix for `write` and `write-verify`; owned namespace root for seeded DELETE; listing constraint for `list` and LIST-based `read-verify`; rejected for `read`, `mixed`, `mock`, and `tables` |
 | `--auth-version` | | `4` | S3 signature version (`2` or `4`) |
 | `--slice-endpoints` | | `false` | Partition endpoints across nodes in distributed runs |
@@ -528,6 +534,27 @@ and existing-prefix DELETE consume frozen names and cannot rewrite them.
 Automatic mode is also a no-op for non-generating list workloads. Do not combine
 a positive or automatic CLI setting with an `item.naming.shards` engine override.
 
+**`--bucket-count` behavior:** with `--bucket-count N` greater than 1, every new
+object is written to one of `<bucket>-0` to `<bucket>-<N-1>`, chosen from its
+object id, so all buckets receive writes concurrently. The base `--bucket` itself
+is not one of them. Reads, deletes and cleanup use the bucket each object's items
+file or manifest records, so a later run with a different count still finds the
+earlier objects. With `--prefix-shards`, each bucket gets every shard directory.
+Phase setup checks and creates the buckets of the set as described in
+[Target Buckets](TARGET_BUCKETS.md#bucket-sets). The count is set only by this
+flag; an `--engine-override` of `storage.targetBucket.count` is rejected.
+
+**`--buckets` and `--buckets-file` behavior:** a list of two or more names
+places new objects exactly as a count does, with member `i` the `i`-th name, and
+allows the same workloads. The names are used as written: the AWS naming rules of
+generated names do not apply, except that `--s3-driver aws` cannot create a name the
+AWS SDK's bucket name check rejects. With `--provision-target-bucket=false` the listed
+buckets must already exist. SPT never lists, reads or deletes an object it did
+not write, except those an items file you supply names. The names are set only
+by these flags or `S3_BUCKETS`; an `--engine-override` of
+`storage.targetBucket.names` is rejected. See
+[Bucket lists](TARGET_BUCKETS.md#bucket-lists).
+
 ```bash
 # Automatic: three workers x 16 threads creates 48 prefix directories.
 spt run write \
@@ -562,6 +589,7 @@ spt run write \
 | `--keep-scenario` | | `false` | Keep the scenario file after test completion |
 | `--force` | | `false` | Resolve port conflicts and permit known engine build mismatches; invalid build information and collection failures remain non-forceable |
 | `--api-port` | | `9999` | SPT engine API port |
+| `--rmi-registry-port` | | `1099` | Engine RMI registry port for a local single-host run. Give each concurrent `spt run` on one host its own value (and its own `--api-port`); remote and distributed runs reject any other value |
 | `--skip-image-pull` | | `false` | Use locally cached Docker image without pulling |
 | `--output-dir` | `-O` | `""` | Local directory to save detailed SPT report files |
 | `--service-threads` | | `0` | Engine virtual-thread carrier parallelism (0 = JVM default `max(2, cpus/4)`) |
@@ -586,6 +614,8 @@ spt run write \
 | `--attach-existing` | `false` | Attach to pre-started worker nodes; spt still launches the entry node. Unsupported for verification workloads |
 | `--integrity-runtime-identity-tier` | `image` | Distributed verification and guarded existing-prefix DELETE only. `image` proves one immutable image ID across participants; `payload` additionally proves identical canonical `/opt/spt` content (env: `SPT_INTEGRITY_RUNTIME_IDENTITY_TIER`) |
 | `--network-mode` | `host` | Docker network mode: `host` (required for RMI) or `bridge` |
+| `--interfaces` | from `SPT_INTERFACES` or none | Spread each engine's S3 connections over a NIC set: `auto`, or a comma-separated list of interface names, IPv4 addresses or RDMA devices, resolved on each host. Default Netty S3 driver, host networking and `--endpoint-selection default` only; rejected with `tables`, `mock`, an `--rdma-device` other than `auto`, `--rdma-local-ip`, and an `--engine-override` of `storage.net.interfaces` or `storage.net.nodeInterfaces`. See [Network Interfaces](NETWORK_INTERFACES.md) |
+| `--host-interfaces` | from `SPT_HOST_INTERFACES` or none | Replace `--interfaces` on one host: `<host>=<value>`, with `<value>` `auto`, a comma-separated list, or `none` to turn NICs off there. Repeat for more hosts. See [Host overrides](NETWORK_INTERFACES.md#host-overrides). With either flag, `--duration` and the rates count from the moment every engine is prepared; see [Start of a step](NETWORK_INTERFACES.md#start-of-a-step). |
 | `--rmi-port-start` | `40000` | Starting port for RMI range |
 | `--rmi-port-count` | `10` | Number of RMI ports to allocate |
 
@@ -617,10 +647,10 @@ See [S3_RDMA.md](S3_RDMA.md) for detailed documentation, architecture, and troub
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--use-rdma` | `false` | Use the S3-RDMA driver. Standalone DELETE requests use HTTP, but driver startup still requires RDMA access unless `--rdma-fallback` is enabled |
-| `--rdma-local-ip` | `""` | Local RDMA interface IP address. When unset and `--rdma-device` is `auto`, each worker uses the local address it routes toward the first S3 endpoint; leave it unset for multi-host runs |
+| `--rdma-local-ip` | `""` | Local RDMA interface IP address. When unset and `--rdma-device` is `auto`, each worker uses the local address it routes toward the first S3 endpoint; leave it unset for multi-host runs. Rejected with `--interfaces` |
 | `--rdma-threshold` | `1MB` | Minimum object size for RDMA transfer (e.g., `0`, `256KB`, `4MB`) |
 | `--rdma-fallback` | `false` | Use HTTP when RDMA initialization or per-operation buffer preparation fails, and count GET bodies returned by a server that declines RDMA. When disabled, those operations fail |
-| `--rdma-device` | `auto` | RDMA device name or `auto` for auto-detection. A named device disables automatic local address selection |
+| `--rdma-device` | `auto` | RDMA device name or `auto` for auto-detection. A named device disables automatic local address selection. A named device is rejected with `--interfaces` |
 | `--rdma-log-level` | `WARN` | RDMA native library log level |
 | `--rdma-timeout-ms` | `30000` | RDMA operation timeout in milliseconds |
 | `--rdma-allow-missing-bytes-header` | `false` | Legacy servers only: accept an RDMA GET success without `x-amz-rdma-bytes-transferred` and count the requested size. By default such a response fails as corrupt |
@@ -789,6 +819,8 @@ environment variables.
 | `--min-hosts` | `0` (all) | Minimum replay hosts that must connect |
 | `--attach-existing` | `false` | Attach to prestarted worker nodes; replay still launches the entry node |
 | `--network-mode` | `host` | Docker network mode: `host` or `bridge` |
+| `--interfaces` | from `SPT_INTERFACES` or none | Spread each engine's S3 connections over a NIC set, with the checks of `spt run --interfaces`. An archived NIC set is never reused; replay drops it with a warning. See [Network Interfaces](NETWORK_INTERFACES.md#replay) |
+| `--host-interfaces` | from `SPT_HOST_INTERFACES` or none | Replace `--interfaces` on one host, with the checks of `spt run --host-interfaces`. The host must be in `--test-hosts`. |
 | `--rmi-port-start` | `40000` | Starting port for RMI range |
 | `--rmi-port-count` | `10` | Number of RMI ports to verify |
 
@@ -1302,6 +1334,11 @@ spt verify [--test-hosts <hosts>] [options]
 | `--rmi-port-count` | `10` | Number of RMI ports to verify |
 | `--force-cleanup` | `false` | Automatically clean up conflicting containers without prompting |
 | `--use-rdma` | `false` | Include RDMA hardware and configuration checks |
+| `--interfaces` | `""` (none) | Plan each node's NIC set: `auto`, or a comma-separated list of interface names, IPv4 addresses or RDMA devices. Reads `SPT_INTERFACES` when not given |
+| `--host-interfaces` | `[]` | Replace `--interfaces` on one host: `<host>=<value>`, repeatable, also from `SPT_HOST_INTERFACES`. `none` lists that node's NICs without a plan. |
+| `--endpoints`, `-e` | `[]` | S3 endpoint URLs to plan Paths for with `--interfaces`. With a NIC set, reads `S3_ENDPOINTS`, then `S3_ENDPOINT`, when not given |
+| `--slice-endpoints` | `false` | Plan each node's slice of the endpoints, as a distributed run with `--slice-endpoints` |
+| `--threads`, `-t` | `1` | Concurrency limit whose per-NIC permit shares the plan shows. With a NIC set, reads `THREADS` when not given |
 
 ### Verification Process
 
@@ -1312,7 +1349,46 @@ For each specified host, the verify command:
 3. **Detects Port Conflicts** — checks ports 1099 and 9999, identifies existing SPT containers
 4. **Starts Test Container** — launches SPT in node mode, validates startup and port mapping
 5. **Verifies Services** — tests RMI Registry (1099) and REST API (9999)
-6. **Performs Cleanup** — removes test container, ensures clean state
+6. **Lists NICs** — reads the node's interfaces and RDMA devices in the test container and, with `--interfaces`, plans the node's NIC set
+7. **Performs Cleanup** — removes test container, ensures clean state
+
+With `--use-rdma`, the RDMA readiness check reads port 1 of every RDMA device in the container, not only the first.
+
+### NICs and the NIC Plan
+
+Each node's report ends with its NICs, read in the test container by the SPT 5.17 or later image: the interface, its state, IPv4 address and prefix, speed, MTU and NUMA node, its RDMA device, the port of its RoCE v2 GIDs and the GID index of each address, and the other interfaces on the same physical port. DC support and the RoCE active MTU of the RDMA devices are read with `--use-rdma`, and show `?` without it. Without `--interfaces`, the list is information only and checks nothing, and verify reads none of the endpoint and `THREADS` variables: a node whose image predates the list shows `NICs: not listed` with the reason, and passes or fails as before.
+
+With `--interfaces`, verify plans the node's NIC set for the S3 endpoints as a run would, and adds a `NIC Plan` check. The plan shows:
+
+- the endpoints the node targets and its NIC set;
+- each interface, whether it is used, with the source address it uses and, with RDMA, that address's GID index, its Paths, its permit share at `--threads` and the endpoints it serves, or why it is not used;
+- each pairing group, with its Paths, each a NIC paired with an endpoint it serves;
+- the failures, each with its fix when there is one, and the warnings;
+- the node's policy routing rules other than the defaults, which the NIC choice does not follow: it uses connected subnets and the main routing table only.
+
+With `--host-interfaces`, each node plans with its own value, and a `none` node only lists its NICs. A node whose plan has a failure fails verification; warnings do not. With `--slice-endpoints`, each node plans its own slice of the endpoints, the entry node first and the workers in `--test-hosts` order, as a distributed run slices them. `--interfaces` needs the S3 endpoints and `--network-mode host`: a container on a bridge network sees only its own interface, and verify says so in the NIC list.
+
+```text
+  NICs (engine 5.17.0):
+    INTERFACE  STATE  ADDRESS           SPEED  MTU   NUMA  RDMA      PORT  GID  DC   ROCE MTU  SHARES PORT WITH
+    eno8303    up     198.51.100.10/24  1G     1500  0     -         -     -    -    -         -
+    ens2np0    up     192.0.2.11/24     400G   9000  0     mlx5_0    1     3    yes  4096      -
+    ens5f0np0  up     192.0.2.21/24     200G   9000  0     bnxt_re0  1     3    no   4096      -
+    ens10np0   up     192.0.2.12/24     400G   9000  0     mlx5_1    1     3    yes  4096      -
+  NIC plan (--interfaces auto, RDMA): ok
+    Endpoints: 192.0.2.101:9000, 192.0.2.102:9000
+    NIC set: ens2np0, ens10np0
+    Permits at --threads 64: 32 per NIC
+    eno8303    not used: no endpoint on its subnet
+    ens2np0    used from 192.0.2.11 (GID 3): 1 Path, 32 permits; serves all 2 endpoints
+    ens5f0np0  not used: RDMA device without DC support
+    ens10np0   used from 192.0.2.12 (GID 3): 1 Path, 32 permits; serves all 2 endpoints
+    Group 1: ens2np0, ens10np0; 2 endpoints, 2 Paths
+      ens2np0 → 192.0.2.101:9000
+      ens10np0 → 192.0.2.102:9000
+```
+
+The plan uses the same rules as a run with `--interfaces` for the same endpoints, NICs and slices; [Network Interfaces](NETWORK_INTERFACES.md) describes them and the host settings they check. It does not reproduce exact-output participation: a step that must write an exact object count smaller than the node count runs only on the first nodes, and slices the endpoints over those nodes alone, so verify's slices can differ from that step's.
 
 ### Examples
 
@@ -1331,6 +1407,10 @@ spt verify --test-hosts "test1,test2" --force-cleanup
 
 # Include RDMA hardware checks
 spt verify --test-hosts "rdma1,rdma2" --use-rdma
+
+# Preview each node's NICs and Paths for a run's endpoints
+spt verify --test-hosts "rdma1,rdma2" --use-rdma --interfaces auto \
+  -e http://192.0.2.101:9000,http://192.0.2.102:9000 --slice-endpoints --threads 64
 ```
 
 ### Output Interpretation

@@ -14,18 +14,27 @@ import com.dell.spt.base.concurrent.VirtualThreadExecutor;
 import com.dell.spt.base.logging.LogUtil;
 import com.dell.spt.base.logging.Loggers;
 import com.dell.spt.base.logging.MetricsAsciiTableLogMessage;
+import com.dell.spt.base.logging.MetricsBucketCsvLogMessage;
 import com.dell.spt.base.logging.ExtResultsXmlLogMessage;
 import com.dell.spt.base.logging.MetricsCsvLogMessage;
+import com.dell.spt.base.logging.MetricsSteadyTotalCsvLogMessage;
 import com.dell.spt.base.logging.MetricsTotalCsvLogMessage;
 import com.dell.spt.base.logging.StepResultsMetricsLogMessage;
+import com.dell.spt.base.metrics.bucket.BucketData;
+import com.dell.spt.base.metrics.bucket.BucketRows;
+import com.dell.spt.base.metrics.context.BucketMetricsSource;
 import com.dell.spt.base.metrics.context.DistributedMetricsContext;
 import com.dell.spt.base.metrics.context.MetricsContext;
 import com.dell.spt.base.metrics.snapshot.AllMetricsSnapshot;
 import com.dell.spt.base.metrics.snapshot.ConcurrencyMetricSnapshot;
 import com.dell.spt.base.metrics.snapshot.DeleteMetricsSnapshot;
 import com.dell.spt.base.metrics.snapshot.DistributedAllMetricsSnapshot;
+import com.dell.spt.base.metrics.snapshot.DriverStatsSnapshot;
+import com.dell.spt.base.metrics.snapshot.DriverStatsTotal;
 import com.dell.spt.base.metrics.snapshot.TimingMetricSnapshot;
+import com.dell.spt.base.metrics.steady.SteadyResult;
 import com.dell.spt.base.metrics.util.PrometheusMetricsExporter;
+import com.dell.spt.base.metrics.util.DriverStatsCollector;
 import com.dell.spt.base.metrics.util.PrometheusMetricsExporterImpl;
 import com.dell.spt.base.metrics.util.CombinedCompletionCollector;
 import io.prometheus.client.Collector;
@@ -50,8 +59,19 @@ import org.apache.logging.log4j.ThreadContext;
 
 /** Created by kurila on 18.05.17. */
 public class MetricsManagerImpl extends TaskBase implements MetricsManager {
+	/** Enough for the steps whose rows are still kept; a preparation is never read after its row ends. */
+	private static final int PREPARATIONS_KEPT = 1024;
+
+	private final Map<String, Map<String, Object>> preparations = new LinkedHashMap<>() {
+		@Override
+		protected boolean removeEldestEntry(final Map.Entry<String, Map<String, Object>> eldest) {
+			return size() > PREPARATIONS_KEPT;
+		}
+	};
 
 	private static final String CLS_NAME = MetricsManagerImpl.class.getSimpleName();
+	private static final String METRICS_BUCKET_TOTAL_FILE = "metrics.bucket.total.csv";
+	private static final String METRICS_BUCKET_STEADY_TOTAL_FILE = "metrics.bucket.steady.total.csv";
 	private static final long LOCK_TIMEOUT_NANOS = TimeUnit.MILLISECONDS.toNanos(100);
 	private final Set<MetricsContext> allMetrics = new ConcurrentSkipListSet<>();
 	private final Map<DistributedMetricsContext, PrometheusMetricsExporter> distributedMetrics = new ConcurrentHashMap<>();
@@ -63,6 +83,9 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 	// CLI and jar-only users get well-formed XML (log4j2 header/footer had async timing issues).
 	private final Set<String> openResultXmlSteps = ConcurrentHashMap.newKeySet();
 	private final Set<String> openMetricsTotalCsvSteps = ConcurrentHashMap.newKeySet();
+	private final Set<String> openBucketCsvSteps = ConcurrentHashMap.newKeySet();
+	private final Set<String> openBucketSteadyCsvSteps = ConcurrentHashMap.newKeySet();
+	private final Set<String> openMetricsSteadyTotalCsvSteps = ConcurrentHashMap.newKeySet();
 
 	// Terminal entries retention for /metrics/json when idle
 	private final Map<ProgressKey, TerminalStepEntry> terminalByStepId = new ConcurrentHashMap<>();
@@ -80,6 +103,11 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 			Loggers.MSG.debug("CombinedCompletionCollector already registered, skipping duplicate registration");
 		} catch (final RuntimeException e) {
 			LogUtil.exception(Level.WARN, e, "Failed to register CombinedCompletionCollector");
+		}
+		try {
+			CollectorRegistry.defaultRegistry.register(new DriverStatsCollector(distributedMetrics::keySet));
+		} catch (final RuntimeException e) {
+			LogUtil.exception(Level.WARN, e, "Failed to register the storage driver statistics collector");
 		}
 	}
 
@@ -103,6 +131,7 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 				ThreadContext.put(KEY_STEP_ID, metricsCtx.loadStepId());
 				// TODO: as a future improvement consider whether throttling is needed here.
 				metricsCtx.refreshLastSnapshot();
+				metricsCtx.observeSteadyWindow();
 
 				final AllMetricsSnapshot snapshot = metricsCtx.lastSnapshot();
 				if (null != snapshot) {
@@ -175,20 +204,10 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 			lastProgressByStepId.remove(ProgressKey.of(metricsCtx.loadStepId(), metricsCtx instanceof DistributedMetricsContext));
 			allMetrics.add(metricsCtx);
 			if (metricsCtx instanceof DistributedMetricsContext<?> distributedMetricsCtx) {
-				final String[] labelValues = {
-						metricsCtx.loadStepId(),
-						metricsCtx.opType().name(),
-						String.valueOf(metricsCtx.concurrencyLimit()),
-						metricsCtx.itemDataSize().toString(),
-						String.valueOf(metricsCtx.startTimeStamp()),
-						((DistributedMetricsContext) metricsCtx).nodeAddrs().toString(),
-						metricsCtx.comment(),
-						String.valueOf(metricsCtx.runId())
-				};
 				distributedMetrics.put(
 								distributedMetricsCtx,
 								new PrometheusMetricsExporterImpl(distributedMetricsCtx)
-												.labels(metricLabelsArray(), labelValues)
+												.labels(metricLabelsArray(), PrometheusMetricsExporterImpl.labelValues(distributedMetricsCtx))
 												//.quantiles(distributedMetricsCtx.quantileValues())
 												.register());
 			}
@@ -208,6 +227,7 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 		try (final Instance logCtx = put(KEY_STEP_ID, metricsCtx.loadStepId()).put(KEY_CLASS_NAME, getClass().getSimpleName())) {
 			if (allMetrics.remove(metricsCtx)) {
 				boolean lockAcquired = false;
+				Runnable bucketWrite = null;
 				try {
 					lockAcquired = outputLock.tryLock(LOCK_TIMEOUT_NANOS, TimeUnit.NANOSECONDS);
 					if (!lockAcquired) {
@@ -215,8 +235,9 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 										"Acquire lock timeout while unregistering the metrics context \"{}\"", metricsCtx);
 					}
 					final AllMetricsSnapshot snapshotBefore = metricsCtx.lastSnapshot();
-					metricsCtx.refreshLastSnapshot(true); // one last time, including throttled timing snapshots
-					final AllMetricsSnapshot snapshotAfter = metricsCtx.lastSnapshot();
+					// One last time, including throttled timing snapshots. A refresh already in flight
+					// cannot replace this result, so the retained entry carries the final values.
+					final AllMetricsSnapshot snapshotAfter = metricsCtx.terminalSnapshot();
 					final AllMetricsSnapshot snapshot = preferTerminalSnapshot(snapshotAfter, snapshotBefore);
 					// check for the metrics threshold state if entered
 					if (metricsCtx.thresholdStateEntered() && !metricsCtx.thresholdStateExited()) {
@@ -242,19 +263,9 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 										: quantileValues(snapshot.ttfbSnapshot(), quantileValues);
 
 						if (snapshot instanceof DistributedAllMetricsSnapshot aggregSnapshot) {
+							final SteadyResult steady = terminalSteady(snapshotAfter);
 							if (hasProgress(snapshot)) {
-								final var nodesPresent = distributedMetricsCtx.nodesPresent();
-								final var contributorsPresent = distributedMetricsCtx.contributorsPresent();
-								final int nodeCount = distributedMetricsCtx.nodeCount();
-								final boolean partial = distributedMetricsCtx.partial();
-								terminalEntry = buildEntryFromSnapshot(
-												metricsCtx,
-												aggregSnapshot,
-												true,
-												nodeCount,
-												nodesPresent,
-												contributorsPresent,
-												partial);
+								terminalEntry = buildEntry(metricsCtx, aggregSnapshot).withSteady(steady);
 							}
 							// file output
 							// due to unknown reasons writing to a csv.total is based on a flag and not on a metrics
@@ -267,6 +278,8 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 								final StringBuilder csvOutput = new StringBuilder();
 								message.formatTo(csvOutput, includeHeader);
 								Loggers.METRICS_FILE_TOTAL.info(csvOutput.toString());
+								writeSteadyTotalRow(metricsCtx, steady, aggregSnapshot.nodeCount(), quantileValues);
+								bucketWrite = () -> writeBucketRows(distributedMetricsCtx, aggregSnapshot, steady, quantileValues);
 							}
 						}
 						// console output
@@ -302,6 +315,7 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 							Loggers.METRICS_EXT_RESULTS_FILE.info("</result>");
 							openResultXmlSteps.remove(metricsCtx.loadStepId());
 							openMetricsTotalCsvSteps.remove(metricsCtx.loadStepId());
+							openMetricsSteadyTotalCsvSteps.remove(metricsCtx.loadStepId());
 						}
 
 						final PrometheusMetricsExporter exporter = distributedMetrics.remove(distributedMetricsCtx);
@@ -311,27 +325,13 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 
 						// Cache terminal entry for JSON endpoint
 						if (terminalEntry != null) {
-							terminalByStepId.put(progressKey, terminalEntry);
+							retainTerminal(progressKey, terminalEntry);
 						}
 					} else {
 						// Cache terminal entry for JSON endpoint for local (non-distributed) contexts
-						if (snapshot != null
-										&& snapshot.successSnapshot() != null
-										&& snapshot.failsSnapshot() != null
-										&& snapshot.byteSnapshot() != null
-										&& snapshot.latencySnapshot() != null
-										&& snapshot.durationSnapshot() != null
-										&& snapshot.concurrencySnapshot() != null
-										&& hasProgress(snapshot)) {
-							terminalEntry = buildEntryFromSnapshot(
-											metricsCtx,
-											snapshot,
-											false,
-											0,
-											List.of(),
-											List.of(),
-											false);
-							terminalByStepId.put(progressKey, terminalEntry);
+						if (hasAllParts(snapshot) && hasProgress(snapshot)) {
+							terminalEntry = buildEntry(metricsCtx, snapshot).withSteady(metricsCtx.steadyResult());
+							retainTerminal(progressKey, terminalEntry);
 						}
 					}
 					if (terminalEntry == null) {
@@ -340,7 +340,12 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 						if (!failedDistributedRefresh) {
 							final TerminalStepEntry lastProgressEntry = lastProgressByStepId.get(progressKey);
 							if (lastProgressEntry != null) {
-								terminalByStepId.put(progressKey, lastProgressEntry);
+								retainTerminal(progressKey, withFinalDriverStats(lastProgressEntry, snapshot, distributedEntry));
+							} else if (hasAllParts(snapshot)
+											&& distributedEntry == (snapshot instanceof DistributedAllMetricsSnapshot)
+											&& driverActive(snapshot)) {
+								// Nothing completed, but the driver did work: keep what it counted.
+								retainTerminal(progressKey, buildEntry(metricsCtx, snapshot));
 							}
 						}
 					}
@@ -352,6 +357,12 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 						outputLock.unlock();
 					}
 				}
+				// Off the lock: fetching from workers and merging rows can take seconds, and the
+				// manager's sweep over other running steps needs that lock.
+				if (bucketWrite != null) {
+					bucketWrite.run();
+				}
+				finishBucketFiles(metricsCtx);
 			} else {
 				Loggers.ERR.debug("Metrics context \"{}\" has not been registered", metricsCtx);
 			}
@@ -362,6 +373,123 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 				Loggers.MSG.debug("Stopped the metrics manager task");
 			}
 		}
+	}
+
+	/**
+	 * Writes one operation type's rows of the step's bucket files, beside its totals, with each
+	 * file's contributor record. A failure here costs only these files, never the step's totals.
+	 */
+	private void writeBucketRows(
+					final DistributedMetricsContext<?> metricsCtx,
+					final DistributedAllMetricsSnapshot aggregate,
+					final SteadyResult steady,
+					final List<Double> quantiles) {
+		final BucketMetricsSource source = metricsCtx.bucketMetricsSource();
+		if (source == null) {
+			return;
+		}
+		final String stepId = metricsCtx.loadStepId();
+		try {
+			final List<BucketRows.Contribution> contributions = source.contributions();
+			final double stepSeconds = aggregate.elapsedTimeMillis() / 1e3;
+			if (openBucketCsvSteps.add(stepId)) {
+				Loggers.METRICS_BUCKET_FILE_TOTAL.info(MetricsBucketCsvLogMessage.header(quantiles, false));
+			}
+			logBucketCohort(
+							METRICS_BUCKET_TOTAL_FILE,
+							stepId,
+							BucketRows.wholeStep(
+											stepId,
+											source.contextIndex(),
+											metricsCtx.opType(),
+											contributions,
+											stepSeconds,
+											row -> Loggers.METRICS_BUCKET_FILE_TOTAL.info(MetricsBucketCsvLogMessage.row(row, quantiles))),
+							false);
+			if (source.steadySettings() != null) {
+				if (openBucketSteadyCsvSteps.add(stepId)) {
+					Loggers.METRICS_BUCKET_STEADY_FILE_TOTAL.info(MetricsBucketCsvLogMessage.header(quantiles, true));
+				}
+				logBucketCohort(
+								METRICS_BUCKET_STEADY_TOTAL_FILE,
+								stepId,
+								BucketRows.steady(
+												stepId,
+												source.contextIndex(),
+												metricsCtx.opType(),
+												contributions,
+												steady,
+												source.steadySettings(),
+												row -> Loggers.METRICS_BUCKET_STEADY_FILE_TOTAL.info(MetricsBucketCsvLogMessage.row(row, quantiles))),
+								true);
+			}
+		} catch (final RuntimeException e) {
+			LogUtil.exception(Level.WARN, e, "{}: failed to write the bucket metrics files", stepId);
+		}
+	}
+
+	/** Once a step's last context has written, forgets its files and lets go of its workers' data. */
+	private void finishBucketFiles(final MetricsContext<?> metricsCtx) {
+		final String stepId = metricsCtx.loadStepId();
+		if (allMetrics.stream().anyMatch(other -> stepId.equals(other.loadStepId()))) {
+			return;
+		}
+		openBucketCsvSteps.remove(stepId);
+		openBucketSteadyCsvSteps.remove(stepId);
+		if (metricsCtx instanceof DistributedMetricsContext<?> distributed && distributed.bucketMetricsSource() != null) {
+			distributed.bucketMetricsSource().release();
+		}
+	}
+
+	/** The fixed key=value record of who each file's rows merge, at INFO only when all answered. */
+	private static void logBucketCohort(
+					final String file, final String stepId, final BucketRows.Cohort cohort, final boolean steady) {
+		final BucketData data = steady ? cohort.steadyData() : cohort.wholeStepData();
+		final StringBuilder missing = new StringBuilder();
+		cohort.missing().forEach((node, reason) -> {
+			if (missing.length() > 0) {
+				missing.append(';');
+			}
+			missing.append(node).append(':').append(reason);
+		});
+		final String record = "bucket-metrics file=" + file
+						+ " step=" + stepId
+						+ " opType=" + cohort.opType()
+						+ " expected=" + cohort.expected()
+						+ " received=" + cohort.received()
+						+ " missing=[" + missing + "]"
+						+ " data=" + data.label();
+		if (data == BucketData.COMPLETE) {
+			Loggers.MSG.info(record);
+		} else {
+			Loggers.MSG.warn(record);
+		}
+	}
+
+	/** The {@code metrics.steady.total.csv} row beside the total row, with the same quantile columns. */
+	private void writeSteadyTotalRow(
+					final MetricsContext<?> metricsCtx,
+					final SteadyResult steady,
+					final int nodeCount,
+					final List<Double> quantileValues) {
+		final AllMetricsSnapshot window = steady.statistics();
+		final MetricsSteadyTotalCsvLogMessage message = new MetricsSteadyTotalCsvLogMessage(
+						steady,
+						metricsCtx.opType(),
+						metricsCtx.concurrencyLimit(),
+						nodeCount,
+						window == null ? emptyQuantileValues(quantileValues) : quantileValues(window.latencySnapshot(), quantileValues),
+						window == null ? emptyQuantileValues(quantileValues) : quantileValues(window.durationSnapshot(), quantileValues),
+						window == null ? emptyQuantileValues(quantileValues) : quantileValues(window.ttfbSnapshot(), quantileValues));
+		final StringBuilder csvOutput = new StringBuilder();
+		message.formatTo(csvOutput, openMetricsSteadyTotalCsvSteps.add(metricsCtx.loadStepId()));
+		Loggers.METRICS_STEADY_FILE_TOTAL.info(csvOutput.toString());
+		Loggers.MSG.debug(
+						"{}: steady-state window {} (start cut acquisition {} ns, end cut {} ns)",
+						metricsCtx.loadStepId(),
+						steady,
+						steady.startAcquisitionNanos(),
+						steady.endAcquisitionNanos());
 	}
 
 	private static void exitMetricsThresholdState(final MetricsContext<?> metricsCtx) {
@@ -481,13 +609,7 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 	}
 
 	private void recordProgressSnapshot(final MetricsContext metricsCtx, final AllMetricsSnapshot snapshot) {
-		if (snapshot == null
-						|| snapshot.successSnapshot() == null
-						|| snapshot.failsSnapshot() == null
-						|| snapshot.byteSnapshot() == null
-						|| snapshot.latencySnapshot() == null
-						|| snapshot.durationSnapshot() == null
-						|| snapshot.concurrencySnapshot() == null) {
+		if (!hasAllParts(snapshot)) {
 			return;
 		}
 
@@ -512,19 +634,7 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 			return;
 		}
 
-		final TerminalStepEntry entry;
-		if (distributedEntry) {
-			final var distributedMetricsCtx = (DistributedMetricsContext<?>) metricsCtx;
-			final var nodesPresent = distributedMetricsCtx.nodesPresent();
-			final var contributorsPresent = distributedMetricsCtx.contributorsPresent();
-			final int nodeCount = distributedMetricsCtx.nodeCount();
-			final boolean partial = distributedMetricsCtx.partial();
-			entry = buildEntryFromSnapshot(
-							metricsCtx, snapshot, true, nodeCount, nodesPresent, contributorsPresent, partial);
-		} else {
-			entry = buildEntryFromSnapshot(
-							metricsCtx, snapshot, false, 0, List.of(), List.of(), false);
-		}
+		final TerminalStepEntry entry = buildEntry(metricsCtx, snapshot);
 
 		lastProgressByStepId.put(progressKey, entry);
 		if (Loggers.MSG.isDebugEnabled()) {
@@ -537,6 +647,65 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 							entry.corruptCount,
 							entry.bytesTotal);
 		}
+	}
+
+	/**
+	 * Retains the entry a metrics context leaves of its finished step, in place of the entry of a
+	 * context of the same step that ended before it. The statistics of the step's storage driver
+	 * stay with the step whichever of its contexts ends last.
+	 */
+	private void retainTerminal(final ProgressKey progressKey, final TerminalStepEntry entry) {
+		terminalByStepId.merge(progressKey, entry, (earlier, latest) -> latest.withDriverStatsOf(earlier));
+	}
+
+	@Override
+	public void recordPreparation(
+					final long runId, final String stepId, final long distributionMillis, final Map<String, Long> engineMillis) {
+		final var row = new LinkedHashMap<String, Object>();
+		row.put("distribution_ms", distributionMillis);
+		row.put("engines", new LinkedHashMap<>(engineMillis));
+		synchronized (preparations) {
+			preparations.put(runId + "/" + stepId, Map.copyOf(row));
+		}
+	}
+
+	@Override
+	public Map<String, Object> preparation(final long runId, final String stepId) {
+		synchronized (preparations) {
+			return preparations.get(runId + "/" + stepId);
+		}
+	}
+
+	/**
+	 * Returns a cached entry with the storage driver statistics of the final snapshot of the context
+	 * that leaves it, when that snapshot is of the entry's scope and has any. The cached entry was
+	 * built from an earlier snapshot, maybe of another context of the step; the statistics kept are
+	 * the driver's values at the end.
+	 */
+	private static TerminalStepEntry withFinalDriverStats(
+					final TerminalStepEntry entry, final AllMetricsSnapshot snapshot, final boolean distributedEntry) {
+		if (snapshot == null || distributedEntry != (snapshot instanceof DistributedAllMetricsSnapshot)) {
+			return entry;
+		}
+		return entry.withDriverStats(
+						snapshot.driverStats(),
+						snapshot instanceof DistributedAllMetricsSnapshot fleet ? fleet.driverStatsTotal() : null);
+	}
+
+	/** Builds the entry of a step from a snapshot of its metrics context: a fleet's or a node's. */
+	private TerminalStepEntry buildEntry(final MetricsContext metricsCtx, final AllMetricsSnapshot snapshot) {
+		if (metricsCtx instanceof DistributedMetricsContext<?> distributedMetricsCtx
+						&& snapshot instanceof DistributedAllMetricsSnapshot) {
+			return buildEntryFromSnapshot(
+							metricsCtx,
+							snapshot,
+							true,
+							distributedMetricsCtx.nodeCount(),
+							distributedMetricsCtx.nodesPresent(),
+							distributedMetricsCtx.contributorsPresent(),
+							distributedMetricsCtx.partial());
+		}
+		return buildEntryFromSnapshot(metricsCtx, snapshot, false, 0, List.of(), List.of(), false);
 	}
 
 	private TerminalStepEntry buildEntryFromSnapshot(
@@ -579,7 +748,9 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 						snapshot.deleteMetrics(),
 						metricsCtx.metadata() != null
 										&& metricsCtx.metadata().containsKey(MetricsConstants.METADATA_DELETE_METRICS),
-						metricsCtx.metadata() == null ? null : (String) metricsCtx.metadata().get(MetricsConstants.METADATA_CLUSTER_ID));
+						metricsCtx.metadata() == null ? null : (String) metricsCtx.metadata().get(MetricsConstants.METADATA_CLUSTER_ID),
+						snapshot.driverStats(),
+						snapshot instanceof DistributedAllMetricsSnapshot fleet ? fleet.driverStatsTotal() : null);
 	}
 
 	private long extractLongMetadata(final Map metadata, final String key) {
@@ -639,6 +810,21 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 		}
 	}
 
+	/**
+	 * A distributed context's terminal steady result, from its final read alone. Every expected slice
+	 * has closed its window by then, so a missing one makes it incomplete. A final read that no slice
+	 * answered is incomplete too, although the whole-step totals fall back to an earlier read: the
+	 * contributor set at the final read decides, as it does when only some slices are missing.
+	 */
+	private static SteadyResult terminalSteady(final AllMetricsSnapshot finalSnapshot) {
+		if (!(finalSnapshot instanceof DistributedAllMetricsSnapshot fresh)) {
+			return SteadyResult.incomplete("no slice answered the final read");
+		}
+		return fresh.steadyResult() != null
+						? fresh.steadyResult()
+						: SteadyResult.incomplete("no slice reported a closed window");
+	}
+
 	private static AllMetricsSnapshot preferTerminalSnapshot(
 					final AllMetricsSnapshot primary, final AllMetricsSnapshot fallback) {
 		if (hasProgress(primary)) {
@@ -653,6 +839,17 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 	private static long corruptCount(final AllMetricsSnapshot snapshot) {
 		final var corruptSnapshot = snapshot.corruptSnapshot();
 		return corruptSnapshot == null ? 0L : corruptSnapshot.count();
+	}
+
+	/** Whether the snapshot has every part a terminal entry is built from. */
+	private static boolean hasAllParts(final AllMetricsSnapshot snapshot) {
+		return snapshot != null
+						&& snapshot.successSnapshot() != null
+						&& snapshot.failsSnapshot() != null
+						&& snapshot.byteSnapshot() != null
+						&& snapshot.latencySnapshot() != null
+						&& snapshot.durationSnapshot() != null
+						&& snapshot.concurrencySnapshot() != null;
 	}
 
 	private static boolean hasProgress(final AllMetricsSnapshot snapshot) {
@@ -672,6 +869,30 @@ public class MetricsManagerImpl extends TaskBase implements MetricsManager {
 
 	private static long deleteProgress(final AllMetricsSnapshot snapshot) {
 		return snapshot == null ? 0 : deleteProgress(snapshot.deleteMetrics());
+	}
+
+	/**
+	 * A storage driver that counted anything did work in the step, even when no operation
+	 * completed. Gauges are not work: they describe a level. For a fleet the counts are those of
+	 * the total.
+	 */
+	private static boolean driverActive(final AllMetricsSnapshot snapshot) {
+		final DriverStatsSnapshot stats;
+		if (snapshot instanceof DistributedAllMetricsSnapshot fleet) {
+			final DriverStatsTotal total = fleet.driverStatsTotal();
+			stats = total == null ? null : total.sum();
+		} else {
+			stats = snapshot.driverStats();
+		}
+		if (stats == null) {
+			return false;
+		}
+		for (final long count : stats.counters().values()) {
+			if (count > 0) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static long deleteProgress(final DeleteMetricsSnapshot snapshot) {

@@ -13,6 +13,9 @@ import static com.github.akurilov.commons.lang.Exceptions.throwUnchecked;
 import static org.apache.logging.log4j.CloseableThreadContext.Instance;
 
 import com.dell.spt.base.metrics.range.RangeReadSnapshot;
+import com.dell.spt.base.nic.NicPathCounting;
+import com.dell.spt.base.nic.NicPathRows;
+import com.dell.spt.base.nic.NicSetResources;
 import com.dell.spt.base.load.lifecycle.OperationLifecycleCounters;
 import com.dell.spt.base.concurrent.DaemonBase;
 import com.dell.spt.base.config.IllegalConfigurationException;
@@ -52,14 +55,17 @@ import com.dell.spt.base.logging.LogUtil;
 import com.dell.spt.base.logging.Loggers;
 import com.dell.spt.base.logging.OperationTraceCsvBatchLogMessage;
 import com.dell.spt.base.logging.OperationTraceCsvLogMessage;
+import com.dell.spt.base.metrics.bucket.BucketRecorder;
 import com.dell.spt.base.metrics.context.MetricsContext;
 import com.dell.spt.base.load.step.local.context.range.RangeReadRuntime;
 import com.dell.spt.base.storage.driver.range.RangeReadDriverSupport;
 import com.dell.spt.base.metrics.snapshot.AllMetricsSnapshot;
 import com.dell.spt.base.metrics.snapshot.DeleteMetricsSnapshot;
+import com.dell.spt.base.metrics.snapshot.DriverStatsSnapshot;
 import com.dell.spt.base.storage.driver.ListDiscoveryProbe;
 import com.dell.spt.base.storage.driver.ListOptions;
 import com.dell.spt.base.storage.driver.StorageDriver;
+import com.dell.spt.base.storage.driver.AdmissionPreparable;
 import com.dell.spt.base.storage.driver.StandaloneDeletePreparable;
 import com.dell.spt.base.util.BinarySizeFormat;
 import com.github.akurilov.commons.io.Output;
@@ -109,6 +115,8 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 	private final boolean failRateLimitFlag;
 	private final ConcurrentMap<I, O> latestSuccOpResultByItem;
 	private final boolean recycleFlag;
+	// Read and written only by the metrics manager thread, through schedulingDrained().
+	private int drainedObservations;
 	private final boolean listPathWorkload;
 	private boolean listLifecycleWaitLogged;
 	private final boolean retryFlag;
@@ -116,6 +124,7 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 	private final MetricsContext metricsCtx;
 	private final RangeReadRuntime<?> rangeRuntime;
 	private final Map<OpType, MetricsContext> metricsCtxByOpType;
+	private BucketRecorder bucketRecorder;
 	private final LongAdder counterResults = new LongAdder();
 	private final boolean tracePersistFlag;
 	private volatile Output<O> opsResultsOutput;
@@ -161,6 +170,7 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 	private final AtomicBoolean startedOnce = new AtomicBoolean(false);
 	private final AtomicBoolean durationIntervalStarted = new AtomicBoolean(false);
 	private final AtomicBoolean objectFailureBudgetAdmissionHeld = new AtomicBoolean(false);
+	private final AtomicBoolean admissionBarrierHeld = new AtomicBoolean();
 	private final AtomicBoolean objectFailureBudgetAdmissionReleased = new AtomicBoolean(false);
 	private final OperationLifecycleTracker<O> operationLifecycle;
 	private final boolean standaloneDeleteEnabled;
@@ -357,6 +367,9 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 						: driverLifecycle;
 		this.metricsCtx = metricsCtx;
 		this.metricsCtxByOpType = metricsCtxByOpType;
+		if (generator != null) {
+			generator.onSchedulingExhaustion(this::markSchedulingEnded);
+		}
 		this.tracePersistFlag = tracePersistFlag;
 		this.listShardMetricsRecorder = shardMetricsRecorder == null ? ListShardMetricsRecorder.NO_OP : shardMetricsRecorder;
 		this.immutableListRootPrefix = canonicalListPrefix(immutableListRootPrefix);
@@ -496,6 +509,12 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 				operationLifecycle.dispatchObserver(this::recordStandaloneDeleteDispatch);
 				operationLifecycle.terminalObserver(this::recordStandaloneDeleteTerminal);
 			}
+			// One driver, one carrier: only the step's primary metrics context reports it.
+			if (this.metricsCtx != null) {
+				this.metricsCtx.metadata().put(
+								com.dell.spt.base.metrics.MetricsConstants.METADATA_DRIVER_STATS,
+								(java.util.function.Supplier<DriverStatsSnapshot>) this.driver::driverStats);
+			}
 			this.driver.operationResultOutput(rangeRuntime == null ? this
 							: rangeRuntime.bind(
 											generator, operationLifecycle, retryFlag, retryLimit,
@@ -507,6 +526,33 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 			}
 			closeDeleteVerificationStorage();
 			throw failure;
+		}
+	}
+
+	/**
+	 * Sets the recorder of this context's bucket metrics; null, the default, adds one null check per
+	 * result and nothing else. Set before the step starts, so a driver's result threads see it,
+	 * and dropped at close so that the context no longer holds the step's meters.
+	 */
+	public final void bucketRecorder(final BucketRecorder recorder) {
+		this.bucketRecorder = recorder;
+	}
+
+	private void markSucc(
+					final O opResult, final long bytes, final long duration, final long latency, final long ttfb) {
+		resolveMetrics(opResult.type()).markSucc(bytes, duration, latency, ttfb);
+		final BucketRecorder recorder = bucketRecorder;
+		if (recorder != null) {
+			recorder.meterSet(opResult).markSucc(bytes, duration, latency, ttfb);
+		}
+	}
+
+	private void markPartSucc(
+					final O opResult, final long bytes, final long duration, final long latency, final long ttfb) {
+		resolveMetrics(opResult.type()).markPartSucc(bytes, duration, latency, ttfb);
+		final BucketRecorder recorder = bucketRecorder;
+		if (recorder != null) {
+			recorder.meterSet(opResult).markPartSucc(bytes, duration, latency, ttfb);
 		}
 	}
 
@@ -559,7 +605,7 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 			// counts advance. Do not fall through to generic recycle completion.
 			return isListNamespaceExhausted();
 		}
-		if (standaloneDeleteDurationMode && generator.isStopped()) {
+		if (standaloneDeleteDurationMode && generator.isStopped() && nothingAwaitsDispatch()) {
 			Loggers.MSG.debug(
 							"{}: done because the standalone DELETE inventory can no longer schedule requests",
 							id);
@@ -606,12 +652,40 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 
 	@Override
 	public long schedulingExhaustedAtNanos() {
-		return generator.schedulingExhaustedAtNanos();
+		return standaloneDeleteDurationMode
+						? durationInventoryExhaustionNanos().orElse(Long.MAX_VALUE)
+						: generator.schedulingExhaustedAtNanos();
 	}
 
 	@Override
 	public OptionalLong schedulingExhaustionNanos() {
-		return generator.schedulingExhaustionNanos();
+		return standaloneDeleteDurationMode
+						? durationInventoryExhaustionNanos()
+						: generator.schedulingExhaustionNanos();
+	}
+
+	/**
+	 * Whether a duration slice has visibly run out of inventory, so a run with too few objects can end
+	 * without waiting for its deadline: the generator has handed over everything, and every request it
+	 * generated has been dispatched. The handoff alone doesn't show that, because the driver's input
+	 * queue can hold the whole inventory within moments of the start.
+	 *
+	 * <p>A refused or recovered request is never counted as dispatched, DELETE has no retries or recycling,
+	 * and the tracker belongs to this context's driver alone, so each generated request counts at most
+	 * once. So this can't report a slice with work left, however its threads interleave. It can be late,
+	 * or miss, so {@link #durationInventoryRanOut()} decides from the final counts.
+	 */
+	private OptionalLong durationInventoryExhaustionNanos() {
+		final OptionalLong handoff = generator.schedulingExhaustionNanos();
+		if (handoff.isEmpty() || operationLifecycle.dispatchedCount() < generator.generatedOpCount()) {
+			return OptionalLong.empty();
+		}
+		return handoff;
+	}
+
+	/** Whether everything handed to the driver has left its queue. The scan runs only once the count is zero. */
+	private boolean nothingAwaitsDispatch() {
+		return operationLifecycle.awaitingDispatchCount() == 0 && !operationLifecycle.hasUndispatchedOperations();
 	}
 
 	private boolean isDoneCountLimit() {
@@ -801,7 +875,7 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 				recycleEligible = recycleFlag;
 			}
 			if (opResult instanceof PartialOperation) {
-				resolveMetrics(opResult.type()).markPartSucc(countBytesDone, reqDuration, respLatency, timeToFirstByte);
+				markPartSucc(opResult, countBytesDone, reqDuration, respLatency, timeToFirstByte);
 			} else {
 				if (!recycleEligible) {
 					// recycled ops should only appear in output.csv only once unless
@@ -836,7 +910,7 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 				if (opResult instanceof ListOperation) {
 					markListSuccess((ListOperation<?>) opResult, reqDuration, respLatency, timeToFirstByte);
 				} else {
-					resolveMetrics(opResult.type()).markSucc(countBytesDone, reqDuration, respLatency, timeToFirstByte);
+					markSucc(opResult, countBytesDone, reqDuration, respLatency, timeToFirstByte);
 				}
 				counterResults.increment();
 			}
@@ -918,7 +992,7 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 				// every terminal success, not just recycle-eligible ones
 				opResult.resetOpRetryCount();
 				if (opResult instanceof PartialOperation) {
-					resolveMetrics(opResult.type()).markPartSucc(countBytesDone, reqDuration, respLatency, timeToFirstByte);
+					markPartSucc(opResult, countBytesDone, reqDuration, respLatency, timeToFirstByte);
 				} else {
 					if (!recycleEligible) {
 						// recycled ops should only appear in output.csv only once unless
@@ -959,7 +1033,7 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 					if (listOpResult != null) {
 						markListSuccess(listOpResult, reqDuration, respLatency, timeToFirstByte);
 					} else {
-						resolveMetrics(opResult.type()).markSucc(countBytesDone, reqDuration, respLatency, timeToFirstByte);
+						markSucc(opResult, countBytesDone, reqDuration, respLatency, timeToFirstByte);
 					}
 					counterResults.increment();
 				}
@@ -1087,8 +1161,13 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 			Loggers.ERR.debug("{}: {}", opResult.toString(), status.toString());
 		}
 		final var metrics = resolveMetrics(opResult.type());
+		final BucketRecorder recorder = bucketRecorder;
+		final var bucketMeters = recorder == null ? null : recorder.meterSet(opResult);
 		if (Operation.Status.RESP_FAIL_CORRUPT.equals(status)) {
 			metrics.markCorrupt();
+			if (bucketMeters != null) {
+				bucketMeters.markCorrupt();
+			}
 			if (driver.metadataIntegrityEnabled() && opResult.integrityVerificationResult() != null) {
 				Loggers.INTEGRITY_FAILURES.info(
 								IntegrityCsvArtifacts.failureRecord(
@@ -1096,6 +1175,9 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 			}
 		} else {
 			metrics.markFail();
+			if (bucketMeters != null) {
+				bucketMeters.markFail();
+			}
 		}
 		counterResults.increment();
 	}
@@ -1315,6 +1397,7 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 							standaloneDeleteDurationMode
 											|| objectFailureBudgetAdmissionHeld.get()
 											|| standaloneDeletePreparationRequired
+											|| admissionBarrierHeld.get()
 															? 0
 															: System.nanoTime());
 			deleteScheduledDeadlineNanos.set(0);
@@ -1322,6 +1405,10 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 			deleteDrainCompletedNanos.set(0);
 			deleteWorkflowCompletedEpochNanos.set(0);
 			deleteDrainTimestampRecorded.set(false);
+		}
+		if (admissionBarrierHeld.get()) {
+			generator.holdAdmission();
+			return;
 		}
 		if (standaloneDeleteDurationMode
 						|| objectFailureBudgetAdmissionHeld.get()
@@ -1338,6 +1425,9 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 							e);
 		} catch (final IllegalStateException e) {
 			LogUtil.exception(Level.WARN, e, "{}: failed to start the storage driver \"{}\"", id, driver);
+			if (!stepShuttingDown.get()) {
+				throw e;
+			}
 		}
 		prepareStandaloneDelete();
 		if (!standaloneDeleteDurationMode && !objectFailureBudgetAdmissionHeld.get()) {
@@ -1350,7 +1440,51 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 			} catch (final IllegalStateException e) {
 				LogUtil.exception(
 								Level.WARN, e, "{}: failed to start the load generator \"{}\"", id, generator);
+				if (!stepShuttingDown.get()) {
+					throw e;
+				}
 			}
+		}
+	}
+
+	@Override
+	public final void holdForAdmissionBarrier() {
+		if (startedOnce.get()) {
+			throw new IllegalStateException(id + ": the admission barrier must hold before start");
+		}
+		admissionBarrierHeld.set(true);
+	}
+
+	@Override
+	public final void prepareForAdmission(final AdmissionPreparable.Preparation preparation) throws Exception {
+		driver.start();
+		if (driver instanceof AdmissionPreparable preparable) {
+			preparable.prepareForAdmission(preparation);
+		}
+		prepareStandaloneDelete();
+	}
+
+	@Override
+	public final void releaseAdmissionBarrier() {
+		operationAdmissionCloseLock.lock();
+		try {
+			admissionBarrierHeld.set(false);
+			// A step that is already stopping must not open admission or restart its generator.
+			if (stepShuttingDown.get() || operationAdmissionClosed.get()
+							|| standaloneDeleteDurationMode || objectFailureBudgetAdmissionHeld.get()) {
+				return;
+			}
+			if (standaloneDeleteEnabled) {
+				deleteScheduledStartedNanos.set(System.nanoTime());
+			}
+			generator.openAdmission();
+			try {
+				generator.start();
+			} catch (final IllegalStateException e) {
+				LogUtil.exception(Level.WARN, e, "{}: failed to start the load generator \"{}\"", id, generator);
+			}
+		} finally {
+			operationAdmissionCloseLock.unlock();
 		}
 	}
 
@@ -1550,7 +1684,9 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 			deleteScheduledStartedNanos.set(releasedNanos);
 			deleteScheduledDeadlineNanos.set(deadlineNanos);
 			operationLifecycle.enforceDispatchDeadline(deadlineNanos);
-			enforceDispatchedOperationsDeadlineForStepStop(DurationTime.deadlineAfter(
+			// Arming the interval's terminal deadline is not an end event, so it bypasses the
+			// stop-path entry point, which closes the steady-state windows first.
+			operationLifecycle.enforceTerminalDeadline(DurationTime.deadlineAfter(
 							deadlineNanos,
 							TimeUnit.SECONDS.toNanos(Math.max(0, waitOpFinishLimit))));
 			generator.openAdmissionUntil(deadlineNanos);
@@ -1568,11 +1704,20 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 
 	/** Bounded accounting observer, before retained outcome custody is released. */
 	private void recordRangeTerminal(final O op) {
+		final BucketRecorder recorder = bucketRecorder;
+		final var bucketMeters = recorder == null ? null : recorder.primaryMeterSet(op);
 		if (op.status() == Status.SUCC) {
 			final var data = (DataOperation<?>) op;
-			metricsCtx.markSucc(data.countBytesDone(), op.duration(), op.latency(), timeToFirstByte(op));
+			final long ttfb = timeToFirstByte(op);
+			metricsCtx.markSucc(data.countBytesDone(), op.duration(), op.latency(), ttfb);
+			if (bucketMeters != null) {
+				bucketMeters.markSucc(data.countBytesDone(), op.duration(), op.latency(), ttfb);
+			}
 		} else {
 			metricsCtx.markFail();
+			if (bucketMeters != null) {
+				bucketMeters.markFail();
+			}
 		}
 		counterResults.increment();
 	}
@@ -1665,6 +1810,21 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 	@Override
 	public final RangeReadSnapshot rangeReadSnapshot() {
 		return rangeRuntime == null ? null : rangeRuntime.snapshot();
+	}
+
+	@Override
+	public final boolean hasNicSet() {
+		return driver instanceof NicPathCounting;
+	}
+
+	@Override
+	public final NicPathRows nicPathRows() {
+		return driver instanceof NicPathCounting counting ? counting.nicPathRows() : null;
+	}
+
+	@Override
+	public final NicSetResources nicSetResources() {
+		return driver instanceof NicPathCounting counting ? counting.nicSetResources() : null;
 	}
 
 	@Override
@@ -1817,6 +1977,13 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 		}
 	}
 
+	@Override
+	public final boolean durationInventoryRanOut() {
+		return standaloneDeleteDurationMode
+						&& durationIntervalStarted.get()
+						&& deleteObjectLifecycle().unattempted() == 0;
+	}
+
 	private boolean acceptStandaloneDeleteResult(final O operation) {
 		if (!(operation instanceof DeleteRequestOperation)) {
 			throw new IllegalStateException(
@@ -1848,14 +2015,21 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 		final var metrics = resolveMetrics(operation.type());
 		final long requestDuration = standaloneDeleteRequestDuration(deleteOperation);
 		final long requestLatency = standaloneDeleteRequestLatency(deleteOperation);
+		final BucketRecorder recorder = bucketRecorder;
+		final var bucketMeters = recorder == null
+						? null
+						: recorder.meterSet(operation.type(), deleteOperation.deleteRequest().bucket());
 		if (Status.SUCC.equals(result.operationStatus())) {
-			metrics.markSucc(
-							0,
-							requestDuration,
-							requestLatency,
-							timeToFirstByte(operation));
+			final long ttfb = timeToFirstByte(operation);
+			metrics.markSucc(0, requestDuration, requestLatency, ttfb);
+			if (bucketMeters != null) {
+				bucketMeters.markSucc(0, requestDuration, requestLatency, ttfb);
+			}
 		} else {
 			metrics.markFail(requestDuration, requestLatency);
+			if (bucketMeters != null) {
+				bucketMeters.markFail(requestDuration, requestLatency);
+			}
 		}
 		counterResults.increment();
 		if (deleteArtifactRecorder != null) {
@@ -2033,8 +2207,81 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 						.sum();
 	}
 
+	/** Arms the end edge of this context's windows once its generator's scheduling ended. */
+	private void markSchedulingEnded() {
+		if (metricsCtx != null) {
+			metricsCtx.markSchedulingEnded(this::schedulingDrained);
+		}
+		if (metricsCtxByOpType != null) {
+			for (final MetricsContext opTypeCtx : metricsCtxByOpType.values()) {
+				opTypeCtx.markSchedulingEnded(this::schedulingDrained);
+			}
+		}
+	}
+
+	/**
+	 * Whether nothing scheduled for this step still waits for dispatch, read on the metrics manager
+	 * thread once scheduling ended. It must hold on two consecutive observations.
+	 *
+	 * <p>A recycle-mode step keeps recycling completed operations into the generator after its count
+	 * limit is reached, where they stay in custody but are never dispatched again, so it is judged
+	 * from the driver's transport counts, which are exact for its non-composite operations. Every
+	 * other step is judged from logical custody: the custody count must be zero, and a scan of the
+	 * operations' lifecycle states confirms it. A completion stalled between its custody removal and
+	 * its in-flight decrement keeps the count one too low for as long as it stalls, which repeated
+	 * observations cannot rule out. For a multipart object custody holds the requests created so
+	 * far: the window ends once none of them is queued, and the parts the in-flight objects create
+	 * later belong to the drain, as they do after a stop.
+	 */
+	private boolean schedulingDrained() {
+		final long awaitingDispatch = recycleFlag ? -1 : operationLifecycle.awaitingDispatchCount();
+		final boolean drained = awaitingDispatch >= 0
+						? awaitingDispatch == 0 && !operationLifecycle.hasUndispatchedOperations()
+						: transportQueueDrained();
+		if (!drained) {
+			drainedObservations = 0;
+			return false;
+		}
+		return ++drainedObservations >= 2;
+	}
+
+	/**
+	 * Drained from the driver's transport counts: a full set of slots means work is still queued,
+	 * and with free slots nothing accepted may still wait. Completions include child requests while
+	 * acceptances do not, so these counts misjudge composite operations, and a completion counted
+	 * while its permit is still held can end the window one operation early. Two observations do
+	 * not rule that out when the completing thread stalls between its updates.
+	 */
+	private boolean transportQueueDrained() {
+		final long scheduled = driver.scheduledOpCount();
+		final long completed = driver.completedOpCount();
+		final int active = driver.activeOpCount();
+		final int limit = driver.concurrencyLimit();
+		return (limit <= 0 || active < limit) && completed + active >= scheduled;
+	}
+
+	/**
+	 * Closes the Steady-State Windows this context records into, before any stop-path action on
+	 * it: a backstop for paths that reach a context directly rather than through its step.
+	 */
+	private void closeSteadyWindows(final String cause) {
+		if (metricsCtx != null) {
+			metricsCtx.closeSteadyWindow(cause);
+		}
+		if (metricsCtxByOpType != null) {
+			for (final MetricsContext opTypeCtx : metricsCtxByOpType.values()) {
+				opTypeCtx.closeSteadyWindow(cause);
+			}
+		}
+		final BucketRecorder recorder = bucketRecorder;
+		if (recorder != null) {
+			recorder.awaitFence();
+		}
+	}
+
 	/** Closes both admission gates without recovering or draining queued work. */
 	private void closeOperationAdmission() {
+		closeSteadyWindows("close operation admission");
 		operationAdmissionCloseLock.lock();
 		try {
 			if (operationAdmissionClosed.get()) {
@@ -2122,22 +2369,26 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 
 	@Override
 	public final void recoverQueuedOperationsForStepStop() {
+		closeSteadyWindows("recover queued operations");
 		prepareOperationDrain();
 	}
 
 	@Override
 	public final void enforceDispatchedOperationsDeadlineForStepStop(
 					final long deadlineNanos) {
+		closeSteadyWindows("dispatched operations deadline");
 		operationLifecycle.enforceTerminalDeadline(deadlineNanos);
 	}
 
 	@Override
 	public final void expireDispatchedOperationsDeadlineForStepStop() {
+		closeSteadyWindows("dispatched operations deadline");
 		operationLifecycle.expireTerminalDeadline();
 	}
 
 	@Override
 	public final void drainDispatchedOperationsForStepStop(final long deadlineNanos) {
+		closeSteadyWindows("drain dispatched operations");
 		prepareOperationDrain();
 		drainDispatchedOperations(deadlineNanos);
 	}
@@ -2456,15 +2707,17 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 		// bytesListed is the logical size of the objects described by the LIST response, not
 		// payload transferred by this operation. Keep it for discovery diagnostics, but do not
 		// feed it into the generic data-transfer and bandwidth meters.
-		metricsCtx.markSucc(
-						objectsListed,
-						0L,
-						new long[]{reqDuration
-						},
-						new long[]{respLatency
-						},
-						new long[]{timeToFirstByte
-						});
+		final long[] durations = {reqDuration
+		};
+		final long[] latencies = {respLatency
+		};
+		final long[] ttfbs = {timeToFirstByte
+		};
+		metricsCtx.markSucc(objectsListed, 0L, durations, latencies, ttfbs);
+		final BucketRecorder recorder = bucketRecorder;
+		if (recorder != null) {
+			recorder.primaryMeterSet(listOp).markSucc(objectsListed, 0L, durations, latencies, ttfbs);
+		}
 	}
 
 	private long timeToFirstByte(final O opResult) {
@@ -2667,6 +2920,7 @@ public class LoadStepContextImpl<I extends Item, O extends Operation<I>> extends
 
 	@Override
 	protected final void doClose() {
+		bucketRecorder = null;
 		try (final Instance logCtx = CloseableThreadContext.put(KEY_STEP_ID, id)
 						.put(KEY_CLASS_NAME, getClass().getSimpleName())) {
 			if (listShardMetricsRecorder != null) {

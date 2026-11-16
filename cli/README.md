@@ -91,8 +91,10 @@ neither `--items-file` nor `--delete-existing`, a count run creates exactly
 run-unique `spt-delete-<run-id>/` namespace, freezes the successful PUT identities,
 then times DELETE against only that canonical manifest. `--prefix` changes the
 owned namespace root by itself; it never discovers or selects existing objects. A
-duration run instead seeds `--seed-objects`, default 2,500. Omitting both count and
-duration also selects 2,500 objects. Omitting `--object-size` selects 1 KiB rather than
+duration run instead seeds `--seed-objects`, default 2,500. That default lasts well under
+a second on most targets, and a run that attempts every object fails as exhausted, so set
+it to at least the DELETE rate you expect times the duration, with margin. Omitting both
+count and duration also selects 2,500 objects. Omitting `--object-size` selects 1 KiB rather than
 the shared 1 MiB write default. PUT-returned versions are preserved for exact-version
 DELETE; objects without a returned version use current-key semantics.
 
@@ -145,9 +147,10 @@ identity still lacking a terminal result after the bound is unresolved and inval
 All slices then drain through a bounded coordinator against one step-wide remaining-time budget,
 so the wait bound is not multiplied by the input count. The coordinator retains at most one
 lifecycle call per frozen input, offers every input each phase, and never duplicates a still-running
-call on cleanup retry. Inventory exhaustion is timestamped at its source and invalidates only when
-it occurs strictly before the scheduled deadline. Each worker makes that comparison on its own
-monotonic clock and retains a semantic verdict; after admission closes, the controller requires a
+call on cleanup retry. A slice that attempted every object in its inventory ran out, which
+invalidates the run; each worker decides that from its final counts after the drain, or earlier
+once every request has been dispatched, and handing the inventory to the driver's input queue doesn't
+count. Each worker retains a semantic verdict; after admission closes, the controller requires a
 reached-deadline verdict from every slice, so delayed, missing, or failed evidence cannot validate a
 run. The scheduled interval and subsequent drain interval are reported separately. `--threads`
 bounds concurrent logical DELETE requests, so a request may contain as many as
@@ -241,7 +244,7 @@ DELETE detail retains compatibility with engines that do not expose the detailed
 
 ### Prerequisites
 
-- Go 1.25 or higher
+- Go 1.26 or higher
 - Docker (Docker daemon must be running)
 - Local CI checks: golangci-lint v2.2+ (required for `make ci-local`).
 
@@ -570,7 +573,7 @@ Executes a benchmark test with the specified workload type.
 - `--range-align`: Alignment in bytes or binary units; omitted, `0`, and `1` mean byte alignment. A fixed offset must be divisible by the effective alignment. Offset/alignment require `--range-size`. A positive `--part-size` conflicts with partial reads.
 
 - `--seed-objects`: Objects to pre-create for `read` benchmarks and duration-based standalone DELETE (default: 2500)
-- `--items-file`: Path to a saved `items.csv` for `read`, or a canonical manifest for `read-verify` and explicit-manifest DELETE. Mutually exclusive with `--delete-existing`
+- `--items-file`: Path to a saved `items.csv` for `read`, or a canonical manifest for `read-verify` and explicit-manifest DELETE. Mutually exclusive with `--delete-existing`. A file that can't be opened, has no items, or has a blank or invalid line ends the run with an error naming the file or line, before any requests from it
 - `--delete-batch-size`: Standalone DELETE request size, from 1 through 1000 canonical identities (default 100). Multi-bucket manifests require 1
 - `--delete-existing`: Destructive DELETE opt-in that discovers and freezes current keys beneath the exact bucket/prefix before timing
 - `--allow-empty-prefix`: Second destructive opt-in required with `--delete-existing --prefix=''` for intentional whole-bucket selection
@@ -585,11 +588,13 @@ Executes a benchmark test with the specified workload type.
 - `--shuffle`: `read` only. Shuffle items within each fetched read batch before issuing reads.
 - `--shuffle-batch-size`: `read` only. Override the read-phase shuffle window used with `--shuffle` (bounded to 1,000,000).
 - `--cleanup`: Best-effort deletion after test completion. For READ with `--items-file`, this deletes objects from the supplied inventory, including objects not created by the current run. Seeded DELETE retries its immutable measured residual in a separate phase; explicit-manifest and existing-prefix DELETE reject it. For `write-verify`, delete only successfully verified objects; unsupported for `read-verify` and deferred verification
-- `--create-prefix`: Ensure target prefix exists before testing
+- `--provision-target-bucket`: Create a missing target bucket before the phase that writes the run's objects (default true); `false` still checks that every target bucket exists and is accessible. See [Target Buckets](docs/TARGET_BUCKETS.md)
+- `--create-prefix`: Deprecated; has no effect and will be removed in the next minor release
 - `--output-dir, -O`: Directory to save detailed Spt reports
 - `--generate-only`: Generate scenario file without executing Docker
 - `--force`: Resolve supported port conflicts without interaction and permit a known engine build mismatch. It does not override invalid build information or collection failures
 - `--api-port`: Specify custom Spt API port (defaults to 9999, legacy: 43234)
+- `--rmi-registry-port`: Engine RMI registry port for a local single-host run (default 1099). To run several `spt run` instances on one host at once, give each its own `--api-port` and `--rmi-registry-port`; remote and distributed runs reject any other value
 - `--spt-image`: Override the engine image ref. By default, release builds use an image tag matching the CLI version (for example, `...:v5.10.3`) and local/dev builds use `...:spt_dev`.
 - `--skip-image-pull`: Use the locally cached Spt image instead of pulling before each run. Dev images such as `spt_dev` automatically skip pulls because they are local-only.
 - `--keep-scenario`: Keep the generated JavaScript scenario file after test completes (useful for debugging)
@@ -623,6 +628,8 @@ uses the complete frozen current-key selection without recycling and is invalid 
 Multi-endpoint options:
 - `--endpoints`: Comma-separated list (or repeat the flag) to target multiple S3 endpoints.
 - `--slice-endpoints`: In distributed runs, partition the endpoint list across Spt nodes instead of having every node target all endpoints.
+- `--interfaces`: Spread each engine's S3 connections over a NIC set: `auto`, or a comma-separated list of interface names, IPv4 addresses or RDMA devices (env: `SPT_INTERFACES`; default Netty S3 driver and host networking). See [Network Interfaces](docs/NETWORK_INTERFACES.md)
+- `--host-interfaces`: Replace `--interfaces` on one host: `<host>=<value>`, with `<value>` `auto`, a list, or `none` to turn NICs off there. Repeatable, also from `SPT_HOST_INTERFACES`; see [Host overrides](docs/NETWORK_INTERFACES.md#host-overrides).
 
 **Headless Mode Flags:**
 
@@ -818,7 +825,9 @@ When run in a terminal with TTY support, spt displays an interactive interface w
 
 Auto Results and Shutdown
 - `--auto-results` (default: true): automatically discovers step IDs, waits for terminal state via `/status` + idle JSON, then fetches artifacts (preferring per-step `/logs/<stepId>/index.json`).
-- When auto-results completes successfully, `spt` now writes a human-readable summary alongside the fetched artifacts (`spt_<runID>_results_summary.txt`) and prints a shortened version to the console. The summary pulls from the same metrics `.csv` files, `spt_run_params.json`, and the copied scenario file so the bundle stays self-contained.
+- When auto-results completes successfully, `spt` now writes a human-readable summary alongside the fetched artifacts (`spt_<runID>_results_summary.txt`) and prints a shortened version to the console. The summary pulls from the same metrics `.csv` files, `spt_run_params.json`, and the copied scenario file so the bundle stays self-contained. Its rate table shows each phase's steady-state IOPS and bandwidth from `metrics.steady.total.csv` beside the whole-step Avg values, or "n/a" with the reason when the window is not `valid` or the engine predates 5.17; see [steady-state window](../engine/core/spt-base/doc/usage/output/README.md#25-steady-state-window).
+- The summary shows each phase's failed requests in a `Failed` column, and as a warning when any failed. A `read`, `write`, `mixed` or `tables` run that finished cleanly exits 1 if every request of a phase failed: no successes and at least one failure. In a `mixed` phase this applies to each operation too. A `list` run exits 1 if it found no objects and at least one request failed, since that listing can't show the prefix is empty. A `--cleanup` phase doesn't count, because cleanup is best-effort. A run stopped before its phases finish keeps its exit code, but a stop that only cuts the pause after them doesn't change this check. A `mixed` run with `--delete-items-file` full of keys that don't exist exits 1 on a target that answers 404 to those DELETEs, because every DELETE failed. Partial failures don't change the exit code, and an outage after earlier successes still exits 0, so read the `Failed` column and the warnings. Without auto-results the CLI has no counts, so this check doesn't run.
+- A phase's steady window can be `valid` with its rate falling inside it, because `valid` tests coverage, not stability. The summary warns when a valid window's `SteadyTrend[%]` is -50 or lower, or its `SteadyCV` is 0.5 or higher. The status and the steady rate don't change. These cutoffs are uncalibrated, and a rising ramp alone won't warn.
 - `--results-dir`: directory where fetched artifacts and a manifest `index.json` are saved.
 - Engine provenance is recorded in one run-level `engine.info.json` and shown with the separate CLI identity in the Environment section. See [`ENGINE_BUILD_INFO.md`](docs/ENGINE_BUILD_INFO.md).
 - `--label`: prefix for the output directory name and step ID prefix used in filenames.
@@ -828,12 +837,12 @@ Environment configuration
 - spt loads environment variables from `.env` files at startup using the `godotenv` library: first from `$HOME/.env` (if present) and then from `./.env` (if present). Existing OS environment variables are not overridden; the local `./.env` overrides values from `$HOME/.env` loaded by spt.
 - Variable expansion follows `godotenv` rules. Use `$VAR` or `${VAR}`. Command substitutions like `$(pwd)` are not supported; use `$PWD` instead.
 - Hosts: if `--test-hosts` is not specified, spt will use the `HOSTS` environment variable (from OS or `.env`). If neither is set, it falls back to localhost.
-- S3 defaults: you can provide `S3_ENDPOINTS` (CSV) or `S3_ENDPOINT` (single), plus `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`, and (optionally) `S3_AUTH_VERSION` via environment or `.env`. `S3_AUTH_VERSION` defaults to `4`; set it to `2` only when targeting legacy services that cannot accept SigV4.
+- S3 defaults: you can provide `S3_ENDPOINTS` (CSV) or `S3_ENDPOINT` (single), plus `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKETS` (CSV, as `--buckets`) or `S3_BUCKET`, and (optionally) `S3_AUTH_VERSION` via environment or `.env`. `S3_AUTH_VERSION` defaults to `4`; set it to `2` only when targeting legacy services that cannot accept SigV4.
 - Image selection: by default, release CLIs run the matching engine image tag (`ghcr.io/dell/storage-performance-tool:v<version>`), while local/dev builds use the local-only `ghcr.io/dell/storage-performance-tool:spt_dev` image.
 - Image override (optional): set `SPT_IMAGE` or pass `--spt-image` to override the default Docker image spt uses for verify and run. Overrides are used verbatim, including floating tags such as `:latest`.
 - Image pull control: set `SPT_SKIP_IMAGE_PULL=1` to skip pulling the Spt image before each run. For non-dev images, spt still pulls if the image is missing locally. Dev images such as `spt_dev` are never pulled; if missing, build them with `make docker-local` and distribute them to workers with `engine/tools/push-worker-image.sh`.
 - Data shaping: `SPT_OBJECT_DATA_COMPRESSIBILITY` (0-100, default 0) sets target compressibility; `SPT_OBJECT_DATA_DEDUPABLE` (true/false, default true) controls anti-dedupe stamping.
-- Precedence: CLI flags > OS environment > `./.env` > `$HOME/.env` > built-in defaults. For endpoints specifically: `--endpoints` > `S3_ENDPOINTS` > `S3_ENDPOINT`. For authentication: CLI flag `--auth-version` overrides `S3_AUTH_VERSION`.
+- Precedence: CLI flags > OS environment > `./.env` > `$HOME/.env` > built-in defaults. For endpoints specifically: `--endpoints` > `S3_ENDPOINTS` > `S3_ENDPOINT`. For target buckets: any bucket flag wins, `--bucket` or `--bucket-count` still takes its base from `S3_BUCKET`, and otherwise `S3_BUCKETS` wins over `S3_BUCKET`. For authentication: CLI flag `--auth-version` overrides `S3_AUTH_VERSION`.
 - Quick start: copy `.env.example` to `.env` and edit placeholders for your environment.
 
 Tools scripts configuration

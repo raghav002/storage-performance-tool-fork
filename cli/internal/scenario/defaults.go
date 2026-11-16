@@ -2,6 +2,7 @@
 package scenario
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -39,12 +40,21 @@ type RunClusterConfig struct {
 
 // StorageConfig represents storage configuration
 type StorageConfig struct {
-	Region   string          `yaml:"region,omitempty"`
-	Driver   DriverConfig    `yaml:"driver,omitempty"`
-	Net      NetConfig       `yaml:"net,omitempty"`
-	Auth     AuthConfig      `yaml:"auth,omitempty"`
-	Checksum *ChecksumConfig `yaml:"checksum,omitempty"` // pointer so omitted when nil
-	Rdma     *RdmaConfig     `yaml:"rdma,omitempty"`     // pointer so omitted when nil
+	Region       string              `yaml:"region,omitempty"`
+	TargetBucket *TargetBucketConfig `yaml:"targetBucket,omitempty"` // emitted only for a bucket set or to disable creation
+	Driver       DriverConfig        `yaml:"driver,omitempty"`
+	Net          NetConfig           `yaml:"net,omitempty"`
+	Auth         AuthConfig          `yaml:"auth,omitempty"`
+	Checksum     *ChecksumConfig     `yaml:"checksum,omitempty"` // pointer so omitted when nil
+	Rdma         *RdmaConfig         `yaml:"rdma,omitempty"`     // pointer so omitted when nil
+}
+
+// TargetBucketConfig represents storage.targetBucket. The engine ships count: 1, names: [] and
+// provision: true.
+type TargetBucketConfig struct {
+	Count     int      `yaml:"count,omitempty"`
+	Names     []string `yaml:"names,omitempty"`
+	Provision *bool    `yaml:"provision,omitempty"`
 }
 
 // ItemConfig represents item-level configuration knobs.
@@ -108,6 +118,8 @@ type NetConfig struct {
 	Node     NodeConfig      `yaml:"node,omitempty"`
 	SSL      SSLConfig       `yaml:"ssl,omitempty"`
 	Endpoint *EndpointConfig `yaml:"endpoint,omitempty"` // pointer so omitted in the default mode
+	// Interfaces is storage.net.interfaces, written only with a NIC set.
+	Interfaces []string `yaml:"interfaces,omitempty"`
 }
 
 // EndpointConfig represents storage.net.endpoint (opt-in endpoint selection).
@@ -155,7 +167,14 @@ type OutputConfig struct {
 
 // MetricsConfig represents metrics configuration
 type MetricsConfig struct {
-	Average AverageConfig `yaml:"average"`
+	Average AverageConfig        `yaml:"average"`
+	Bucket  *MetricsBucketConfig `yaml:"bucket,omitempty"` // emitted only to turn bucket metrics off
+}
+
+// MetricsBucketConfig represents output.metrics.bucket. The engine ships enabled: true, so the
+// generated defaults are unchanged unless a run turns them off.
+type MetricsBucketConfig struct {
+	Enabled bool `yaml:"enabled"`
 }
 
 // AverageConfig represents average metrics configuration
@@ -183,6 +202,9 @@ func GenerateDefaults(params Params) ([]byte, error) {
 				},
 			},
 		},
+	}
+	if params.BucketMetricsDisabled {
+		config.Output.Metrics.Bucket = &MetricsBucketConfig{Enabled: false}
 	}
 	if params.RunID > 0 {
 		config.Run = &RunConfig{
@@ -285,75 +307,9 @@ func GenerateDefaults(params Params) ([]byte, error) {
 			return nil, fmt.Errorf("endpoint is required for %s workload", params.WorkloadType)
 		}
 
-		type hostPort struct {
-			host string
-			port int
-		}
-		parsed := make([]hostPort, 0, len(eps))
-		scheme := ""
-
-		for _, ep := range eps {
-			u, err := url.Parse(ep)
-			if err != nil {
-				return nil, fmt.Errorf("invalid endpoint URL: %w", err)
-			}
-			if u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS {
-				return nil, fmt.Errorf("invalid endpoint URL: unsupported scheme %q (must be http or https)", u.Scheme)
-			}
-			if scheme == "" {
-				scheme = u.Scheme
-			} else if scheme != u.Scheme {
-				return nil, fmt.Errorf("all endpoints must use the same scheme; found %q and %q", scheme, u.Scheme)
-			}
-
-			h := u.Hostname()
-			p := u.Port()
-			if p == "" {
-				if u.Scheme == schemeHTTPS {
-					p = constants.DefaultHTTPSPort
-				} else {
-					p = constants.DefaultHTTPPort
-				}
-			}
-			var pi int
-			if _, err := fmt.Sscanf(p, "%d", &pi); err != nil {
-				return nil, fmt.Errorf("invalid port: %s", p)
-			}
-			parsed = append(parsed, hostPort{host: h, port: pi})
-		}
-
-		// Deduplicate while preserving order
-		seen := make(map[string]struct{}, len(parsed))
-		uniq := make([]hostPort, 0, len(parsed))
-		for _, hp := range parsed {
-			key := fmt.Sprintf("%s:%d", hp.host, hp.port)
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			uniq = append(uniq, hp)
-		}
-
-		// Determine if ports are uniform
-		uniformPort := true
-		refPort := uniq[0].port
-		for _, hp := range uniq[1:] {
-			if hp.port != refPort {
-				uniformPort = false
-				break
-			}
-		}
-
-		// Build node.addrs and optional node.port
-		addrs := make([]string, 0, len(uniq))
-		if uniformPort {
-			for _, hp := range uniq {
-				addrs = append(addrs, hp.host)
-			}
-		} else {
-			for _, hp := range uniq {
-				addrs = append(addrs, fmt.Sprintf("%s:%d", hp.host, hp.port))
-			}
+		nodes, err := ParseNodeEndpoints(eps)
+		if err != nil {
+			return nil, err
 		}
 
 		var multipartLimits *MultipartLimits
@@ -365,7 +321,8 @@ func GenerateDefaults(params Params) ([]byte, error) {
 		}
 
 		config.Storage = StorageConfig{
-			Region: params.Region,
+			Region:       params.Region,
+			TargetBucket: targetBucketConfig(params),
 			Driver: DriverConfig{
 				Limit: DriverLimits{
 					Concurrency: params.Threads,
@@ -374,17 +331,13 @@ func GenerateDefaults(params Params) ([]byte, error) {
 			},
 			Net: NetConfig{
 				Node: NodeConfig{
-					Addrs: addrs,
-					Port: func() int {
-						if uniformPort {
-							return refPort
-						}
-						return 0
-					}(),
+					Addrs: nodes.Addrs,
+					Port:  nodes.Port,
 					Slice: params.SliceEndpoints,
 				},
-				SSL:      SSLConfig{Enabled: scheme == schemeHTTPS},
-				Endpoint: endpointConfig(params.EndpointSelection),
+				SSL:        SSLConfig{Enabled: nodes.Scheme == schemeHTTPS},
+				Endpoint:   endpointConfig(params.EndpointSelection),
+				Interfaces: params.Interfaces,
 			},
 			Auth: AuthConfig{UID: params.AccessKey, Secret: params.SecretKey, Version: authVersion},
 		}
@@ -479,6 +432,21 @@ func GenerateDefaults(params Params) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		if data, err = restoreTargetBucketSet(data, params); err != nil {
+			return nil, err
+		}
+		// The NIC set likewise survives an override that replaces storage.net or storage. A JSON
+		// list is a YAML value, so every entry stays a string.
+		if len(config.Storage.Net.Interfaces) > 0 {
+			interfaces, err := json.Marshal(config.Storage.Net.Interfaces)
+			if err != nil {
+				return nil, fmt.Errorf("failed to encode %s: %w", InterfacesPath, err)
+			}
+			data, err = applyEngineOverrides(data, []string{InterfacesPath + "=" + string(interfaces)})
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	if err := validateRangeDefaults(params, data); err != nil {
@@ -486,6 +454,78 @@ func GenerateDefaults(params Params) ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+// restoreTargetBucketSet writes the validated bucket set back after engine overrides. An override
+// that replaces storage.targetBucket or storage as a whole, such as
+// storage.targetBucket={provision: false}, would drop the count or names the CLI validated.
+// Overrides that set them are rejected earlier, so the flags' values are final.
+func restoreTargetBucketSet(data []byte, params Params) ([]byte, error) {
+	var err error
+	if params.BucketCount > 1 {
+		if data, err = applyEngineOverrides(data, []string{fmt.Sprintf("storage.targetBucket.count=%d", params.BucketCount)}); err != nil {
+			return nil, err
+		}
+	}
+	// Names are set as a value, not parsed from an override string, because a name used as written
+	// may hold characters that YAML would interpret.
+	if len(params.BucketNames) > 1 {
+		return setDefaultsValue(data, append([]string(nil), params.BucketNames...), "storage", "targetBucket", "names")
+	}
+	return data, nil
+}
+
+// targetBucketConfig returns the storage.targetBucket defaults only for a bucket set or a
+// provisioning opt-out, so the generated defaults are unchanged for one bucket with provisioning on.
+func targetBucketConfig(params Params) *TargetBucketConfig {
+	var config TargetBucketConfig
+	if params.BucketCount > 1 {
+		config.Count = params.BucketCount
+	}
+	if len(params.BucketNames) > 1 {
+		config.Names = params.BucketNames
+	}
+	if params.TargetBucketProvisionDisabled {
+		provision := false
+		config.Provision = &provision
+	}
+	if config.Count == 0 && config.Names == nil && config.Provision == nil {
+		return nil
+	}
+	return &config
+}
+
+// setDefaultsValue sets one path of generated defaults to a value, creating missing maps. It fails
+// when an ancestor holds a scalar, as an engine override of that path would.
+func setDefaultsValue(data []byte, value any, path ...string) ([]byte, error) {
+	var root map[string]any
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return nil, fmt.Errorf("failed to parse defaults before setting %s: %w", strings.Join(path, "."), err)
+	}
+	if root == nil {
+		root = map[string]any{}
+	}
+	node := root
+	for _, part := range path[:len(path)-1] {
+		next, ok := node[part]
+		if !ok || next == nil {
+			child := map[string]any{}
+			node[part] = child
+			node = child
+			continue
+		}
+		child, ok := next.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("cannot set %s: %s already contains a scalar value", strings.Join(path, "."), part)
+		}
+		node = child
+	}
+	node[path[len(path)-1]] = value
+	merged, err := yaml.Marshal(root)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal defaults after setting %s: %w", strings.Join(path, "."), err)
+	}
+	return merged, nil
 }
 
 func applyEngineOverrides(data []byte, overrides []string) ([]byte, error) {
@@ -542,6 +582,53 @@ func applyEngineOverride(root map[string]any, override string) error {
 
 	node[parts[len(parts)-1]] = value
 	return nil
+}
+
+// BucketMetricsDisabledAfterOverrides returns whether bucket metrics are off for this run. An engine
+// override of output.metrics.bucket.enabled wins over --bucket-metrics, so the run's recorded
+// settings say what the engine will do.
+func BucketMetricsDisabledAfterOverrides(params Params) bool {
+	disabled := params.BucketMetricsDisabled
+	for _, override := range params.EngineOverrides {
+		root := map[string]any{}
+		if err := applyEngineOverride(root, override); err != nil {
+			continue
+		}
+		var node any = root
+		for _, part := range []string{"output", "metrics", "bucket", "enabled"} {
+			children, ok := node.(map[string]any)
+			if !ok {
+				node = nil
+				break
+			}
+			node = children[part]
+		}
+		if enabled, ok := node.(bool); ok {
+			disabled = !enabled
+		}
+	}
+	return disabled
+}
+
+// EngineOverrideSets reports whether an engine override sets the configuration path, directly or
+// through a map value of one of its ancestors, such as storage.targetBucket={count: 4}. An
+// override that does not parse sets nothing; GenerateDefaults reports it.
+func EngineOverrideSets(override string, path ...string) bool {
+	root := map[string]any{}
+	if err := applyEngineOverride(root, override); err != nil {
+		return false
+	}
+	var node any = root
+	for _, part := range path {
+		children, ok := node.(map[string]any)
+		if !ok {
+			return false
+		}
+		if node, ok = children[part]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func engineOverrideError(override, reason string) error {

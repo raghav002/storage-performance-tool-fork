@@ -45,6 +45,8 @@ load:
     node:
       addrs: list
       port: int
+    preparation:
+      timeout: any
   service:
     threads: int
   op:
@@ -116,6 +118,8 @@ load:
 output:
   color: boolean
   metrics:
+    bucket:
+      enabled: boolean
     average:
       aggregation:
         period: int
@@ -129,6 +133,12 @@ output:
     trace:
       persist: boolean
     threshold: double
+    steady:
+      warmup:
+        turnovers: double
+      min:
+        turnovers: double
+        duration: any
     timing:
       persist: boolean
     quantiles: list
@@ -180,6 +190,12 @@ storage:
   net:
     endpoint:
       selection: string
+    interfaces: list
     node:
       slice: boolean
+    nodeInterfaces: map
+  targetBucket:
+    count: int
+    names: list
+    provision: boolean
 aliasing: list

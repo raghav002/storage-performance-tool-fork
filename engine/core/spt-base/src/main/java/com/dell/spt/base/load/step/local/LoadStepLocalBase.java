@@ -8,8 +8,11 @@ import static org.apache.logging.log4j.CloseableThreadContext.put;
 
 import com.dell.spt.base.metrics.range.RangeReadSnapshot;
 import com.dell.spt.base.metrics.range.RangeReadArtifact;
+import com.dell.spt.base.nic.NicPathsArtifact;
+import com.dell.spt.base.nic.NicSetArtifact;
 import com.dell.spt.base.load.lifecycle.OperationLifecycleCounters;
 import com.dell.spt.base.env.Extension;
+import com.dell.spt.base.control.run.RunTerminalException;
 import com.dell.spt.base.integrity.IntegrityTerminalException;
 import com.dell.spt.base.item.op.OpType;
 import com.dell.spt.base.item.op.deletion.DeleteObjectLifecycleSnapshot;
@@ -17,12 +20,28 @@ import com.dell.spt.base.load.lifecycle.OperationLifecycleArtifact;
 import com.dell.spt.base.load.step.DurationAwaitStatus;
 import com.dell.spt.base.load.step.DurationTime;
 import com.dell.spt.base.load.step.LoadStepBase;
+import com.dell.spt.base.load.step.PreparationStatus;
+import com.dell.spt.base.storage.driver.AdmissionPhase;
 import com.dell.spt.base.load.step.local.context.LoadStepContext;
+import com.dell.spt.base.load.step.local.context.LoadStepContextImpl;
 import com.dell.spt.base.logging.LogUtil;
 import com.dell.spt.base.logging.Loggers;
 import com.dell.spt.base.metrics.MetricsManager;
 import com.dell.spt.base.metrics.MetricsConstants;
+import com.dell.spt.base.metrics.bucket.BucketContextReply;
+import com.dell.spt.base.metrics.bucket.BucketMeters;
+import com.dell.spt.base.metrics.bucket.BucketMetricsRange;
+import com.dell.spt.base.metrics.bucket.BucketMetricsReply;
+import com.dell.spt.base.metrics.bucket.BucketSteadyOutcome;
+import com.dell.spt.base.metrics.bucket.BucketMetricsBudget;
+import com.dell.spt.base.metrics.bucket.BucketRecorder;
+import com.dell.spt.base.metrics.bucket.BucketStepFence;
+import com.dell.spt.base.metrics.context.MetricsContext;
+import com.dell.spt.base.storage.driver.bucket.TargetBucketSet;
 import com.dell.spt.base.metrics.context.MetricsContextImpl;
+import com.dell.spt.base.metrics.snapshot.AllMetricsSnapshot;
+import com.dell.spt.base.metrics.steady.SteadyResult;
+import com.dell.spt.base.metrics.steady.SteadySettings;
 import com.github.akurilov.commons.system.SizeInBytes;
 import com.github.akurilov.confuse.Config;
 import java.util.UUID;
@@ -30,6 +49,9 @@ import java.io.IOException;
 import java.rmi.RemoteException;
 import java.util.NoSuchElementException;
 import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.IdentityHashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.Objects;
 import java.util.OptionalLong;
@@ -45,6 +67,15 @@ import org.apache.logging.log4j.Level;
 
 public abstract class LoadStepLocalBase extends LoadStepBase {
 
+	private static final String BUCKET_METRICS_ENABLED = "output-metrics-bucket-enabled";
+	private static final String METRICS_SUMMARY_PERSIST = "output-metrics-summary-persist";
+
+	private final List<BucketMeters> bucketMeters = new ArrayList<>();
+	private final List<BucketContext> bucketContexts = new ArrayList<>();
+	private BucketMetricsReply bucketMetricsReply;
+	private volatile BucketStepFence bucketFence;
+	private long bucketMeterSets;
+
 	private static final long STEP_CONTEXT_POLL_NANOS = 10_000_000L; // 10ms
 
 	protected final List<LoadStepContext> stepContexts = new ArrayList<>();
@@ -52,6 +83,9 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 	private List<LoadStepContext> expectedOperationLifecycleContexts = List.of();
 	private String operationLifecycleWorkerId;
 	private boolean operationLifecyclePublished;
+	private boolean nicPathsPublished;
+	private volatile StepPreparation preparation;
+	private volatile Thread preparationDeadlineGuard;
 	private volatile IntegrityTerminalException durationStopFailure;
 	private volatile IntegrityTerminalException durationValidityFailure;
 	private volatile boolean durationAdmissionBarrierSatisfied;
@@ -147,10 +181,15 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 
 	@Override
 	protected void doStartWrapped() {
+		// A step that runs again reads its meters afresh.
+		synchronized (this) {
+			bucketMetricsReply = null;
+		}
 		resetDurationLifecycleForStart();
 		expectedOperationLifecycleContexts = List.copyOf(stepContexts);
 		operationLifecycleWorkerId = UUID.randomUUID().toString();
 		operationLifecyclePublished = false;
+		nicPathsPublished = false;
 		if (standaloneDeleteEnabled()) {
 			expectedDeleteObjectLifecycleContexts = List.copyOf(stepContexts);
 		}
@@ -161,6 +200,10 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 				}
 			}
 		}
+		final StepPreparation barrier = preparation;
+		if (barrier != null) {
+			stepContexts.forEach(LoadStepContext::holdForAdmissionBarrier);
+		}
 		boolean anyStarted = false;
 		final var iterator = stepContexts.iterator();
 		while (iterator.hasNext()) {
@@ -169,22 +212,179 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 				stepCtx.start();
 				anyStarted = true;
 			} catch (final IllegalStateException e) {
-				final var terminal = IntegrityTerminalException.find(e);
+				final var terminal = RunTerminalException.find(e);
 				if (terminal != null) {
 					throw terminal;
 				}
-				LogUtil.exception(
-								Level.WARN, e, "{}: failed to start the load step context \"{}\"", loadStepId(), stepCtx);
-				iterator.remove();
+				throw contextStartFailure(stepCtx, e);
 			} catch (final RemoteException e) {
-				LogUtil.exception(
-								Level.WARN, e, "{}: failed to start the load step context \"{}\"", loadStepId(), stepCtx);
-				iterator.remove();
+				throw contextStartFailure(stepCtx, e);
 			}
 		}
 		if (!anyStarted) {
 			throw new IllegalStateException(loadStepId() + ": failed to start any load step contexts");
 		}
+		if (barrier != null) {
+			startPreparationThread(barrier);
+		}
+	}
+
+	/** The contexts left would run less of the load than was asked for, under the same numbers. */
+	private RunTerminalException contextStartFailure(final LoadStepContext stepCtx, final Exception cause) {
+		LogUtil.exception(
+						Level.WARN, cause, "{}: failed to start the load step context \"{}\"", loadStepId(), stepCtx);
+		return new RunTerminalException(
+						IntegrityTerminalException.Category.EXECUTION,
+						loadStepId(),
+						"failed to start a load step context; see the engine log",
+						cause);
+	}
+
+	@Override
+	protected final boolean loadIntervalDeferred() {
+		return preparation != null;
+	}
+
+	@Override
+	public final synchronized void startPreparation(final long preparationId, final long budgetNanos) {
+		final var barrier = new StepPreparation(preparationId, budgetNanos, System.nanoTime());
+		preparation = barrier;
+		// The deadline runs from here: an Entry Node that dies before start() still leaves it fenced.
+		final String stepId = safeStepIdForPreparation();
+		preparationDeadlineGuard = Thread.ofPlatform().daemon().name("spt-preparation-deadline-" + stepId).start(() -> {
+			try {
+				final long remaining = barrier.deadlineNanos() - System.nanoTime();
+				if (remaining > 0) {
+					TimeUnit.NANOSECONDS.sleep(remaining);
+				}
+				fence(barrier, PreparationStatus.DEADLINE_MESSAGE);
+			} catch (final InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+		});
+	}
+
+	@Override
+	public final PreparationStatus preparationStatus(final long preparationId) {
+		final StepPreparation barrier = preparation;
+		if (barrier == null || barrier.id() != preparationId) {
+			return new PreparationStatus(PreparationStatus.State.FENCED, "", "a stale preparation", 0);
+		}
+		return barrier.status(System.nanoTime());
+	}
+
+	@Override
+	public final synchronized boolean releasePreparedAdmission(final long preparationId) {
+		final StepPreparation barrier = preparation;
+		if (barrier == null || barrier.id() != preparationId) {
+			return false;
+		}
+		if (barrier.released()) {
+			return true;
+		}
+		if (!barrier.release(System.nanoTime())) {
+			return false;
+		}
+		preparationDeadlineGuard.interrupt();
+		startLoadInterval();
+		stepContexts.forEach(LoadStepContext::releaseAdmissionBarrier);
+		return true;
+	}
+
+	@Override
+	public final void fencePreparation(final long preparationId) {
+		final StepPreparation barrier = preparation;
+		if (barrier != null && barrier.id() == preparationId) {
+			// Another slice failed to release, so this step failed even if this slice had opened.
+			barrier.markStepFailed();
+			fence(barrier, "the entry node stopped the preparation");
+		}
+	}
+
+	/**
+	 * Fences the preparation and stops the contexts on a thread of their own: a driver blocked in its
+	 * start, such as in a DNS lookup, holds its lifecycle lock, and the caller may be an RMI call.
+	 */
+	private void fence(final StepPreparation barrier, final String why) {
+		// The monitor makes this atomic with a release: one in progress finishes first, and then this
+		// fence does nothing and the caller's own stop handles what the release opened.
+		synchronized (this) {
+			if (!barrier.markFenced(why, System.nanoTime())) {
+				return;
+			}
+		}
+		final String stepId = safeStepIdForPreparation();
+		Loggers.MSG.info("{}: preparation fenced: {}", stepId, why);
+		final Thread guard = preparationDeadlineGuard;
+		if (guard != null && guard != Thread.currentThread()) {
+			guard.interrupt();
+		}
+		stopContextsOfFence(stepId, barrier);
+	}
+
+	/** On a thread of its own: neither a driver's fence action nor a stuck context holds up the caller. */
+	private void stopContextsOfFence(final String stepId, final StepPreparation barrier) {
+		final var contexts = List.copyOf(stepContexts);
+		Thread.ofPlatform().daemon().name("spt-preparation-fence-" + stepId).start(() -> {
+			try {
+				dropBucketMetricsOfFence(contexts);
+			} catch (final RuntimeException e) {
+				LogUtil.exception(Level.WARN, e, "{}: failed to free a fenced step's bucket meters", stepId);
+			}
+			barrier.runFenceActions();
+			for (final LoadStepContext stepContext : contexts) {
+				try {
+					stepContext.stop();
+				} catch (final Exception e) {
+					LogUtil.exception(Level.WARN, e, "{}: failed to stop a fenced context", stepId);
+				}
+			}
+		});
+	}
+
+	private String safeStepIdForPreparation() {
+		return config.stringVal("load-step-id");
+	}
+
+	private void startPreparationThread(final StepPreparation barrier) {
+		final String stepId = safeStepIdForPreparation();
+		// A fence that came before the contexts existed could not stop them. One that comes after this
+		// check sees them, as they were added before it.
+		if (barrier.fenced()) {
+			stopContextsOfFence(stepId, barrier);
+			return;
+		}
+		final Thread preparing = Thread.ofPlatform().daemon().name("spt-preparation-" + stepId).unstarted(() -> {
+			try (final var logCtx = put(KEY_STEP_ID, stepId).put(KEY_CLASS_NAME, getClass().getSimpleName())) {
+				AdmissionPhase.current(barrier);
+				for (final LoadStepContext stepContext : List.copyOf(stepContexts)) {
+					if (barrier.fenced()) {
+						return;
+					}
+					stepContext.prepareForAdmission(barrier);
+				}
+				barrier.ready(System.nanoTime());
+			} catch (final Throwable failure) {
+				final String message = preparationFailureMessage(failure);
+				if (barrier.fenced()) {
+					// A fence interrupts blocked work; that is not a failure of its own.
+					Loggers.MSG.debug("{}: preparation ended by its fence: {}", stepId, message);
+				} else {
+					Loggers.ERR.error("{}: preparation failed: {}", stepId, message);
+					barrier.fail(message, System.nanoTime());
+				}
+			} finally {
+				AdmissionPhase.current(null);
+			}
+		});
+		barrier.onFence(preparing::interrupt);
+		preparing.start();
+	}
+
+	private static String preparationFailureMessage(final Throwable failure) {
+		final RunTerminalException terminal = RunTerminalException.find(failure);
+		final Throwable source = terminal != null ? terminal : failure;
+		return source.getMessage() != null ? source.getMessage() : source.toString();
 	}
 
 	@Override
@@ -369,6 +569,145 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 		cancelDurationDrainDeadlineGuard();
 	}
 
+	/**
+	 * Builds the bucket meters of one step context, in one block before its load starts: for its
+	 * primary metrics context and, in a mixed step, each per-type context.
+	 *
+	 * @param config the context's configuration
+	 * @param primary the context's primary metrics context
+	 * @param byOpType its per-type metrics contexts, or null when it has none
+	 * @return the recorder for the context's results, or null when bucket metrics are off for it: a
+	 *     step with one target bucket, the off switch, or a step already fenced
+	 */
+	protected final synchronized BucketRecorder initBucketMetrics(
+					final Config config,
+					final MetricsContext primary,
+					final Map<OpType, MetricsContext> byOpType) {
+		// Under the monitor, either this sees the fence or the fence's drop sees this step's lists. A
+		// context not yet in stepContexts keeps its recorder until the second drop in doStartWrapped.
+		final StepPreparation barrier = preparation;
+		if (barrier != null && barrier.fenced()) {
+			return null;
+		}
+		// A phase that persists no totals, such as a seed, has no files for these to go beside.
+		if (TargetBucketSet.count(config) <= 1
+						|| !config.boolVal(BUCKET_METRICS_ENABLED)
+						|| !config.boolVal(METRICS_SUMMARY_PERSIST)) {
+			return null;
+		}
+		final List<String> members = TargetBucketSet.memberNames(config);
+		final int contexts = byOpType == null || byOpType.isEmpty() ? 1 : byOpType.size();
+		bucketMeterSets += contexts * (members.size() + 1L);
+		BucketMetricsBudget.check(bucketMeterSets, Runtime.getRuntime().maxMemory());
+		final IdentityHashMap<MetricsContext, BucketMeters> metersOfContext = new IdentityHashMap<>();
+		final BucketMeters primaryMeters = new BucketMeters(primary.opType(), members);
+		metersOfContext.put(primary, primaryMeters);
+		final Map<OpType, BucketMeters> metersOfType = new EnumMap<>(OpType.class);
+		if (byOpType != null) {
+			byOpType.forEach((type, context) -> metersOfType.put(
+							type, metersOfContext.computeIfAbsent(context, c -> new BucketMeters(c.opType(), members))));
+		}
+		bucketMeters.addAll(metersOfContext.values());
+		final List<BucketStepFence.ContextCuts> ownCuts = new ArrayList<>(metersOfContext.size());
+		metersOfContext.forEach((context, meters) -> {
+			if (bucketFence == null) {
+				bucketFence = new BucketStepFence(loadStepId());
+			}
+			final BucketStepFence.ContextCuts cuts = bucketFence.register(meters);
+			final boolean measuresWindow = context.steadyWindowListener(cuts);
+			if (measuresWindow) {
+				ownCuts.add(cuts);
+			}
+			bucketContexts.add(new BucketContext(context, meters, cuts, measuresWindow, members));
+		});
+		final BucketStepFence fence = bucketFence;
+		return new BucketRecorder(members, primaryMeters, metersOfType, () -> fence.await(ownCuts));
+	}
+
+	private record BucketContext(
+					MetricsContext context,
+					BucketMeters meters,
+					BucketStepFence.ContextCuts cuts,
+					boolean measuresWindow,
+					List<String> members) {}
+
+	/**
+	 * Reads the quiescent meters once, encoding each set before reading the next, and holds the
+	 * result until this step closes.
+	 */
+	@Override
+	public final synchronized BucketMetricsReply bucketMetrics(final BucketMetricsRange range) {
+		if (bucketContexts.isEmpty()) {
+			return null;
+		}
+		if (bucketMetricsReply == null) {
+			if (bucketFence != null) {
+				bucketFence.await();
+			}
+			final List<BucketContextReply> replies = new ArrayList<>(bucketContexts.size());
+			for (final BucketContext context : bucketContexts) {
+				final BucketSteadyOutcome outcome = context.measuresWindow() ? context.cuts().outcome() : null;
+				final SteadyResult aggregateWindow = context.context().steadyResult();
+				final AllMetricsSnapshot lastSnapshot = context.context().lastSnapshot();
+				replies.add(new BucketContextReply(
+								metricsContexts.indexOf(context.context()),
+								context.meters().opType(),
+								lastSnapshot == null ? 0L : lastSnapshot.elapsedTimeMillis(),
+								aggregateWindow == null ? SteadyResult.NONE : aggregateWindow.startOffsetMillis(),
+								context.members(),
+								context.meters().terminalRecords(),
+								context.measuresWindow() && outcome == null
+												? BucketSteadyOutcome.unmeasured("the bucket window never closed")
+												: outcome));
+			}
+			bucketMetricsReply = new BucketMetricsReply(loadStepId(), UUID.randomUUID().toString(), replies);
+		}
+		return range == null || BucketMetricsRange.ALL.equals(range)
+						? bucketMetricsReply
+						: bucketMetricsReply.within(range);
+	}
+
+	/**
+	 * A fence means nothing was admitted, so the meters hold nothing, and the close that would free them
+	 * may never come: a worker fences itself when its entry node is gone, and the next step replaces this
+	 * one without closing it. First, so that a stuck fence action or context doesn't keep them.
+	 */
+	private synchronized void dropBucketMetricsOfFence(final List<LoadStepContext> contexts) {
+		for (final BucketContext context : bucketContexts) {
+			context.context().steadyWindowListener(null);
+		}
+		for (final LoadStepContext context : contexts) {
+			if (context instanceof LoadStepContextImpl<?, ?> impl) {
+				impl.bucketRecorder(null);
+			}
+		}
+		releaseBucketMetrics();
+	}
+
+	/** A worker holds its bucket data until its step closes: a closed service can outlive its step. */
+	private synchronized void releaseBucketMetrics() {
+		if (bucketFence != null) {
+			bucketFence.close();
+			bucketFence = null;
+		}
+		bucketContexts.clear();
+		bucketMeters.clear();
+		bucketMetricsReply = null;
+	}
+
+	@Override
+	protected final void afterSteadyWindowsClosed() {
+		final BucketStepFence fence = bucketFence;
+		if (fence != null) {
+			fence.await();
+		}
+	}
+
+	/** The bucket meters this step built, which are empty when bucket metrics are off. */
+	protected final List<BucketMeters> bucketMeters() {
+		return List.copyOf(bucketMeters);
+	}
+
 	@Override
 	protected final void initMetrics(
 					final int originIndex,
@@ -389,6 +728,7 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 						.stdOutColorFlag(outputColorFlag)
 						.comment(config.stringVal("run-comment"))
 						.runId(runId())
+						.steadySettings(SteadySettings.fromMetricsConfig(metricsConfig))
 						.build();
 
 		// enrich metadata with limits so /metrics/json can compute completion on workers
@@ -440,6 +780,11 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 
 	@Override
 	protected final void doShutdown() {
+		final StepPreparation barrier = preparation;
+		if (barrier != null) {
+			fence(barrier, "the step stopped during preparation");
+		}
+		closeSteadyWindows("shutdown");
 		if (standaloneDeleteDurationMode()) {
 			prepareDurationStop();
 			if (durationAdmissionBarrierSatisfied && durationStopFailure == null) {
@@ -491,6 +836,7 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 							if (standaloneDeleteDurationMode()) {
 								throw standaloneDeleteEarlyExhaustionFailure();
 							}
+							contextDone(stepCtx);
 							stepContextsCopy[i] = null; // exclude
 							countDown--;
 							break;
@@ -515,6 +861,12 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 
 		return 0 == countDown;
 	}
+
+	/**
+	 * Called by {@link #await(long, TimeUnit)} each time it finds {@code context} done, before the
+	 * step stops its contexts. Does nothing by default.
+	 */
+	protected void contextDone(final LoadStepContext context) {}
 
 	private boolean awaitDurationContexts(final long timeout, final TimeUnit timeUnit) {
 		final boolean pollBounded = timeout > 0;
@@ -635,8 +987,10 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 
 	@Override
 	protected final void doStop() {
+		var contextsStopped = true;
 		if (standaloneDeleteDurationMode()) {
-			if (durationAdmissionBarrierSatisfied && durationStopFailure == null) {
+			contextsStopped = durationAdmissionBarrierSatisfied && durationStopFailure == null;
+			if (contextsStopped) {
 				captureDurationStopFailure(
 								"stop contexts",
 								() -> invokeDurationContextPhase("stop", context -> context.stop()));
@@ -644,8 +998,52 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 		} else {
 			stepContexts.forEach(LoadStepContext::stop);
 		}
+		if (contextsStopped) {
+			// Otherwise close stops the contexts and publishes.
+			publishNicPaths();
+		}
 		publishOperationLifecycle();
 		super.doStop();
+	}
+
+	/**
+	 * Writes the step's per-path CSV and NIC-set report once, when an expected context has a NIC
+	 * set: after the contexts stopped, or at close for a step whose start failed. A context without
+	 * its rows is named missing in the CSV. A failure to write either file warns; they are evidence,
+	 * not a step outcome.
+	 */
+	private void publishNicPaths() {
+		if (nicPathsPublished) {
+			return;
+		}
+		nicPathsPublished = true;
+		final var paths = new ArrayList<NicPathsArtifact.Context>();
+		final var sets = new ArrayList<NicSetArtifact.Context>();
+		var contextsWithoutNicSet = 0;
+		for (var i = 0; i < expectedOperationLifecycleContexts.size(); i++) {
+			final var context = expectedOperationLifecycleContexts.get(i);
+			if (context != null && context.hasNicSet()) {
+				paths.add(new NicPathsArtifact.Context(i, context.nicPathRows()));
+				sets.add(new NicSetArtifact.Context(i, context.nicSetResources()));
+			} else if (context != null) {
+				contextsWithoutNicSet++;
+			}
+		}
+		if (paths.isEmpty()) {
+			return;
+		}
+		try (final var logContext = put(KEY_STEP_ID, loadStepId())) {
+			final StepPreparation barrier = preparation;
+			NicPathsArtifact.publish(
+							runId(), loadStepId(), operationLifecycleWorkerId, paths, barrier == null || barrier.admitted());
+		} catch (final RuntimeException e) {
+			LogUtil.exception(Level.WARN, e, "{}: failed to write the NIC paths file", loadStepId());
+		}
+		try (final var logContext = put(KEY_STEP_ID, loadStepId())) {
+			NicSetArtifact.publish(runId(), loadStepId(), operationLifecycleWorkerId, sets, contextsWithoutNicSet);
+		} catch (final RuntimeException e) {
+			LogUtil.exception(Level.WARN, e, "{}: failed to write the NIC set file", loadStepId());
+		}
 	}
 
 	private void publishOperationLifecycle() {
@@ -704,6 +1102,7 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 
 	@Override
 	public final void closeOperationAdmissionForStepStop() {
+		closeSteadyWindows("close operation admission");
 		synchronized (durationAdmissionClose) {
 			if (durationAdmissionClosedLocally) {
 				return;
@@ -730,6 +1129,7 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 	@Override
 	public final void enforceDispatchedOperationsDeadlineForStepStop(
 					final long remainingNanos) {
+		closeSteadyWindows("dispatched operations deadline");
 		final long selectedDeadlineNanos;
 		synchronized (this) {
 			final long observedNanos = System.nanoTime();
@@ -764,6 +1164,7 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 
 	@Override
 	public final void recoverQueuedOperationsForStepStop() {
+		closeSteadyWindows("recover queued operations");
 		invokeDurationContextPhase(
 						"recover queued operations",
 						LoadStepContext::recoverQueuedOperationsForStepStop);
@@ -771,6 +1172,7 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 
 	@Override
 	public final void drainDispatchedOperationsForStepStop(final long remainingNanos) {
+		closeSteadyWindows("drain dispatched operations");
 		final long requestedDeadlineNanos = durationDeadlineNanos(remainingNanos);
 		final long workerDeadlineNanos = durationDrainDeadlineNanos;
 		final long drainDeadlineNanos = !durationDrainDeadlineSet
@@ -788,9 +1190,24 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 
 	@Override
 	public final synchronized void validateTerminalStateForStepStop() {
+		closeSteadyWindows("validate terminal state");
 		durationTerminalValidationDelegated = true;
 		invokeDurationContextPhase(
 						"validate terminal state", LoadStepContext::validateTerminalState);
+		if (durationInventoryRanOut()) {
+			// Even when a poll found it: a controller can hold a verdict read before that.
+			durationAwaitStatus = DurationAwaitStatus.EXHAUSTED_BEFORE_DEADLINE;
+			throw standaloneDeleteEarlyExhaustionFailure();
+		}
+	}
+
+	private boolean durationInventoryRanOut() {
+		for (final LoadStepContext context : List.copyOf(stepContexts)) {
+			if (context != null && context.durationInventoryRanOut()) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	@Override
@@ -819,6 +1236,7 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 
 	@Override
 	public final synchronized void verifyDeleteInventoryForStepStop() {
+		closeSteadyWindows("verify delete inventory");
 		if (deletePostVerificationTask == null) {
 			deletePostVerificationTask = startDeleteInventoryPhase(
 							"post-verification", LoadStepContext::verifyDeleteInventoryAfterDrain);
@@ -924,6 +1342,12 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 		try {
 			invokeDurationContextPhase(
 							"validate terminal state", LoadStepContext::validateTerminalState);
+			// await has already reported an exhaustion a poll found.
+			if (durationAwaitStatus != DurationAwaitStatus.EXHAUSTED_BEFORE_DEADLINE
+							&& durationInventoryRanOut()) {
+				durationAwaitStatus = DurationAwaitStatus.EXHAUSTED_BEFORE_DEADLINE;
+				durationValidityFailure = standaloneDeleteEarlyExhaustionFailure();
+			}
 		} catch (final RuntimeException cause) {
 			durationValidityFailure = appendTerminalFailure(
 							durationValidityFailure,
@@ -1021,8 +1445,13 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 
 	@Override
 	protected final void doClose() throws IOException {
+		releaseBucketMetrics();
 		if (standaloneDeleteDurationMode()) {
-			closeDurationContexts();
+			try {
+				closeDurationContexts();
+			} finally {
+				publishNicPaths();
+			}
 			return;
 		}
 		super.doClose();
@@ -1041,6 +1470,7 @@ public abstract class LoadStepLocalBase extends LoadStepBase {
 																stepCtx.toString());
 											}
 										});
+		publishNicPaths();
 		RuntimeException terminalFailure = null;
 		for (final var stepContext : stepContexts) {
 			try {

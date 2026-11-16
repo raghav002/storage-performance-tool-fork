@@ -26,6 +26,9 @@ const (
 	keyWorkloadType      = "workload_type"
 	keySourceFile        = "source_file"
 	keyIntervalIOPS      = "interval_iops"
+	keyStopRequested     = "stop_requested"
+	keyStopRequestedAt   = "stop_requested_at"
+	keyCanStop           = "can_stop"
 
 	metricBandwidth  = "bandwidth_mib_s"
 	metricP50Latency = "p50_latency_us"
@@ -77,6 +80,13 @@ const (
 	sptP99Latency = "latency_p99_us"
 	// sourceDashboard is the --label of every dashboard run.
 	sourceDashboard = "dashboard"
+
+	// Per-node live status values and warning source labels.
+	nodeStatusReporting   = "reporting"
+	nodeStatusUnavailable = "unavailable"
+	sourceNodeMetrics     = "node_metrics"
+	sourceLiveMetrics     = "live_metrics"
+	sourceFleetMetrics    = "fleet_metrics"
 
 	flagRegressed = "regressed"
 	flagWithin    = "within"

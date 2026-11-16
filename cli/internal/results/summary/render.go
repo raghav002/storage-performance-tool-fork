@@ -27,13 +27,17 @@ type RenderOptions struct {
 
 const (
 	defaultMaxWidth       = 100
-	defaultSnippetLineCap = 40
+	defaultSnippetLineCap = 48 // room for both performance tables
 	headerIOPSAvg         = "IOPS Avg"
+	headerIOPSSteady      = "IOPS Steady"
+	headerRateAvg         = "Rate Avg"
+	headerRateSteady      = "Rate Steady"
 	notApplicableCell     = "—"
 	objectSizeDiscovered  = "discovered at runtime"
 	headerLatencyP50      = "Latency P50"
 	headerTTFBP50         = "TTFB P50"
 	headerBandwidthAvg    = "Bandwidth Avg"
+	headerBandwidthSteady = "Bandwidth Steady"
 	successObjectsLabel   = "object identities"
 	successRequestsLabel  = "logical API requests"
 )
@@ -69,9 +73,11 @@ func (r *Renderer) FullReport(summary *RunSummary) string {
 	}
 	r.renderWorkload(b, summary)
 	r.renderPerformance(b, summary)
+	r.renderRDMADataPath(b, summary, 0)
 	r.renderDeleteDetails(b, summary)
 	r.renderIntegrity(b, summary)
 	r.renderRangeRead(b, summary)
+	r.renderNicPaths(b, summary, 0)
 	r.renderMixedBreakdowns(b, summary)
 	r.renderTotals(b, summary)
 	r.renderArtifactsAndWarnings(b, summary)
@@ -205,8 +211,10 @@ func (r *Renderer) CompactSnippet(summary *RunSummary) string {
 	sb.WriteString("Performance by Phase\n")
 	sb.WriteString(r.performanceTable(summary))
 	sb.WriteByte('\n')
+	r.renderRDMADataPath(sb, summary, wrapWidth)
 	r.renderIntegrity(sb, summary)
 	r.renderRangeRead(sb, summary)
+	r.renderNicPaths(sb, summary, wrapWidth)
 	r.renderCompactMixedBreakdowns(sb, summary)
 	fmt.Fprintf(sb, "Totals: duration %s, data moved %s\n", summary.Totals.DurationHuman, formatBytesHuman(summary.Totals.DataBytes))
 	if len(summary.Warnings) > 0 {
@@ -429,7 +437,18 @@ func (r *Renderer) renderWorkload(b *strings.Builder, summary *RunSummary) {
 	if len(work.Endpoints) > 0 {
 		r.writeBullet(b, "Endpoints", strings.Join(work.Endpoints, ", "))
 	}
-	if work.Bucket != "" {
+	if len(work.Interfaces) > 0 {
+		r.writeBullet(b, "Interfaces", strings.Join(work.Interfaces, ","))
+	}
+	if work.HostInterfaces != "" {
+		r.writeBullet(b, "Host interfaces", work.HostInterfaces)
+	}
+	if len(work.Interfaces) > 0 || work.HostInterfaces != "" {
+		r.writeBullet(b, "Event loops", work.EventLoops)
+	}
+	if n := len(work.BucketSet); n > 1 {
+		r.writeBullet(b, "Buckets", fmt.Sprintf("%d (%s ... %s)", n, work.BucketSet[0], work.BucketSet[n-1]))
+	} else if work.Bucket != "" {
 		r.writeBullet(b, "Bucket", work.Bucket)
 	}
 	if isList {
@@ -496,11 +515,15 @@ func (r *Renderer) renderIntegrity(b *strings.Builder, summary *RunSummary) {
 	b.WriteString("\n")
 }
 
+// performanceTable renders the rate table, which keeps each steady rate beside its whole-step
+// Avg, and below it the phase table. Two tables keep the section within the default width.
 func (r *Renderer) performanceTable(summary *RunSummary) string {
-	headers := []string{"Phase", "Object Size", "Success", "Data Moved", headerIOPSAvg, headerLatencyP50, headerTTFBP50, headerBandwidthAvg}
-	if hasListStep(summary) {
-		headers[4] = "Rate Avg"
-	}
+	return r.rateTable(summary) + "\n" + r.phaseTable(summary)
+}
+
+func (r *Renderer) phaseTable(summary *RunSummary) string {
+	// Failed stays last: tools read Success beside Data Moved, and Success as the third column.
+	headers := []string{"Phase", "Object Size", "Success", "Data Moved", headerLatencyP50, headerTTFBP50, "Failed"}
 	rows := make([][]string, 0, len(summary.Steps))
 	for _, step := range summary.Steps {
 		if step.Metrics == nil {
@@ -509,34 +532,74 @@ func (r *Renderer) performanceTable(summary *RunSummary) string {
 		m := step.Metrics
 		sizeCell := nonEmpty(m.ObjectSizeHuman, summary.Workload.ObjectSizeHuman)
 		dataCell := formatBytesHuman(m.DataBytes)
-		bandwidthCell := formatNumber(m.BandwidthAvgMiBps, constants.UnitMiBPerSecond)
-		rateCell := formatNumber(m.ThroughputAvgOps, "ops/s")
-		if strings.EqualFold(step.Operation, workloadTypeList) {
-			sizeCell, dataCell, bandwidthCell = notApplicableCell, notApplicableCell, notApplicableCell
-			rateCell = formatNumber(m.ThroughputAvgOps, "objects/s")
-		}
-		if strings.EqualFold(step.Operation, "DELETE") {
-			sizeCell, dataCell, bandwidthCell = notApplicableCell, notApplicableCell, notApplicableCell
+		if strings.EqualFold(step.Operation, workloadTypeList) || strings.EqualFold(step.Operation, "DELETE") {
+			sizeCell, dataCell = notApplicableCell, notApplicableCell
 		}
 		if strings.TrimSpace(sizeCell) == "" {
 			sizeCell = notApplicableCell
 		}
-		row := []string{
+		rows = append(rows, []string{
 			step.PhaseLabel,
 			sizeCell,
 			formatSuccessCount(m.SuccessCount, step.SuccessUnit),
 			dataCell,
-			rateCell,
 			mixedLatencyCell(step, m),
 			mixedTTFBCell(step, m),
-			bandwidthCell,
-		}
-		rows = append(rows, row)
+			formatInt(m.FailureCount),
+		})
 	}
 	if len(rows) == 0 {
-		rows = append(rows, []string{notApplicableCell, notApplicableCell, notApplicableCell, notApplicableCell, notApplicableCell, notApplicableCell, notApplicableCell, notApplicableCell})
+		rows = append(rows, notApplicableRow(len(headers)))
 	}
-	return renderUnicodeTable(headers, rows, []Alignment{AlignLeft, AlignLeft, AlignRight, AlignRight, AlignRight, AlignRight, AlignRight, AlignRight})
+	return renderUnicodeTable(headers, rows, []Alignment{AlignLeft, AlignLeft, AlignRight, AlignRight, AlignRight, AlignRight, AlignRight})
+}
+
+func (r *Renderer) rateTable(summary *RunSummary) string {
+	headers := []string{"Phase", headerIOPSAvg, headerIOPSSteady, headerBandwidthAvg, headerBandwidthSteady}
+	if hasListStep(summary) {
+		headers[1], headers[2] = headerRateAvg, headerRateSteady
+	}
+	rows := make([][]string, 0, len(summary.Steps))
+	for _, step := range summary.Steps {
+		if step.Metrics == nil {
+			continue
+		}
+		m := step.Metrics
+		rateUnit := "ops/s"
+		rateCell := formatNumber(m.ThroughputAvgOps, rateUnit)
+		steadyRateCell := formatSteadyCell(m.Steady, m.Steady.ThroughputOps, rateUnit)
+		bandwidthCell := formatNumber(m.BandwidthAvgMiBps, constants.UnitMiBPerSecond)
+		steadyBandwidthCell := formatSteadyCell(m.Steady, m.Steady.BandwidthMiBps, constants.UnitMiBPerSecond)
+		if strings.EqualFold(step.Operation, workloadTypeList) {
+			// A LIST Avg rate can be normalized to canonical selections, which have no steady window.
+			rateCell = formatNumber(m.ThroughputAvgOps, "objects/s")
+			steadyRateCell, bandwidthCell, steadyBandwidthCell = notApplicableCell, notApplicableCell, notApplicableCell
+		}
+		if strings.EqualFold(step.Operation, "DELETE") {
+			bandwidthCell, steadyBandwidthCell = notApplicableCell, notApplicableCell
+		}
+		rows = append(rows, []string{step.PhaseLabel, rateCell, steadyRateCell, bandwidthCell, steadyBandwidthCell})
+	}
+	if len(rows) == 0 {
+		rows = append(rows, notApplicableRow(len(headers)))
+	}
+	return renderUnicodeTable(headers, rows, []Alignment{AlignLeft, AlignRight, AlignRight, AlignRight, AlignRight})
+}
+
+// formatSteadyCell shows a steady rate only for valid windows, and otherwise "n/a" and the reason.
+func formatSteadyCell(steady SteadyRates, value float64, unit string) string {
+	if !steady.Valid {
+		return "n/a (" + nonEmpty(steady.Reason, steadyReasonMissing) + ")"
+	}
+	return formatNumber(value, unit)
+}
+
+func notApplicableRow(columns int) []string {
+	row := make([]string, columns)
+	for i := range row {
+		row[i] = notApplicableCell
+	}
+	return row
 }
 
 func formatSuccessCount(count int64, unit string) string {
@@ -642,6 +705,9 @@ func (r *Renderer) renderTotals(b *strings.Builder, summary *RunSummary) {
 	fmt.Fprintf(b, "Run Totals\n")
 	r.writeBullet(b, "Duration", totals.DurationHuman)
 	r.writeBullet(b, "Data moved", formatBytesHuman(totals.DataBytes))
+	if totals.FailureCount > 0 {
+		r.writeBullet(b, "Failed requests", formatInt(totals.FailureCount))
+	}
 	if len(summary.MissingExpected) > 0 {
 		r.writeBullet(b, "Missing steps", strings.Join(summary.MissingExpected, ", "))
 	}
@@ -857,6 +923,14 @@ func collectIncompleteSteps(summary *RunSummary) []string {
 	for _, step := range summary.Steps {
 		if len(step.MissingRequired) > 0 {
 			out = append(out, fmt.Sprintf("%s missing required artifacts: %s", step.StepID, strings.Join(step.MissingRequired, ", ")))
+		}
+		if step.NicPaths != nil && len(step.NicPaths.Missing) > 0 {
+			out = append(out, fmt.Sprintf("%s missing NIC paths files: %s", step.StepID,
+				strings.Join(missingNicNodes(step.NicPaths.Missing, ", "), "; ")))
+		}
+		if len(step.NicSetMissing) > 0 {
+			out = append(out, fmt.Sprintf("%s missing NIC-set reports: %s", step.StepID,
+				strings.Join(missingNicNodes(step.NicSetMissing, ", "), "; ")))
 		}
 	}
 	return out

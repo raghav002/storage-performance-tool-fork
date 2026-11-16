@@ -14,11 +14,15 @@ import com.dell.spt.base.item.op.list.shard.ListShardMetricsRecorder.ShardSnapsh
 import com.dell.spt.base.item.op.list.shard.ListShardMetricsRecorder.Snapshot;
 import com.dell.spt.base.metrics.MetricsConstants;
 import com.dell.spt.base.metrics.MetricsManager;
+import com.dell.spt.base.metrics.steady.SteadyResult;
 import com.dell.spt.base.metrics.TerminalStepEntry;
 import com.dell.spt.base.metrics.context.DistributedMetricsContext;
 import com.dell.spt.base.metrics.context.MetricsContext;
 import com.dell.spt.base.metrics.snapshot.AllMetricsSnapshot;
 import com.dell.spt.base.metrics.snapshot.DeleteMetricsSnapshot;
+import com.dell.spt.base.metrics.snapshot.DistributedAllMetricsSnapshot;
+import com.dell.spt.base.metrics.snapshot.DriverStatsSnapshot;
+import com.dell.spt.base.metrics.snapshot.DriverStatsTotal;
 import com.dell.spt.base.metrics.snapshot.TimingMetricSnapshot;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -29,13 +33,14 @@ import java.net.UnknownHostException;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import com.dell.spt.base.logging.Loggers;
 
 final class MetricsJsonResponder {
 
-	private static final int METRICS_SCHEMA_VERSION = 4;
+	private static final int METRICS_SCHEMA_VERSION = 5;
 
 	private final MetricsManager metricsManager;
 	private final ObjectMapper objectMapper = new ObjectMapper();
@@ -162,7 +167,9 @@ final class MetricsJsonResponder {
 		jsonObj.put(MetricsConstants.METRIC_NAME_COMPLETION, completionPercent);
 
 		addLimitFields(jsonObj, ctx.metadata());
+		addPreparation(jsonObj, ctx.runId(), ctx.loadStepId());
 		addMetrics(jsonObj, snapshot, successCount, failCount, corruptCount, bytesTotal, latencyMean, durationMean);
+		addSteady(jsonObj, snapshot.steadyResult());
 		addDeleteDetailExpectation(jsonObj, ctx.metadata());
 		addListShardMetrics(jsonObj, ctx.metadata());
 
@@ -233,7 +240,12 @@ final class MetricsJsonResponder {
 		jsonObj.put(MetricsConstants.METRIC_NAME_COMPLETION, completionPercent);
 
 		addLimitFields(jsonObj, ctx.metadata());
+		addPreparation(jsonObj, ctx.runId(), ctx.loadStepId());
 		addMetrics(jsonObj, snapshot, successCount, failCount, corruptCount, bytesTotal, latencyMean, durationMean);
+		addSteady(jsonObj, snapshot.steadyResult());
+		if (snapshot instanceof DistributedAllMetricsSnapshot fleet) {
+			addDriverStatsTotal(jsonObj, fleet.driverStatsTotal());
+		}
 		addDeleteDetailExpectation(jsonObj, ctx.metadata());
 		addListShardMetrics(jsonObj, ctx.metadata());
 
@@ -329,6 +341,58 @@ final class MetricsJsonResponder {
 		concurrency.put("mean", snapshot.concurrencySnapshot().mean());
 		jsonObj.set("concurrency", concurrency);
 		addDeleteMetrics(jsonObj, snapshot.deleteMetrics(), snapshot.latencySnapshot(), snapshot.durationSnapshot());
+		addDriverStats(jsonObj, snapshot.driverStats());
+	}
+
+	/** Adds the step's preparation times; a step without an admission barrier adds no field. */
+	private void addPreparation(final ObjectNode jsonObj, final long runId, final String stepId) {
+		final Map<String, Object> preparation = metricsManager.preparation(runId, stepId);
+		if (preparation != null && !preparation.isEmpty()) {
+			jsonObj.set(MetricsConstants.METRIC_NAME_PREPARATION, objectMapper.valueToTree(preparation));
+		}
+	}
+
+	/** Adds the storage driver's own statistics; a driver that reports none adds no field. */
+	private void addDriverStats(final ObjectNode jsonObj, final DriverStatsSnapshot stats) {
+		if (stats != null) {
+			jsonObj.set(MetricsConstants.METRIC_NAME_DRIVER_STATS, driverStatsObject(stats));
+		}
+	}
+
+	/**
+	 * Adds the total of the contributors' storage driver statistics to a fleet row; no field when
+	 * no contributor reported any. Contributors that reported different drivers have no sum: the
+	 * object then names the drivers seen.
+	 */
+	private void addDriverStatsTotal(final ObjectNode jsonObj, final DriverStatsTotal total) {
+		if (total == null) {
+			return;
+		}
+		final ObjectNode driverStats;
+		if (total.sum() == null) {
+			driverStats = objectMapper.createObjectNode();
+			driverStats.put("partial", total.partial());
+			final ArrayNode drivers = objectMapper.createArrayNode();
+			total.drivers().forEach(drivers::add);
+			driverStats.set("drivers", drivers);
+		} else {
+			driverStats = driverStatsObject(total.sum());
+			driverStats.put("reporting", total.reporting());
+			driverStats.put("partial", total.partial());
+		}
+		jsonObj.set(MetricsConstants.METRIC_NAME_DRIVER_STATS, driverStats);
+	}
+
+	private ObjectNode driverStatsObject(final DriverStatsSnapshot stats) {
+		final ObjectNode driverStats = objectMapper.createObjectNode();
+		driverStats.put("driver", stats.driver());
+		final ObjectNode counters = objectMapper.createObjectNode();
+		stats.counters().forEach(counters::put);
+		driverStats.set("counters", counters);
+		final ObjectNode gauges = objectMapper.createObjectNode();
+		stats.gauges().forEach(gauges::put);
+		driverStats.set("gauges", gauges);
+		return driverStats;
 	}
 
 	private static void addDeleteDetailExpectation(
@@ -537,6 +601,58 @@ final class MetricsJsonResponder {
 		return corruptSnapshot == null ? 0L : corruptSnapshot.count();
 	}
 
+	/**
+	 * The {@code steady} object: the Steady-State Window's status and coverage, and once it reports
+	 * statistics, the entry's counts, bytes, means, timing and concurrency over the window. Absent
+	 * while the window is open.
+	 */
+	private void addSteady(final ObjectNode jsonObj, final SteadyResult steady) {
+		if (steady == null) {
+			return;
+		}
+		final ObjectNode node = objectMapper.createObjectNode();
+		node.put("status", steady.status().label());
+		node.put("cause", steady.cause());
+		if (steady.startOffsetMillis() == SteadyResult.NONE) {
+			node.putNull("start_seconds");
+		} else {
+			node.put("start_seconds", steady.startOffsetMillis() / 1000.0);
+		}
+		node.put("duration_seconds", steady.durationNanos() / 1e9);
+		putNullable(node, "turnovers", steady.status().hasStatistics() ? steady.turnovers() : null);
+		putNullable(node, "trend_percent", steady.trendPercent());
+		putNullable(node, "cv", steady.cv());
+		putNullable(node, "start_cut_acquisition_ns", nanosOrNull(steady.startAcquisitionNanos()));
+		putNullable(node, "end_cut_acquisition_ns", nanosOrNull(steady.endAcquisitionNanos()));
+		final AllMetricsSnapshot window = steady.statistics();
+		if (window != null) {
+			addMetrics(
+							node,
+							window,
+							window.successSnapshot().count(),
+							window.failsSnapshot().count(),
+							corruptCount(window),
+							window.byteSnapshot().count(),
+							window.latencySnapshot().mean(),
+							window.durationSnapshot().mean());
+			((ObjectNode) node.get("operations")).put("success_rate_mean", window.successSnapshot().mean());
+			((ObjectNode) node.get("bandwidth")).put("bytes_rate_mean", window.byteSnapshot().mean());
+		}
+		jsonObj.set("steady", node);
+	}
+
+	private static Double nanosOrNull(final long nanos) {
+		return nanos == SteadyResult.NONE ? null : (double) nanos;
+	}
+
+	private static void putNullable(final ObjectNode node, final String field, final Double value) {
+		if (value == null) {
+			node.putNull(field);
+		} else {
+			node.put(field, value);
+		}
+	}
+
 	private ObjectNode timingObject(final TimingMetricSnapshot snapshot, final double mean) {
 		if (snapshot == null || snapshot.count() == 0) {
 			return emptyTimingObject(mean);
@@ -692,6 +808,7 @@ final class MetricsJsonResponder {
 			jsonObj.put("timestamp", entry.recordedAtMillis);
 			jsonObj.put("elapsed_time_seconds", entry.elapsedTimeMillis / 1000.0);
 			jsonObj.put("test_state", 2);
+			addPreparation(jsonObj, entry.runId, entry.stepId);
 
 			final boolean hasCountLimit = entry.countLimit > 0L;
 			final boolean hasTimeLimit = entry.timeLimitSec > 0L;
@@ -756,10 +873,12 @@ final class MetricsJsonResponder {
 							MetricsConstants.METRIC_NAME_DELETE_DETAIL_EXPECTED,
 							entry.deleteDetailsExpected);
 			addDeleteMetrics(jsonObj, entry.deleteMetrics, entry.latencySnapshot, entry.durationSnapshot);
+			addDriverStats(jsonObj, entry.driverStats);
 
 			if (verbose) {
 				jsonObj.put("diag_cached_progress", true);
 			}
+			addSteady(jsonObj, entry.steady);
 			jsonObj.put("terminal", true);
 			jsonArray.add(jsonObj);
 		}
@@ -783,6 +902,7 @@ final class MetricsJsonResponder {
 			jsonObj.put("timestamp", entry.recordedAtMillis);
 			jsonObj.put("elapsed_time_seconds", entry.elapsedTimeMillis / 1000.0);
 			jsonObj.put("test_state", 2);
+			addPreparation(jsonObj, entry.runId, entry.stepId);
 
 			final boolean hasCountLimit = entry.countLimit > 0L;
 			final boolean hasTimeLimit = entry.timeLimitSec > 0L;
@@ -845,6 +965,7 @@ final class MetricsJsonResponder {
 							MetricsConstants.METRIC_NAME_DELETE_DETAIL_EXPECTED,
 							entry.deleteDetailsExpected);
 			addDeleteMetrics(jsonObj, entry.deleteMetrics, entry.latencySnapshot, entry.durationSnapshot);
+			addDriverStatsTotal(jsonObj, entry.driverStatsTotal);
 
 			jsonObj.put("overall_completion_percent", completionPercent);
 			jsonObj.put("overall_unbounded", unbounded);
@@ -865,6 +986,7 @@ final class MetricsJsonResponder {
 			if (verbose) {
 				jsonObj.put("diag_cached_progress", true);
 			}
+			addSteady(jsonObj, entry.steady);
 			jsonObj.put("terminal", true);
 			jsonArray.add(jsonObj);
 		}

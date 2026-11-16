@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { Accordion, Button, Text, TextInput } from "@mantine/core";
+import { useState } from "react";
 import type { Row, State } from "../types";
 import { defaults } from "../config";
 import { formatNumber as fmt, numeric, phaseName } from "../utils/metrics";
@@ -10,15 +11,27 @@ type Limits = {
 };
 const noLimits: Limits = { iops: null, bandwidth: null, latency: null };
 
-export function PerformanceLimits({
-  state,
-  row,
-  phase,
-}: {
+type Props = {
   state: State;
   row?: Row;
   phase: string;
-}) {
+};
+
+function loadLimits(key: string): Limits {
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) ?? "null") ?? noLimits;
+    return {
+      iops: numeric(saved.iops),
+      bandwidth: numeric(saved.bandwidth),
+      latency: numeric(saved.latency),
+    };
+  } catch {
+    return noLimits;
+  }
+}
+
+export function PerformanceLimits(props: Props) {
+  const { state } = props;
   const o = state.job?.options ?? defaults;
   const key = [
     "spt-performance-limits-v1",
@@ -26,29 +39,27 @@ export function PerformanceLimits({
     o.object_size,
     o.threads,
   ].join(":");
-  const [limits, setLimits] = useState<Limits>(noLimits),
-    [draft, setDraft] = useState({ iops: "", bandwidth: "", latency: "" }),
+  return (
+    <Accordion mb="panel">
+      <LimitsForm key={key} {...props} storageKey={key} />
+    </Accordion>
+  );
+}
+
+function LimitsForm({
+  state,
+  row,
+  phase,
+  storageKey: key,
+}: Props & { storageKey: string }) {
+  const o = state.job?.options ?? defaults;
+  const [limits, setLimits] = useState<Limits>(() => loadLimits(key)),
+    [draft, setDraft] = useState(() => ({
+      iops: limits.iops === null ? "" : String(limits.iops),
+      bandwidth: limits.bandwidth === null ? "" : String(limits.bandwidth),
+      latency: limits.latency === null ? "" : String(limits.latency),
+    })),
     [message, setMessage] = useState("");
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(key) ?? "null") ?? noLimits;
-      const safe = {
-        iops: numeric(saved.iops),
-        bandwidth: numeric(saved.bandwidth),
-        latency: numeric(saved.latency),
-      };
-      setLimits(safe);
-      setDraft({
-        iops: safe.iops === null ? "" : String(safe.iops),
-        bandwidth: safe.bandwidth === null ? "" : String(safe.bandwidth),
-        latency: safe.latency === null ? "" : String(safe.latency),
-      });
-    } catch {
-      setLimits(noLimits);
-      setDraft({ iops: "", bandwidth: "", latency: "" });
-    }
-    setMessage("");
-  }, [key]);
   const checks = [
     {
       key: "iops" as const,
@@ -93,42 +104,51 @@ export function PerformanceLimits({
     }
   }
   return (
-    <details className="panel limits">
-      <summary>
+    <Accordion.Item value="limits">
+      <Accordion.Control>
         Performance limits{" "}
-        <span className="summary-note">
+        <span className="text-xs/[inherit] font-normal ml-sm text-muted max-[47.5rem]:block max-[47.5rem]:mt-xs max-[47.5rem]:mr-0 max-[47.5rem]:mb-0 max-[47.5rem]:ml-md">
           {phaseName(phase)} ·{" "}
           {checks.filter((c) => limits[c.key] !== null).length}/3 set
         </span>
-      </summary>
-      <p className="form-help">
-        Set your team’s expectations for {state.target.endpoint_label},{" "}
-        {o.object_size} objects, and {o.threads} thread
-        {o.threads === 1 ? "" : "s"}. These limits stay in this browser and
-        apply to the selected phase.
-      </p>
-      <div className="form-grid limits-grid">
-        {checks.map((c) => {
-          const limit = limits[c.key],
-            value = c.value;
-          const result =
-            limit === null
-              ? "No limit set"
-              : value === null
-                ? "Not measured"
-                : (c.minimum ? value >= limit : value <= limit)
-                  ? "Within limit"
-                  : "Outside limit";
-          return (
-            <label key={c.key}>
-              {c.minimum ? "Minimum" : "Maximum"} {c.label} (
-              {c.key === "iops"
-                ? "ops/s"
-                : c.key === "bandwidth"
-                  ? "MiB/s"
-                  : "µs"}
-              )
-              <input
+      </Accordion.Control>
+      <Accordion.Panel>
+        <Text size="sm" className="my-comfortable">
+          Set your team’s expectations for {state.target.endpoint_label},{" "}
+          {o.object_size} objects, and {o.threads} thread
+          {o.threads === 1 ? "" : "s"}. These limits stay in this browser and
+          apply to the selected phase.
+        </Text>
+        <div className="my-lg grid grid-cols-3 gap-panel max-[47.5rem]:grid-cols-1">
+          {checks.map((c) => {
+            const limit = limits[c.key],
+              value = c.value;
+            const result =
+              limit === null
+                ? "No limit set"
+                : value === null
+                  ? "Not measured"
+                  : (c.minimum ? value >= limit : value <= limit)
+                    ? "Within limit"
+                    : "Outside limit";
+            return (
+              <TextInput
+                key={c.key}
+                className="min-w-0"
+                label={`${c.minimum ? "Minimum" : "Maximum"} ${c.label} (${
+                  c.key === "iops"
+                    ? "ops/s"
+                    : c.key === "bandwidth"
+                      ? "MiB/s"
+                      : "µs"
+                })`}
+                description={`${result} · measured ${fmt(value, 2)}`}
+                descriptionProps={{
+                  c:
+                    result === "Outside limit"
+                      ? "var(--spt-threshold-failure)"
+                      : "var(--spt-text-subtle)",
+                }}
                 type="number"
                 min="0"
                 step="any"
@@ -138,37 +158,32 @@ export function PerformanceLimits({
                   setDraft({ ...draft, [c.key]: e.target.value })
                 }
               />
-              <span
-                className={result === "Outside limit" ? "limit-bad" : "subtle"}
-              >
-                {result} · measured {fmt(value, 2)}
-              </span>
-            </label>
-          );
-        })}
-      </div>
-      <div className="actions">
-        <button className="primary" onClick={save}>
-          Save limits
-        </button>
-        <button
-          onClick={() => {
-            try {
-              localStorage.removeItem(key);
-              setLimits(noLimits);
-              setDraft({ iops: "", bandwidth: "", latency: "" });
-              setMessage("Limits cleared.");
-            } catch {
-              setMessage("Browser storage unavailable.");
-            }
-          }}
-        >
-          Clear limits
-        </button>
-        <span className="subtle" role="status">
-          {message}
-        </span>
-      </div>
-    </details>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap items-center gap-compact">
+          <Button variant="filled" onClick={save}>
+            Save limits
+          </Button>
+          <Button
+            onClick={() => {
+              try {
+                localStorage.removeItem(key);
+                setLimits(noLimits);
+                setDraft({ iops: "", bandwidth: "", latency: "" });
+                setMessage("Limits cleared.");
+              } catch {
+                setMessage("Browser storage unavailable.");
+              }
+            }}
+          >
+            Clear limits
+          </Button>
+          <span className="text-subtle text-xs/[inherit]" role="status">
+            {message}
+          </span>
+        </div>
+      </Accordion.Panel>
+    </Accordion.Item>
   );
 }

@@ -244,6 +244,10 @@ func (o *TestOrchestrator) StartTestWithContentAndLaunchHooks(
 	if err != nil {
 		return fmt.Errorf("resolve engine startup settings: %w", err)
 	}
+	// Only the single-host engine moves its registry; distributed workers keep the default.
+	if params.RMIRegistryPort > 0 {
+		startupArgs = append(startupArgs, fmt.Sprintf("%s%d", constants.EngineNodePortArgPrefix, params.RMIRegistryPort))
+	}
 
 	// Save scenario to file if requested
 	if params.KeepScenario {
@@ -266,7 +270,7 @@ func (o *TestOrchestrator) StartTestWithContentAndLaunchHooks(
 	// Start container in node mode
 	logging.LogInfo("orchestrator", "starting container in node mode", "image", image, "port", o.apiPort, "network_mode", o.networkMode)
 	containerID, err := startContainerInNodeModeContext(
-		ctx, o.dockerManager, image, o.apiPort, o.networkMode, startupArgs)
+		ctx, o.dockerManager, image, o.apiPort, o.networkMode, append(startupArgs, singleHostInterfacesArgs(params)...))
 	if err != nil {
 		return errors.Join(
 			fmt.Errorf("failed to start container in node mode: %w", err),
@@ -437,7 +441,15 @@ func (o *TestOrchestrator) monitorStatus(ctx context.Context) {
 				logging.LogInfo("orchestrator", "test finished", "state", status.State)
 				ready, terminalErr, captureErr := o.publishTerminalMetrics()
 				if captureErr != nil {
-					o.failTerminalMetricsCapture(captureErr)
+					if statusFailure := ownedTerminalStatusFailure(status); statusFailure != nil {
+						// The engine's FAILED cause is authoritative. A run that failed before
+						// any slice started has no metrics, so their absence is not the cause.
+						logging.LogWarn("orchestrator", "terminal metrics unavailable for failed run",
+							"error", captureErr.Error())
+						o.failOwnedTerminalRun(statusFailure)
+					} else {
+						o.failTerminalMetricsCapture(captureErr)
+					}
 					o.signalCompletion()
 					return
 				}
@@ -469,6 +481,16 @@ func ownedTerminalStatusFailure(status *TestStatus) error {
 	detail := strings.TrimSpace(status.Message)
 	if detail == "" {
 		detail = "engine reported FAILED"
+	}
+	var attribution []string
+	if status.StepID != "" {
+		attribution = append(attribution, "step "+status.StepID)
+	}
+	if status.Category != "" {
+		attribution = append(attribution, "("+status.Category+")")
+	}
+	if len(attribution) > 0 {
+		detail = strings.Join(attribution, " ") + ": " + detail
 	}
 	return &runcontrol.OwnedEngineTerminalFailure{Detail: detail}
 }
@@ -929,4 +951,13 @@ func (o *TestOrchestrator) StopTest() error {
 // Wait waits for the orchestrator to finish
 func (o *TestOrchestrator) Wait() {
 	<-o.stoppedCh
+}
+
+// singleHostInterfacesArgs returns the engine arguments of a single-host run's host override. Its
+// flag accepts only a host in --test-hosts, so a value here is this host's.
+func singleHostInterfacesArgs(params scenario.Params) []string {
+	if len(params.HostInterfaces) == 0 {
+		return nil
+	}
+	return scenario.NodeInterfacesArgs(params.HostInterfaces, params.HostInterfaces[0].Host, nil)
 }

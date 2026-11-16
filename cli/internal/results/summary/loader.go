@@ -13,6 +13,7 @@ import (
 
 	"github.com/dell/storage-performance-tool/cli/internal/constants"
 	"github.com/dell/storage-performance-tool/cli/internal/deletemetrics"
+	"github.com/dell/storage-performance-tool/cli/internal/driverstats"
 	"github.com/dell/storage-performance-tool/cli/internal/engineinfo"
 	"github.com/dell/storage-performance-tool/cli/internal/results"
 	"gopkg.in/yaml.v3"
@@ -55,8 +56,13 @@ type StepData struct {
 	StepID            string
 	Manifest          *results.StepManifest
 	Metrics           *MetricsTotals
+	Steady            *SteadyTotals
+	SteadyUnreadable  bool
 	Delete            *deletemetrics.Metrics
 	DeleteEvidence    *DeleteArtifactEvidence
+	DriverStats       *driverstats.Stats
+	NicPaths          *NicPathsEvidence
+	NicSetMissing     []results.NicNodeFile
 	Status            StepStatus
 	MetricsSuppressed bool
 	MissingRequired   []string
@@ -186,10 +192,11 @@ func (l *Loader) Load(ctx context.Context, runDir string) (*RunData, error) {
 		}
 		sm := &manifest.Steps[i]
 		step := &StepData{
-			StepID:   sm.StepID,
-			Manifest: sm,
-			Status:   StepStatusUnknown,
-			Delete:   params.DeleteMetrics[sm.StepID],
+			StepID:      sm.StepID,
+			Manifest:    sm,
+			Status:      StepStatusUnknown,
+			Delete:      params.DeleteMetrics[sm.StepID],
+			DriverStats: params.DriverStats[sm.StepID],
 		}
 		step.MetricsSuppressed = l.metricsSummaryPersistSuppressed(runDir, sm)
 		required, optional := l.categorizeMissing(sm)
@@ -219,6 +226,28 @@ func (l *Loader) Load(ctx context.Context, runDir string) (*RunData, error) {
 			if metricsEntry != nil && metricsEntry.Status != fileStatusOK && metricsEntry.Error != "" {
 				step.Notes = append(step.Notes, metricsEntry.Error)
 			}
+		}
+
+		// An absent or unreadable steady file never fails the step: the summary shows why
+		// its steady rates are unavailable instead.
+		if steadyEntry := findArtifactEntry(sm, constants.ResultsArtifactSuffixMetricsSteady); steadyEntry != nil && steadyEntry.Status == fileStatusOK {
+			steady, parseErr := parseSteadyTotals(sm.StepID, filepath.Join(runDir, steadyEntry.Name))
+			switch {
+			case errors.Is(parseErr, os.ErrNotExist):
+				// A listed file that is gone is absent, like an unlisted one.
+			case parseErr != nil:
+				step.SteadyUnreadable = true
+				step.Notes = append(step.Notes, fmt.Sprintf("steady metrics totals parse error: %v", parseErr))
+			default:
+				step.Steady = steady
+			}
+		}
+
+		step.NicPaths = nicPathsEvidence(sm, params.NicNodes, step.Metrics)
+		step.NicSetMissing = missingNicSetReports(sm, params.NicNodes, step.Metrics)
+		if step.NicPaths != nil && step.NicPaths.Distributed {
+			step.MissingOptional = removeString(step.MissingOptional, constants.ResultsArtifactSuffixNicPaths)
+			step.MissingOptional = removeString(step.MissingOptional, constants.ResultsArtifactSuffixNicSet)
 		}
 
 		rangeEvidence, rangeErr := loadRangeRead(runDir, sm)
@@ -507,6 +536,12 @@ type RunParams struct {
 	DeleteMetrics          map[string]*deletemetrics.Metrics `json:"deleteMetrics,omitempty"`
 	DeleteArtifactsVersion int                               `json:"deleteArtifactsVersion,omitempty"`
 	DeleteArtifactStepIDs  []string                          `json:"deleteArtifactStepIds,omitempty"`
+	DriverStats            map[string]*driverstats.Stats     `json:"driverStats,omitempty"`
+	DriverStatsError       string                            `json:"driverStatsError,omitempty"`
+	NicNodes               []results.NicNode                 `json:"nicNodes,omitempty"`
+	HostInterfaces         map[string]string                 `json:"hostInterfaces,omitempty"`
+	NicEngines             map[string][]results.NicEngine    `json:"nicEngines,omitempty"`
+	NicEnginesError        string                            `json:"nicEnginesError,omitempty"`
 	ResultsOptions         RunResultsOptions                 `json:"resultsOptions"`
 	CLI                    RunCLI                            `json:"cli"`
 	MultiHost              RunMultiHost                      `json:"multiHost"`
@@ -538,8 +573,11 @@ type ScenarioParams struct {
 	AccessKey      string   `json:"AccessKey"`
 	SecretKey      string   `json:"SecretKey"`
 	Bucket         string   `json:"Bucket"`
+	BucketCount    int      `json:"BucketCount"`
+	BucketNames    []string `json:"BucketNames"`
 	Prefix         string   `json:"Prefix"`
 	Threads        int      `json:"Threads"`
+	S3Driver       string   `json:"S3Driver"`
 	ObjectSize     string   `json:"ObjectSize"`
 	ObjectCount    int64    `json:"ObjectCount"`
 	GetDistrib     int      `json:"GetDistrib"`
@@ -550,6 +588,7 @@ type ScenarioParams struct {
 	Cleanup        bool     `json:"Cleanup"`
 	KeepScenario   bool     `json:"KeepScenario"`
 	SliceEndpoints bool     `json:"SliceEndpoints"`
+	Interfaces     []string `json:"Interfaces"`
 }
 
 // RunHost describes a host entry in the captured metadata.

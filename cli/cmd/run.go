@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -23,14 +24,17 @@ import (
 	"github.com/dell/storage-performance-tool/cli/internal/config"
 	"github.com/dell/storage-performance-tool/cli/internal/constants"
 	"github.com/dell/storage-performance-tool/cli/internal/deletemetrics"
+	"github.com/dell/storage-performance-tool/cli/internal/driverstats"
 	"github.com/dell/storage-performance-tool/cli/internal/engineinfo"
 	"github.com/dell/storage-performance-tool/cli/internal/hostparse"
 	"github.com/dell/storage-performance-tool/cli/internal/integrity"
 	"github.com/dell/storage-performance-tool/cli/internal/integrityplan"
 	"github.com/dell/storage-performance-tool/cli/internal/logging"
+	"github.com/dell/storage-performance-tool/cli/internal/nicplan"
 	"github.com/dell/storage-performance-tool/cli/internal/portcheck"
 	"github.com/dell/storage-performance-tool/cli/internal/preflight"
 	"github.com/dell/storage-performance-tool/cli/internal/results"
+	"github.com/dell/storage-performance-tool/cli/internal/results/summary"
 	"github.com/dell/storage-performance-tool/cli/internal/runcontrol"
 	"github.com/dell/storage-performance-tool/cli/internal/scenario"
 	"github.com/dell/storage-performance-tool/cli/internal/secretmask"
@@ -50,9 +54,19 @@ const (
 	flagReadPhasePauseSeconds = "read-phase-pause-seconds"
 	flagEngineOverride        = "engine-override"
 	flagPrefixShards          = "prefix-shards"
+	flagBucketCount           = "bucket-count"
+	targetBucketCountPath     = "storage.targetBucket.count"
+	flagProvisionTargetBucket = "provision-target-bucket"
+	flagBucketMetrics         = "bucket-metrics"
+	flagCreatePrefix          = "create-prefix"
+	flagRMIRegistryPort       = "rmi-registry-port"
+	flagInterfaces            = "interfaces"
+	flagHostInterfaces        = "host-interfaces"
 	itemNamingShardsPath      = "item.naming.shards"
 	prefixShardsAuto          = -1
 	deleteAllDiscoveredLabel  = "all discovered identities (unbounded)"
+	createPrefixDeprecation   = "it never had an effect and will be removed in the next minor release; " +
+		"spt provisions target buckets by default (see --provision-target-bucket)"
 )
 
 // resolvePortConflictFunc is a test seam for port conflict resolution.
@@ -107,6 +121,7 @@ type autoResultsOutcome struct {
 	SummaryErr           error
 	ShutdownErr          error
 	StepIDs              []string
+	AllFailedPhases      []summary.AllFailedPhase
 }
 
 type postRunBudgets struct {
@@ -227,7 +242,7 @@ func captureStoredDeleteMetrics(
 		return fmt.Errorf("capture terminal DELETE metrics: %w", err)
 	}
 	metadata.DeleteArtifactStepIDs = append([]string(nil), expectedDeleteSteps...)
-	expectedContributorIDs, err := expectedDeleteContributorIDs(metadata)
+	expectedContributorIDs, err := expectedMetricContributorIDs(metadata, metricCaptureKindDelete)
 	if err != nil {
 		return fmt.Errorf("capture terminal DELETE metrics: %w", err)
 	}
@@ -282,24 +297,82 @@ func terminalDeleteOutcomeError(metrics map[string]*deletemetrics.Metrics) error
 	return errors.New(strings.Join(parts, "; "))
 }
 
-func expectedDeleteContributorIDs(metadata *runMetadata) ([]string, error) {
+// captureStoredDriverStats stores the terminal driver statistics of the run's steps. It runs
+// for every workload. The steps that ended earlier in the run come from observed, which may be
+// nil; the capture made here adds the steps the engine still reports. A refused or failed
+// capture stores nothing and records why; it never fails the run, and it is independent of the
+// DELETE capture. A capture without statistics is recorded only for a run that selected the
+// S3-RDMA driver.
+func captureStoredDriverStats(
+	ctx context.Context,
+	baseURL string,
+	expectedRunID int64,
+	stepIDs []string,
+	metadata *runMetadata,
+	observed *driverStatsCollector,
+) {
 	if metadata == nil {
-		return nil, fmt.Errorf("expected DELETE contributor identity is unavailable")
+		return
 	}
-	if metadata.deleteContributors != nil {
-		contributorIDs, err := metadata.deleteContributors()
+	metadata.DriverStats = nil
+	metadata.DriverStatsError = ""
+	// The S3-RDMA driver always reports statistics. The steps the CLI generates for a run that
+	// selected it use it, unless the workload has a driver of its own: then no step reports any.
+	rdma := strings.EqualFold(strings.TrimSpace(metadata.ScenarioParams.S3Driver), scenario.S3DriverRdma)
+	var captured *results.DriverStatsCapture
+	var stored map[string]*driverstats.Stats
+	expectedContributorIDs, err := expectedMetricContributorIDs(metadata, metricCaptureKindDriverStats)
+	if err == nil {
+		captured, err = captureDriverStatsFunc(
+			ctx, baseURL, expectedRunID, stepIDs, expectedContributorIDs,
+			len(expectedContributorIDs) == 1)
+	}
+	metadata.Preparation = preparationMetadata(observed.preparationsWith(captured), expectedContributorIDs, metadata.NicNodes)
+	if err == nil {
+		stored, err = observed.withFinal(captured, rdma)
+	}
+	if err != nil {
+		metadata.DriverStatsError = err.Error()
+		return
+	}
+	if len(stored) > 0 {
+		metadata.DriverStats = stored
+		return
+	}
+	// A run that selected the S3-RDMA driver and has no statistics must say so: the summary
+	// then warns instead of showing nothing about the data path.
+	if rdma {
+		metadata.DriverStatsError = driverStatsNotReported
+	}
+}
+
+const (
+	metricCaptureKindDelete      = "DELETE"
+	metricCaptureKindDriverStats = "driver statistics"
+	// driverStatsNotReported is the stored reason when a valid capture held no statistics.
+	driverStatsNotReported = "the engine reported no driver statistics"
+)
+
+// expectedMetricContributorIDs returns the exact contributor identities a terminal capture must
+// find in fleet metrics. kind names the captured value in errors.
+func expectedMetricContributorIDs(metadata *runMetadata, kind string) ([]string, error) {
+	if metadata == nil {
+		return nil, fmt.Errorf("expected %s contributor identity is unavailable", kind)
+	}
+	if metadata.metricContributors != nil {
+		contributorIDs, err := metadata.metricContributors()
 		if err != nil {
-			return nil, fmt.Errorf("resolve DELETE contributor identity: %w", err)
+			return nil, fmt.Errorf("resolve %s contributor identity: %w", kind, err)
 		}
 		if len(contributorIDs) == 0 {
-			return nil, fmt.Errorf("expected DELETE contributor identity is unavailable")
+			return nil, fmt.Errorf("expected %s contributor identity is unavailable", kind)
 		}
 		return append([]string(nil), contributorIDs...), nil
 	}
 	if len(metadata.Hosts) == 1 {
 		return []string{constants.MetricsLocalContributorID}, nil
 	}
-	return nil, fmt.Errorf("expected DELETE contributor identity is unavailable for fleet capture")
+	return nil, fmt.Errorf("expected %s contributor identity is unavailable for fleet capture", kind)
 }
 
 // bindRuntimeDeleteSteps binds the planned DELETE role to runtime identity by
@@ -443,6 +516,11 @@ var (
 	connectMultiHostOrchestratorFunc = func(ctx context.Context, orchestrator *tui.MultiHostOrchestrator) error {
 		return orchestrator.ConnectHosts(ctx)
 	}
+	// executionParticipantHostsFunc reads a distributed run's locked execution participants. It is
+	// a test seam: command tests cannot start the RMI topology that locks them.
+	executionParticipantHostsFunc = func(orchestrator *tui.MultiHostOrchestrator) ([]*tui.HostConnection, bool, error) {
+		return orchestrator.GetExecutionParticipantHosts()
+	}
 	prepareDistributedIntegrityRuntimeIdentityFunc = func(
 		ctx context.Context, orchestrator *tui.MultiHostOrchestrator, image string,
 	) (tui.DistributedRuntimeIdentityEvidence, error) {
@@ -456,6 +534,9 @@ var (
 	discoverStepIDsFunc           = results.DiscoverStepIDsForRunContext
 	discoverFleetStepIDsFunc      = results.DiscoverFleetStepIDsForRunContext
 	captureDeleteMetricsFunc      = results.CaptureTerminalDeleteMetricsForRunContext
+	captureDriverStatsFunc        = results.CaptureTerminalDriverStatsForRunContext
+	observeDriverStatsFunc        = results.ObserveTerminalDriverStatsForRunContext
+	driverStatsCollectInterval    = constants.AutoResultsDriverStatsInterval
 	newResultsFetcherFunc         = func(baseURL, outputDir string) autoResultsFetcher {
 		return &fetcherAdapter{results.NewFetcher(baseURL, outputDir)}
 	}
@@ -656,7 +737,10 @@ func startAutoResultsMonitor(parentCtx context.Context, baseURL, label, resultsD
 		} else {
 			writeProgress("Auto-results: launch armed for run %d\n", expectedRunID)
 			tracker := newRunTrackerFunc(baseURL)
-			configureAutoResultsTracker(tracker, expectedRunID, debug, verificationRun)
+			// A DELETE's outcome requires the engine's final state too, and a large step can look done
+			// well before the engine reports it.
+			requireTerminal := verificationRun || (metadata != nil && metadata.WorkloadType == WorkloadTypeDelete)
+			configureAutoResultsTracker(tracker, expectedRunID, debug, requireTerminal)
 			// Wait for terminal run state; step IDs discovered later via metrics/json
 			if len(expectedStepIDs) > 0 {
 				writeProgress("Auto-results: expecting %d step(s)\n", len(expectedStepIDs))
@@ -667,6 +751,7 @@ func startAutoResultsMonitor(parentCtx context.Context, baseURL, label, resultsD
 			var mu sync.Mutex
 			seen := make(map[string]struct{})
 			fleetSeen := make(map[string]struct{})
+			driverStats := newDriverStatsCollector(time.Now)
 			stopCh := make(chan struct{})
 			var pollWG sync.WaitGroup
 			pollWG.Add(1)
@@ -674,14 +759,27 @@ func startAutoResultsMonitor(parentCtx context.Context, baseURL, label, resultsD
 				defer pollWG.Done()
 				ticker := time.NewTicker(constants.AutoResultsDiscoveryInterval)
 				defer ticker.Stop()
+				driverStatsTicker := time.NewTicker(driverStatsCollectInterval)
+				defer driverStatsTicker.Stop()
 				for {
 					select {
 					case <-stopCh:
 						return
 					case <-parentCtx.Done():
 						return
+					case <-driverStatsTicker.C:
+						mu.Lock()
+						_, runtimeStepIDs := selectResultStepIDs(expectedStepIDs, fleetDiscovered, discovered)
+						mu.Unlock()
+						// The engine names its rows by the runtime identifiers. Under the planned
+						// ones an observation would refuse a finished step as unexpected.
+						if len(runtimeStepIDs) > 0 {
+							driverStats.observe(parentCtx, baseURL, expectedRunID, runtimeStepIDs, metadata)
+						}
 					case <-ticker.C:
-						if ids, err := discoverStepIDsFunc(parentCtx, baseURL, expectedRunID); err == nil && len(ids) > 0 {
+						discoveryStart := time.Now()
+						ids, nodeErr := discoverStepIDsFunc(parentCtx, baseURL, expectedRunID)
+						if nodeErr == nil && len(ids) > 0 {
 							mu.Lock()
 							updated := false
 							for _, id := range ids {
@@ -702,7 +800,8 @@ func startAutoResultsMonitor(parentCtx context.Context, baseURL, label, resultsD
 							}
 						}
 						// Also poll fleet endpoint for distributed step IDs
-						if fids, err := discoverFleetStepIDsFunc(parentCtx, baseURL, expectedRunID); err == nil && len(fids) > 0 {
+						fids, fleetErr := discoverFleetStepIDsFunc(parentCtx, baseURL, expectedRunID)
+						if fleetErr == nil && len(fids) > 0 {
 							mu.Lock()
 							updated := false
 							for _, id := range fids {
@@ -720,6 +819,15 @@ func startAutoResultsMonitor(parentCtx context.Context, baseURL, label, resultsD
 							mu.Unlock()
 							if debug && updated && len(snapshot) > 0 {
 								logging.LogDebug("auto-results", "discover-fleet", "steps", strings.Join(snapshot, ","))
+							}
+						}
+						if nodeErr == nil && fleetErr == nil {
+							mu.Lock()
+							_, runtimeStepIDs := selectResultStepIDs(expectedStepIDs, fleetDiscovered, discovered)
+							mu.Unlock()
+							// Until a step of the run has a row there are no statistics to miss.
+							if len(runtimeStepIDs) == 0 {
+								driverStats.readBeforeSteps(discoveryStart)
 							}
 						}
 					}
@@ -804,13 +912,14 @@ func startAutoResultsMonitor(parentCtx context.Context, baseURL, label, resultsD
 
 			var observedRuntimeRoles integrity.StepRoles
 			var plannedRoles integrity.StepRoles
+			fetchStepIDs := stepIDs
 			if verificationRun {
 				plan := integrityOptions[0].Plan
 				deferredVerification := plan.Valid() && plan.VerificationDeferred()
 				plannedRoles = integrity.PlannedStepRoles(plan)
 				if plan.Valid() {
-					allowMissingVerifier := stepRoleLifecycle(
-						outcome.Tracker, "", plannedRoles.Read) == portcheck.StepLifecycleNotStarted
+					allowMissingVerifier := verifierMayBeMissing(plan, stepRoleLifecycle(
+						outcome.Tracker, "", plannedRoles.Read))
 					binding, bindErr := integrity.BindObservedStepRoles(plan, runtimeStepIDs, allowMissingVerifier)
 					if bindErr != nil {
 						outcome.ArtifactErr = errors.Join(outcome.ArtifactErr, bindErr)
@@ -820,6 +929,8 @@ func startAutoResultsMonitor(parentCtx context.Context, baseURL, label, resultsD
 						artifactsReady = false
 					} else {
 						observedRuntimeRoles = binding.Roles
+						fetchStepIDs = stepsToFetch(stepIDs, plan, binding.Roles.Read, stepRoleLifecycle(
+							outcome.Tracker, binding.Roles.Read, plannedRoles.Read))
 					}
 				} else {
 					observedRuntimeRoles = integrity.ResolveStepRoles(stepIDs, nil)
@@ -856,6 +967,10 @@ func startAutoResultsMonitor(parentCtx context.Context, baseURL, label, resultsD
 				} else {
 					outcome.DeleteTerminalErr = terminalDeleteOutcomeError(metadata.DeleteMetrics)
 				}
+				captureStoredDriverStats(artifactCtx, baseURL, expectedRunID, stepIDs, metadata, driverStats)
+				if metadata.DriverStatsError != "" {
+					logging.LogWarn("auto-results", "driver statistics not stored", "reason", metadata.DriverStatsError)
+				}
 				if err := writeRunMetadata(metadata, root); err != nil {
 					logging.LogError("auto-results", "write run metadata", err, "dest", root)
 				}
@@ -863,11 +978,12 @@ func startAutoResultsMonitor(parentCtx context.Context, baseURL, label, resultsD
 			integrityFinalizationReady := artifactsReady
 			if artifactsReady {
 				fetch := newResultsFetcherFunc(baseURL, root)
-				if _, ferr := fetch.FetchArtifactsForSteps(artifactCtx, stepIDs); ferr != nil {
+				if _, ferr := fetch.FetchArtifactsForSteps(artifactCtx, fetchStepIDs); ferr != nil {
 					outcome.ArtifactErr = errors.Join(outcome.ArtifactErr, ferr)
 					logging.LogError("auto-results", "artifact fetch failed", ferr, "base_url", baseURL, "out", root)
 					writeProgress("Results fetch encountered errors; preserving available evidence and continuing shutdown. Output: %s\n", root)
 				}
+				captureNicEngines(root, stepIDs, metadata)
 			}
 			if integrityFinalizationReady && verificationRun {
 				options := *integrityOptions[0]
@@ -883,12 +999,13 @@ func startAutoResultsMonitor(parentCtx context.Context, baseURL, label, resultsD
 				options.PlannedStepIDs = append([]string(nil), expectedStepIDs...)
 				options.ObservedStepIDs = append([]string(nil), runtimeStepIDs...)
 				options.AllowPlannedRoleFallback = len(runtimeStepIDs) == 0
-				options.AllowMissingRuntimeVerifier = stepRoleLifecycle(
-					outcome.Tracker, observedRuntimeRoles.Read, plannedRoles.Read) == portcheck.StepLifecycleNotStarted
+				options.AllowMissingRuntimeVerifier = verifierMayBeMissing(options.Plan, stepRoleLifecycle(
+					outcome.Tracker, observedRuntimeRoles.Read, plannedRoles.Read))
 				options.Context = artifactCtx
 				finalized, finalizeErr := integrity.FinalizeResults(options)
 				outcome.Finalization = &finalized
 				outcome.FinalizationErr = finalizeErr
+				dropLiveCorruptionErrorOfEmptySelection(&outcome)
 				if finalizeErr != nil {
 					logging.LogError("auto-results", "integrity result finalization failed", finalizeErr, "out", root)
 					writeProgress("Integrity result finalization failed; preserved evidence under %s\n", root)
@@ -990,9 +1107,11 @@ func startAutoResultsMonitor(parentCtx context.Context, baseURL, label, resultsD
 				writer = traceOutput
 			}
 		}
-		if err := generateRunSummaryFunc(summaryCtx, root, writer); err != nil {
+		runSummary, err := generateRunSummaryFunc(summaryCtx, root, writer)
+		if err != nil {
 			outcome.SummaryErr = errors.Join(outcome.SummaryErr, err)
 		}
+		outcome.AllFailedPhases = runSummary.AllFailedPhases()
 		if traceOutput != nil {
 			if closeErr := traceOutput.Close(); closeErr != nil {
 				outcome.SummaryErr = errors.Join(
@@ -1023,6 +1142,36 @@ func startAutoResultsMonitor(parentCtx context.Context, baseURL, label, resultsD
 		}
 	}()
 	return monitor
+}
+
+// verifierMayBeMissing reports whether a run's READ step can be absent from the live step list. One
+// that never started publishes nothing, and neither does the READ step of an empty selection, which
+// --allow-empty-selection says to expect. Finalization still decides from the counts on file.
+func verifierMayBeMissing(plan integrityplan.Plan, readLifecycle portcheck.StepLifecycle) bool {
+	return readLifecycle == portcheck.StepLifecycleNotStarted || plan.AllowEmpty
+}
+
+// stepsToFetch adds the planned READ step when --allow-empty-selection expects it may go unseen and it
+// did complete: with nothing to read it can end between two polls of the live metrics, and its files
+// are still there. A READ that isn't known to have completed is not reported as a step of this run.
+func stepsToFetch(
+	stepIDs []string, plan integrityplan.Plan, observedRead string, readLifecycle portcheck.StepLifecycle,
+) []string {
+	if !plan.AllowEmpty || observedRead != "" || plan.Verifier.ID == "" ||
+		readLifecycle != portcheck.StepLifecycleCompleted || slices.Contains(stepIDs, plan.Verifier.ID) {
+		return stepIDs
+	}
+	return append(slices.Clone(stepIDs), plan.Verifier.ID)
+}
+
+// dropLiveCorruptionErrorOfEmptySelection forgives a missing live corruption count when finalization
+// proved that nothing was selected or read. The READ step of an empty selection ends before the
+// engine publishes it, so there is no live count to read, and its files already say zero.
+func dropLiveCorruptionErrorOfEmptySelection(outcome *autoResultsOutcome) {
+	final := outcome.Finalization
+	if outcome.FinalizationErr == nil && final != nil && final.EmptySelection && final.VerificationAttemptedCount == 0 {
+		outcome.CorruptionMetricsErr = nil
+	}
 }
 
 func buildIntegrityFinalizeOptions(params scenario.Params, plan integrityplan.Plan) *integrity.FinalizeOptions {
@@ -1060,9 +1209,58 @@ func stepRoleLifecycle(result *portcheck.RunResult, runtimeStepID, plannedStepID
 	return ""
 }
 
+// resolveOrdinaryRunError makes an engine FAILED status authoritative for workloads outside the
+// integrity and DELETE contracts: the run exits 1 with the engine's cause even when the presenter
+// reported none, and missing metrics or artifacts never replace that cause. A run that finished
+// cleanly also exits 1 if every request of a phase failed, since its numbers measured nothing. The
+// tracker of an ordinary run returns once its step files are stable, so a finished run can still
+// read RUNNING, and only a stop it saw keeps a run from being judged: the stop says why it ended. A
+// stop after the tracker returned only cut the last pause, so those phases had finished and are
+// judged. A tracker that failed can't say a phase finished, so its summary isn't judged.
+func resolveOrdinaryRunError(runErr error, outcome autoResultsOutcome) error {
+	stopped := outcome.Tracker != nil && outcome.Tracker.FinalState == constants.StateStopped
+	failed := outcome.Tracker != nil && outcome.Tracker.FinalState == constants.StateFailed
+	if !stopped && !failed && runErr == nil && outcome.TrackerErr == nil && len(outcome.AllFailedPhases) > 0 {
+		return &ExitCodeError{Code: constants.ExitCodeWorkloadFailure, Msg: allFailedPhasesReason(outcome.AllFailedPhases)}
+	}
+	if !failed {
+		return runErr
+	}
+	message := trackedFailureReason(outcome.Tracker)
+	if runErr != nil && !runcontrol.IsOnlyOwnedEngineTerminalFailure(runErr) {
+		message += "; run also failed: " + runErr.Error()
+	}
+	return &ExitCodeError{Code: constants.ExitCodeWorkloadFailure, Msg: message, Cause: runErr}
+}
+
+func allFailedPhasesReason(phases []summary.AllFailedPhase) string {
+	reasons := make([]string, 0, len(phases))
+	for _, phase := range phases {
+		reasons = append(reasons, phase.String())
+	}
+	return strings.Join(reasons, "; ")
+}
+
+// trackedFailureReason describes a FAILED terminal status, omitting attribution the engine did not report.
+func trackedFailureReason(result *portcheck.RunResult) string {
+	reason := "step"
+	if result.FailureStepID != "" {
+		reason += " " + result.FailureStepID
+	}
+	reason += " failed"
+	if result.FailureCategory != "" {
+		reason += " (" + result.FailureCategory + ")"
+	}
+	message := strings.TrimSpace(result.FailureMessage)
+	if message == "" {
+		message = "engine reported FAILED"
+	}
+	return reason + ": " + message
+}
+
 func resolveVerificationRunError(runErr error, outcome autoResultsOutcome, received bool, params scenario.Params) error {
 	if !scenario.IsIntegrityWorkload(params) {
-		return runErr
+		return resolveOrdinaryRunError(runErr, outcome)
 	}
 	corrupt := int64(0)
 	if outcome.ObservedCorruptCount != nil {
@@ -1179,6 +1377,18 @@ func resolveRunCompletionError(
 	if params.WorkloadType == scenario.WorkloadTypeDelete {
 		var reasons []string
 		var causes []error
+		cleanupOnlyFailure := outcome.Tracker != nil &&
+			params.Cleanup &&
+			outcome.Tracker.FinalState == constants.StateFailed &&
+			scenario.IsSeededDeleteCleanupStepID(outcome.Tracker.FailureStepID)
+		// A failed step is the cause, and the incomplete metrics below are usually its consequence.
+		if outcome.Tracker != nil && outcome.Tracker.FinalState == constants.StateFailed && !cleanupOnlyFailure {
+			reasons = append(reasons, fmt.Sprintf(
+				"step %s failed (%s): %s",
+				outcome.Tracker.FailureStepID,
+				outcome.Tracker.FailureCategory,
+				outcome.Tracker.FailureMessage))
+		}
 		if outcome.DeleteMetricsErr != nil {
 			reasons = append(reasons, "terminal DELETE metrics are incomplete: "+outcome.DeleteMetricsErr.Error())
 			causes = append(causes, outcome.DeleteMetricsErr)
@@ -1191,21 +1401,10 @@ func resolveRunCompletionError(
 			reasons = append(reasons, "completion tracking: "+outcome.TrackerErr.Error())
 			causes = append(causes, outcome.TrackerErr)
 		}
-		cleanupOnlyFailure := outcome.Tracker != nil &&
-			params.Cleanup &&
-			outcome.Tracker.FinalState == constants.StateFailed &&
-			scenario.IsSeededDeleteCleanupStepID(outcome.Tracker.FailureStepID)
-		if outcome.Tracker != nil && outcome.Tracker.FinalState != constants.StateCompleted && !cleanupOnlyFailure {
-			if outcome.Tracker.FinalState == constants.StateFailed {
-				reasons = append(reasons, fmt.Sprintf(
-					"step %s failed (%s): %s",
-					outcome.Tracker.FailureStepID,
-					outcome.Tracker.FailureCategory,
-					outcome.Tracker.FailureMessage))
-			} else {
-				reasons = append(reasons, fmt.Sprintf(
-					"engine terminal state is %s", outcome.Tracker.FinalState))
-			}
+		if outcome.Tracker != nil && outcome.Tracker.FinalState != constants.StateCompleted &&
+			outcome.Tracker.FinalState != constants.StateFailed {
+			reasons = append(reasons, fmt.Sprintf(
+				"engine terminal state is %s", outcome.Tracker.FinalState))
 		} else if received && outcome.Tracker == nil {
 			reasons = append(reasons, "terminal engine status was not captured")
 		}
@@ -1788,6 +1987,10 @@ seeded %s objects, batches %d targets per logical request, and does not verify r
 			"hosts", testHostsStr,
 			"attach_existing", attachExisting)
 		useMultiHostOrchestrator := shouldUseMultiHostOrchestrator(hostInfos)
+		if useMultiHostOrchestrator && params.RMIRegistryPort != 0 {
+			return fmt.Errorf("--%s applies only to local single-host runs; distributed and remote engines use port %d",
+				flagRMIRegistryPort, constants.DefaultRMIRegistryPort)
+		}
 
 		// The local single-host runner owns Docker on the controller, so it
 		// needs the controller port check. Remote and multi-host runs perform
@@ -1904,7 +2107,8 @@ seeded %s objects, batches %d targets per logical request, and does not verify r
 				metadata.RuntimeIdentity = &evidence
 			})
 			multiHostOrchestrator.SetIntegrityRuntimeIdentityTier(integrityIdentityTier)
-			metadata.deleteContributors = multiHostOrchestrator.MetricContributorIDs
+			metadata.metricContributors = multiHostOrchestrator.MetricContributorIDs
+			metadata.executionHosts = lockedExecutionHosts(multiHostOrchestrator)
 		}
 		var runSession *runcontrol.Session
 		if resultsOpts.AutoResults {
@@ -2164,9 +2368,11 @@ func init() {
 	runCmd.Flags().Bool("slice-endpoints", false, "Partition endpoints across nodes in distributed runs")
 	runCmd.Flags().StringP("access-key", "a", "", "The S3 access key credential")
 	runCmd.Flags().StringP("secret-key", "s", "", "The S3 secret key credential")
-	runCmd.Flags().StringP("bucket", "b", "", "Target bucket; for DELETE --items-file it is an optional assertion applied to every manifest row")
+	registerBucketSetFlags(runCmd.Flags())
 	runCmd.Flags().String("prefix", "", "Write/write-verify: generated-key prefix (literal, include trailing / for a directory); seeded DELETE: owned namespace root; guarded existing DELETE: exact S3 prefix without a leading slash; list/read-verify: listing constraint")
-	runCmd.Flags().String("region", "", "AWS region for S3 requests (empty preserves engine region selection)")
+	runCmd.Flags().String("region", "", "AWS region for S3 requests (env S3_REGION); empty uses the region of a standard AWS endpoint, else us-east-1")
+	runCmd.Flags().Bool(flagProvisionTargetBucket, true, "Create a missing target bucket before the phase that writes the run's objects; false still checks that every target bucket exists and is accessible. Never clears or deletes a bucket")
+	runCmd.Flags().Bool(flagBucketMetrics, true, "Record per-bucket counts and timings for a step with more than one target bucket, in metrics.bucket.total.csv and metrics.bucket.steady.total.csv; false records and writes none of them")
 	registerEndpointSelectionFlags(runCmd.Flags())
 	runCmd.Flags().Int("auth-version", 4, "S3 authentication signature version (2 or 4; default 4)")
 
@@ -2201,7 +2407,8 @@ func init() {
 	runCmd.Flags().Bool("cleanup", false, "Best-effort deletion of SPT-created objects after the benchmark; DELETE permits this only for seeded mode")
 	runCmd.Flags().Bool(flagDeferVerification, false, "Write-verify only: stop after durable nonempty CREATE evidence and defer readback (env: SPT_DEFER_VERIFICATION)")
 	runCmd.Flags().String(flagVersions, scenario.VersionsCurrent, "Read-verify prefix discovery: current or all object versions")
-	runCmd.Flags().Bool("create-prefix", false, "A boolean flag to ensure the target prefix (directory) is created if it doesn't exist")
+	runCmd.Flags().Bool(flagCreatePrefix, false, "Deprecated: has no effect")
+	_ = runCmd.Flags().MarkDeprecated(flagCreatePrefix, createPrefixDeprecation)
 	runCmd.Flags().StringP("output-dir", "O", "", "Specifies a local directory on the host machine to save the detailed Spt report files (e.g., ./results/test-01)")
 	runCmd.Flags().Bool("generate-only", false, "Generate the scenario file without running Docker or Spt")
 	// Headless auto-termination
@@ -2265,8 +2472,12 @@ Example: --test-hosts "host1,host2,host3" --min-hosts 2
 
 	// RMI Configuration Options (for distributed testing)
 	runCmd.Flags().String("network-mode", "host", "Docker network mode: 'host' (default, required for RMI) or 'bridge'")
+	runCmd.Flags().String(flagInterfaces, "", "Spread each engine's connections over a NIC set: auto, or interface names, IPv4 addresses or RDMA devices (comma-separated; default S3 driver, host networking; env: SPT_INTERFACES)")
+	runCmd.Flags().StringArray(flagHostInterfaces, nil, "Replace --interfaces on one host: <host>=<value>, with <value> auto, a comma-separated list, or none to turn NICs off there; repeat for more hosts")
 	runCmd.Flags().Int("rmi-port-start", 40000, "Starting port for RMI range")
 	runCmd.Flags().Int("rmi-port-count", 10, "Number of RMI ports to verify")
+	runCmd.Flags().Int(flagRMIRegistryPort, constants.DefaultRMIRegistryPort,
+		"Engine RMI registry port for a local single-host run; give each concurrent spt run on one host its own port")
 
 	// RDMA Acceleration Options
 	runCmd.Flags().String("s3-driver", "default",
@@ -2324,6 +2535,10 @@ func buildScenarioParams(workloadType string, cmd *cobra.Command) (scenario.Para
 		WorkloadType:        workloadType,
 		ObjectDataDedupable: true,
 	}
+	targetBuckets, err := resolveBucketSet(cmd)
+	if err != nil {
+		return scenario.Params{}, err
+	}
 
 	rawLabel, _ := cmd.Flags().GetString("label")
 	params.Label = sanitizeLabel(rawLabel)
@@ -2372,6 +2587,14 @@ func buildScenarioParams(workloadType string, cmd *cobra.Command) (scenario.Para
 		accessKey, _ := cmd.Flags().GetString("access-key")
 		params.AccessKey = accessKey
 		params.Region, _ = cmd.Flags().GetString("region")
+		if cmd.Flags().Lookup(flagProvisionTargetBucket) != nil {
+			provision, _ := cmd.Flags().GetBool(flagProvisionTargetBucket)
+			params.TargetBucketProvisionDisabled = !provision
+		}
+		if cmd.Flags().Lookup(flagBucketMetrics) != nil {
+			bucketMetrics, _ := cmd.Flags().GetBool(flagBucketMetrics)
+			params.BucketMetricsDisabled = !bucketMetrics
+		}
 		selection, err := endpointSelectionFromFlags(cmd)
 		if err != nil {
 			return params, err
@@ -2381,8 +2604,7 @@ func buildScenarioParams(workloadType string, cmd *cobra.Command) (scenario.Para
 		secretKey, _ := cmd.Flags().GetString("secret-key")
 		params.SecretKey = secretKey
 
-		bucket, _ := cmd.Flags().GetString("bucket")
-		params.Bucket = bucket
+		params.Bucket = targetBuckets.Bucket
 
 		prefixFlag := cmd.Flags().Lookup("prefix")
 		if prefixFlag != nil {
@@ -2485,15 +2707,37 @@ func buildScenarioParams(workloadType string, cmd *cobra.Command) (scenario.Para
 	serviceThreads, _ := cmd.Flags().GetInt("service-threads")
 	params.ServiceThreads = serviceThreads
 
+	if registryPort, err := cmd.Flags().GetInt(flagRMIRegistryPort); err == nil {
+		if registryPort < 1 || registryPort > 65535 {
+			return scenario.Params{}, fmt.Errorf("--%s must be between 1 and 65535, got %d", flagRMIRegistryPort, registryPort)
+		}
+		// The default leaves the engine command line unchanged.
+		if registryPort != constants.DefaultRMIRegistryPort {
+			params.RMIRegistryPort = registryPort
+		}
+	}
+
 	engineOverrides, _ := cmd.Flags().GetStringArray(flagEngineOverride)
 	if len(engineOverrides) > 0 {
 		params.EngineOverrides = engineOverrides
+	}
+	for _, override := range params.EngineOverrides {
+		if err := scenario.RejectInterfacesOverride(override); err != nil {
+			return scenario.Params{}, err
+		}
 	}
 	prefixShards, err := resolvePrefixShardCount(cmd, params)
 	if err != nil {
 		return scenario.Params{}, err
 	}
 	if err := applyPrefixShards(&params, prefixShards); err != nil {
+		return scenario.Params{}, err
+	}
+	if err := applyBucketCount(cmd, &params); err != nil {
+		return scenario.Params{}, err
+	}
+	params.BucketMetricsDisabled = scenario.BucketMetricsDisabledAfterOverrides(params)
+	if err := applyBucketList(cmd, &params, targetBuckets); err != nil {
 		return scenario.Params{}, err
 	}
 
@@ -2675,6 +2919,42 @@ func buildScenarioParams(workloadType string, cmd *cobra.Command) (scenario.Para
 	}); err != nil {
 		return params, err
 	}
+	interfaces, source, err := readInterfaces(cmd)
+	if err != nil {
+		return params, err
+	}
+	if err := scenario.ValidateInterfaces(interfaces, scenario.InterfacesTarget{
+		Source:            source,
+		S3Driver:          params.S3Driver,
+		WorkloadType:      workloadType,
+		EndpointSelection: params.EndpointSelection,
+	}); err != nil {
+		return params, err
+	}
+	if len(interfaces) > 0 {
+		if err := rejectSingleNicRdmaSettings(cmd, source); err != nil {
+			return params, err
+		}
+	}
+	params.Interfaces = interfaces
+	overrides, overridesSource, err := readHostInterfaces(cmd)
+	if err != nil {
+		return params, err
+	}
+	if entries := nicplan.AnyNicSet(overrides); len(entries) > 0 {
+		if err := scenario.ValidateInterfaces(entries, scenario.InterfacesTarget{
+			Source:            overridesSource,
+			S3Driver:          params.S3Driver,
+			WorkloadType:      workloadType,
+			EndpointSelection: params.EndpointSelection,
+		}); err != nil {
+			return params, err
+		}
+		if err := rejectSingleNicRdmaSettings(cmd, overridesSource); err != nil {
+			return params, err
+		}
+	}
+	params.HostInterfaces = overrides
 	return params, nil
 }
 
@@ -2757,6 +3037,77 @@ func applyPrefixShards(params *scenario.Params, shardCount int) error {
 	return nil
 }
 
+// applyBucketCount validates --bucket-count for the workload and records a bucket set of more
+// than one bucket. The flag is the only CLI source of the count: an engine override of
+// storage.targetBucket.count is rejected so validation, scenario policy and run metadata always
+// see the count the engine uses.
+func applyBucketCount(cmd *cobra.Command, params *scenario.Params) error {
+	for _, override := range params.EngineOverrides {
+		if scenario.EngineOverrideSets(override, strings.Split(targetBucketCountPath, ".")...) {
+			return fmt.Errorf("engine override %q sets %s, which is not supported; use --%s",
+				secretmask.EngineOverride(override), targetBucketCountPath, flagBucketCount)
+		}
+	}
+	flag := cmd.Flags().Lookup(flagBucketCount)
+	if flag == nil {
+		return nil
+	}
+	count, err := cmd.Flags().GetInt(flagBucketCount)
+	if err != nil {
+		return err
+	}
+	if count < 1 || count > scenario.MaxBucketCount {
+		return fmt.Errorf("--%s must be between 1 and %d, got %d", flagBucketCount, scenario.MaxBucketCount, count)
+	}
+	if count == 1 {
+		return nil
+	}
+	if reason := bucketCountUnsupportedReason(*params); reason != "" {
+		return fmt.Errorf("--%s %d is not supported for %s", flagBucketCount, count, reason)
+	}
+	if params.WorkloadType == WorkloadTypeDelete {
+		// Seeded DELETE then deletes from a multi-bucket manifest, and standalone DELETE does not batch
+		// across buckets, the same rule as a multi-bucket --items-file.
+		if seededDeleteBatchSize(cmd) > scenario.MinDeleteBatchSize {
+			return fmt.Errorf("--%s %d with seeded delete requires --%s=1: each DELETE request covers one bucket, "+
+				"and batching across buckets is not supported", flagBucketCount, count, flagDeleteBatchSize)
+		}
+	}
+	if _, err := scenario.TargetBucketMemberNames(params.Bucket, count); err != nil {
+		return fmt.Errorf("--%s: %w", flagBucketCount, err)
+	}
+	params.BucketCount = count
+	return nil
+}
+
+// bucketCountUnsupportedReason names why a workload cannot spread its new objects over a bucket
+// set, or returns "" when it can.
+func bucketCountUnsupportedReason(params scenario.Params) string {
+	switch params.WorkloadType {
+	case WorkloadTypeWrite, WorkloadTypeWriteVerify, WorkloadTypeMixed:
+		return ""
+	case WorkloadTypeRead:
+		if strings.TrimSpace(params.ItemsFile) != "" {
+			return "read --items-file: the items file records each object's bucket"
+		}
+		return ""
+	case WorkloadTypeDelete:
+		if strings.TrimSpace(params.ItemsFile) != "" {
+			return "delete --items-file: the items file records each object's bucket"
+		}
+		if params.DeleteExisting {
+			return "delete --delete-existing, which discovers objects in a single bucket"
+		}
+		return ""
+	case WorkloadTypeReadVerify:
+		return "read-verify, which lists a single bucket"
+	case WorkloadTypeList:
+		return "list, which lists a single bucket"
+	default:
+		return params.WorkloadType + " workload"
+	}
+}
+
 func resolvePrefixShardCount(cmd *cobra.Command, params scenario.Params) (int, error) {
 	flag := cmd.Flags().Lookup(flagPrefixShards)
 	if flag == nil {
@@ -2809,6 +3160,11 @@ func formatScenarioParams(params scenario.Params) string {
 	lines = append(lines, fmt.Sprintf("Threads: %d", params.Threads))
 	if params.PrefixShards > 0 {
 		lines = append(lines, fmt.Sprintf("Prefix Shards: %d", params.PrefixShards))
+	}
+	if params.BucketCount > 1 {
+		if names, err := scenario.TargetBucketMemberNames(params.Bucket, params.BucketCount); err == nil {
+			lines = append(lines, fmt.Sprintf("Bucket Count: %d (%s ... %s)", params.BucketCount, names[0], names[len(names)-1]))
+		}
 	}
 	if (params.WorkloadType == WorkloadTypeDelete &&
 		(strings.TrimSpace(params.ItemsFile) != "" || params.DeleteExisting)) ||
@@ -3010,7 +3366,10 @@ func appendS3DisplayLines(lines []string, params scenario.Params) []string {
 		}
 	}
 
-	if params.Bucket != "" {
+	if len(params.BucketNames) > 1 {
+		lines = append(lines, fmt.Sprintf("Buckets: %d (%s ... %s)",
+			len(params.BucketNames), params.BucketNames[0], params.BucketNames[len(params.BucketNames)-1]))
+	} else if params.Bucket != "" {
 		lines = append(lines, fmt.Sprintf("Bucket: %s", params.Bucket))
 	} else {
 		lines = append(lines, "Bucket: (not set)")

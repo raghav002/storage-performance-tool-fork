@@ -1,6 +1,7 @@
 package replay
 
 import (
+	"github.com/dell/storage-performance-tool/cli/internal/nicplan"
 	"net/http"
 
 	"github.com/dell/storage-performance-tool/cli/internal/scenario"
@@ -27,8 +28,16 @@ type Options struct {
 	S3Driver    string
 	// EndpointSelection applies opt-in endpoint selection to the local replay target.
 	EndpointSelection scenario.EndpointSelection
-	BaseTimestamp     string
-	HTTPClient        *http.Client
+	// Interfaces is the replay's NIC set from --interfaces, and InterfacesSource names where it
+	// came from. An archived NIC set is never replayed.
+	Interfaces       []string
+	InterfacesSource string
+	// HostInterfaces are the --host-interfaces values, already checked against --test-hosts, and
+	// HostInterfacesSource names where they came from.
+	HostInterfaces       []nicplan.HostInterfaces
+	HostInterfacesSource string
+	BaseTimestamp        string
+	HTTPClient           *http.Client
 }
 
 // Diagnostic describes a conversion/import issue surfaced during replay planning.

@@ -336,6 +336,19 @@ public final class OperationLifecycleTracker<O extends Operation<? extends Item>
 
 	/** Dispatches only if the token still names the same queued circulation. */
 	public boolean dispatched(final DispatchToken<O> token) {
+		return dispatched(token, false);
+	}
+
+	/**
+	 * Records the exact transport handoff, as {@link #explicitlyDispatched(Operation)} does, only if
+	 * the token still names the same queued circulation. A driver which defers custody from
+	 * admission to the request write uses it at the write.
+	 */
+	public boolean explicitlyDispatched(final DispatchToken<O> token) {
+		return dispatched(token, true);
+	}
+
+	private boolean dispatched(final DispatchToken<O> token, final boolean explicit) {
 		if (!enabled) {
 			return true;
 		}
@@ -347,7 +360,7 @@ public final class OperationLifecycleTracker<O extends Operation<? extends Item>
 			synchronized (token.lifecycle) {
 				if (dispatchDeadlineReached()
 								|| lifecycle(op) != token.lifecycle
-								|| !token.lifecycle.dispatched()) {
+								|| !(explicit ? token.lifecycle.explicitlyDispatched() : token.lifecycle.dispatched())) {
 					return false;
 				}
 				recordDispatched(op);
@@ -364,6 +377,9 @@ public final class OperationLifecycleTracker<O extends Operation<? extends Item>
 				return false;
 			}
 			compatibilityState.state = OperationLifecycleState.DISPATCHED;
+			if (explicit) {
+				compatibilityState.explicitDispatchCirculation = compatibilityState.circulation;
+			}
 			recordDispatched(op);
 			observeDispatchPublication(op);
 			return true;
@@ -822,6 +838,52 @@ public final class OperationLifecycleTracker<O extends Operation<? extends Item>
 	 */
 	public long inFlightCount() {
 		return enabled ? inFlight.get() : 0;
+	}
+
+	/** Operations dispatched so far. Counter-only, so a poll can read it without a traversal. */
+	public long dispatchedCount() {
+		return enabled ? dispatched.sum() : 0;
+	}
+
+	/**
+	 * Operations in custody that have not been dispatched (generator-buffered or driver-queued), or
+	 * -1 when tracking is disabled. Queued child requests of a composite operation count; children
+	 * a composite has not created yet do not. Counter-only and approximate: the outstanding set's
+	 * size is read before the in-flight count, so an operation completing between the reads is
+	 * counted once too often, but a terminal transition between its removal and its in-flight
+	 * decrement makes the count one too few for as long as that writer is stalled. A zero is
+	 * confirmed with {@link #hasUndispatchedOperations()}.
+	 */
+	public long awaitingDispatchCount() {
+		if (!enabled) {
+			return -1;
+		}
+		final long outstandingCount = outstanding.size();
+		return Math.max(0, outstandingCount - inFlight.get());
+	}
+
+	/**
+	 * Whether any operation in custody has not been dispatched, read from each operation's
+	 * lifecycle state rather than from the counters. A terminal transition sets its state before it
+	 * leaves custody, and a queued operation keeps its state until dispatch, so a writer stalled
+	 * between its updates cannot hide a queued operation. Traverses custody, so callers read
+	 * {@link #awaitingDispatchCount()} first and confirm a zero with this.
+	 */
+	public boolean hasUndispatchedOperations() {
+		if (!enabled) {
+			return false;
+		}
+		for (final var operationKey : outstanding) {
+			switch (stateOf(operationKey.value)) {
+			case NEW, GENERATOR_BUFFERED, DRIVER_QUEUED -> {
+				return true;
+			}
+			default -> {
+				// Dispatched, completing or settled.
+			}
+			}
+		}
+		return false;
 	}
 
 	/** Includes generator and driver queues, which are invisible to transport concurrency. */

@@ -10,6 +10,7 @@ import com.dell.spt.base.config.RunIdentityConfig;
 import com.github.akurilov.confuse.impl.BasicConfig;
 import com.github.akurilov.commons.collection.TreeUtil;
 import com.dell.spt.base.load.step.client.LoadStepClient;
+import com.dell.spt.base.config.NicSetConfig;
 import com.dell.spt.base.config.RangeReadConfig;
 import com.dell.spt.base.config.IllegalConfigurationException;
 import com.dell.spt.base.concurrent.DaemonBase;
@@ -22,6 +23,7 @@ import com.dell.spt.base.util.BinarySizeFormat;
 import com.dell.spt.base.env.Extension;
 import com.dell.spt.base.integrity.IntegrityConfig;
 import com.dell.spt.base.integrity.IntegrityCsvArtifacts;
+import com.dell.spt.base.control.run.RunTerminalException;
 import com.dell.spt.base.integrity.IntegrityTerminalException;
 import com.dell.spt.base.item.op.OpType;
 import com.dell.spt.base.item.op.deletion.StandaloneDeleteConfig;
@@ -85,8 +87,10 @@ public abstract class LoadStepBase extends DaemonBase implements LoadStep, Runna
 		this.metricsMgr = metricsMgr;
 		// Script bindings eagerly construct dormant client prototypes for every operation/step type.
 		// Validate local steps immediately, and clients only when selected for execution.
-		if (!(this instanceof LoadStepClient<?>))
+		if (!(this instanceof LoadStepClient<?>)) {
 			validateRangeConfiguration();
+			validateNicSetConfiguration();
+		}
 		try {
 			this.integrityModeEnabled = IntegrityConfig.validateLoadStep(this.config).enabled();
 		} catch (final RuntimeException e) {
@@ -113,6 +117,21 @@ public abstract class LoadStepBase extends DaemonBase implements LoadStep, Runna
 								List.of(Config.deepToMap(this.config), Config.deepToMap(context)));
 				validateRangeConfig(new BasicConfig(
 								this.config.pathSep(), this.config.schema(), merged));
+			});
+		}
+	}
+
+	/** Checks the requested NIC set's entries before any bucket or engine work starts. */
+	private void validateNicSetConfiguration() {
+		NicSetConfig.interfaces(this.config.configVal("storage"));
+		NicSetConfig.nodeInterfaces(this.config);
+		if (this.ctxConfigs != null) {
+			this.ctxConfigs.forEach(context -> {
+				final var merged = TreeUtil.reduceForest(
+								List.of(Config.deepToMap(this.config), Config.deepToMap(context)));
+				final var effective = new BasicConfig(this.config.pathSep(), this.config.schema(), merged);
+				NicSetConfig.interfaces(effective.configVal("storage"));
+				NicSetConfig.nodeInterfaces(effective);
 			});
 		}
 	}
@@ -171,7 +190,8 @@ public abstract class LoadStepBase extends DaemonBase implements LoadStep, Runna
 
 	/**
 	 * Returns the first failure observed by the most recent {@link #run()} call, including failures
-	 * swallowed to preserve the legacy behavior of ordinary load steps.
+	 * swallowed to preserve the legacy behavior of ordinary load steps. A failure to start isn't one
+	 * of those: it ends the run.
 	 */
 	public final Throwable runFailure() {
 		return runFailure;
@@ -181,7 +201,7 @@ public abstract class LoadStepBase extends DaemonBase implements LoadStep, Runna
 	public final void run() {
 		runFailure = null;
 		completedRunMetricsSnapshots = null;
-		IntegrityTerminalException terminalCause = null;
+		RunTerminalException terminalCause = null;
 		try {
 			start();
 			try {
@@ -190,12 +210,11 @@ public abstract class LoadStepBase extends DaemonBase implements LoadStep, Runna
 					terminalCause = standaloneDeleteEarlyExhaustionFailure();
 				}
 			} catch (final RuntimeException e) {
-				if (IntegrityTerminalException.find(e) != null || integrityModeEnabled) {
-					terminalCause = terminalFailure(
-									IntegrityTerminalException.Category.EXECUTION,
-									"failed to await metadata-mode step",
-									e);
-				} else {
+				terminalCause = lifecycleTerminalFailure(
+								IntegrityTerminalException.Category.EXECUTION,
+								"failed to await metadata-mode step",
+								e);
+				if (terminalCause == null) {
 					recordRunFailure(e);
 					LogUtil.exception(Level.WARN, e, "Failed to await \"{}\"", toString());
 				}
@@ -205,19 +224,23 @@ public abstract class LoadStepBase extends DaemonBase implements LoadStep, Runna
 			throwUnchecked(e);
 		} catch (final Throwable cause) {
 			throwUncheckedIfInterrupted(cause);
-			if (IntegrityTerminalException.find(cause) != null || integrityModeEnabled) {
-				terminalCause = terminalFailure(
-								IntegrityTerminalException.Category.EXECUTION,
-								"metadata-mode step execution failed",
-								cause);
-			} else if (cause instanceof IllegalStateException) {
+			terminalCause = lifecycleTerminalFailure(
+							IntegrityTerminalException.Category.EXECUTION,
+							"metadata-mode step execution failed",
+							cause);
+			if (terminalCause == null) {
 				recordRunFailure(cause);
-				LogUtil.exception(Level.ERROR, cause, "Failed to start \"{}\"", toString());
-			} else {
-				recordRunFailure(cause);
-				LogUtil.exception(Level.ERROR, cause, "Load step execution failure \"{}\"", toString());
+				if (cause instanceof IllegalStateException) {
+					LogUtil.exception(Level.ERROR, cause, "Failed to start \"{}\"", toString());
+				} else {
+					LogUtil.exception(Level.ERROR, cause, "Load step execution failure \"{}\"", toString());
+				}
+				// Every runtime failure of the await is handled above, so this is a failure to start.
+				terminalCause = startFailure(cause);
 			}
 		} finally {
+			// The window ends where the run does, before the freeze, on normal and exceptional exits.
+			closeSteadyWindows("run exit");
 			try {
 				completedRunMetricsSnapshots = List.copyOf(currentMetricsSnapshots());
 			} catch (final Throwable metricsFailure) {
@@ -228,14 +251,14 @@ public abstract class LoadStepBase extends DaemonBase implements LoadStep, Runna
 			final Throwable closeCause = closeAfterRun();
 			if (closeCause != null) {
 				throwUncheckedIfInterrupted(closeCause);
-				if (IntegrityTerminalException.find(closeCause) != null || integrityModeEnabled) {
-					final var cleanupFailure = terminalFailure(
-									IntegrityTerminalException.Category.CLEANUP,
-									"metadata-mode step cleanup failed",
-									closeCause);
+				final var cleanupFailure = lifecycleTerminalFailure(
+								IntegrityTerminalException.Category.CLEANUP,
+								"metadata-mode step cleanup failed",
+								closeCause);
+				if (cleanupFailure != null) {
 					if (terminalCause == null) {
 						terminalCause = cleanupFailure;
-					} else {
+					} else if (cleanupFailure != terminalCause) {
 						terminalCause.addSuppressed(cleanupFailure);
 					}
 				} else {
@@ -251,8 +274,34 @@ public abstract class LoadStepBase extends DaemonBase implements LoadStep, Runna
 		}
 	}
 
+	/**
+	 * Closes the Steady-State Window of every metrics context of this step at an end event, on
+	 * the calling thread, before the caller's stop-path action reaches any context. Contexts that
+	 * measure no window, such as an Entry Node's distributed contexts, ignore it.
+	 */
+	protected final void closeSteadyWindows(final String cause) {
+		for (final var metricsCtx : List.copyOf(metricsContexts)) {
+			try {
+				metricsCtx.closeSteadyWindow(cause);
+			} catch (final RuntimeException e) {
+				LogUtil.exception(Level.WARN, e, "{}: failed to close the steady-state window", loadStepId());
+			}
+		}
+		afterSteadyWindowsClosed();
+	}
+
+	/** Called once every aggregate window of this step has closed, before the stop-path action. */
+	protected void afterSteadyWindowsClosed() {}
+
 	private void recordRunFailure(final Throwable failure) {
 		if (failure == null || failure == runFailure) {
+			return;
+		}
+		// A terminal failure wrapping the recorded one adds only what it suppressed, and keeping it would make a cycle.
+		if (runFailure != null && failure.getCause() == runFailure) {
+			for (final Throwable suppressed : failure.getSuppressed()) {
+				recordRunFailure(suppressed);
+			}
 			return;
 		}
 		if (runFailure == null) {
@@ -311,6 +360,8 @@ public abstract class LoadStepBase extends DaemonBase implements LoadStep, Runna
 	protected void doStart() throws IllegalStateException {
 
 		validateRangeConfiguration();
+		validateNicSetConfiguration();
+		provisionTargetBuckets();
 		init();
 		EngineBuildInfoPublisher.global().publishForStep(loadStepId());
 
@@ -329,20 +380,41 @@ public abstract class LoadStepBase extends DaemonBase implements LoadStep, Runna
 			if (t > 0) {
 				timeLimitSec.set(t);
 			}
-			startTimeSec = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis());
+			if (!loadIntervalDeferred()) {
+				startTimeSec = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis());
+			}
 
 		} catch (final Throwable cause) {
 			throwUncheckedIfInterrupted(cause);
-			if (IntegrityTerminalException.find(cause) != null || integrityModeEnabled) {
-				throw terminalFailure(
-								IntegrityTerminalException.Category.EXECUTION,
-								"metadata-mode step failed to start",
-								cause);
+			final var terminalCause = lifecycleTerminalFailure(
+							IntegrityTerminalException.Category.EXECUTION,
+							"metadata-mode step failed to start",
+							cause);
+			if (terminalCause != null) {
+				throw terminalCause;
 			}
 			recordRunFailure(cause);
 			LogUtil.exception(Level.WARN, cause, "{} step failed to start", loadStepId());
+			throw startFailure(cause);
 		}
 
+		if (!loadIntervalDeferred()) {
+			startMetricsContexts();
+		}
+	}
+
+	/** Whether the Load Interval starts later than {@link #doStart()}, at the admission barrier's release. */
+	protected boolean loadIntervalDeferred() {
+		return false;
+	}
+
+	/** Starts a deferred Load Interval: the elapsed time and the metrics contexts, with their steady cuts. */
+	protected final void startLoadInterval() {
+		startTimeSec = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis());
+		startMetricsContexts();
+	}
+
+	private void startMetricsContexts() {
 		// The API is initialized before /run defaults arrive. Bind identity to the
 		// effective step configuration so reused APIs and remote workers report it.
 		final String clusterId = RunIdentityConfig.clusterId(config);
@@ -356,6 +428,12 @@ public abstract class LoadStepBase extends DaemonBase implements LoadStep, Runna
 	}
 
 	protected abstract void doStartWrapped();
+
+	/**
+	 * Controller-side setup that must finish before metrics contexts exist, before the
+	 * configuration is sliced and before any slice starts. Local slices do nothing here.
+	 */
+	protected void provisionTargetBuckets() {}
 
 	/**
 	 * Initializes the actual configuration and metrics contexts
@@ -644,6 +722,35 @@ public abstract class LoadStepBase extends DaemonBase implements LoadStep, Runna
 						"Standalone DELETE inventory slice exhausted before the requested duration; "
 										+ "increase --seed-objects for a seeded run or provide/select a larger frozen inventory",
 						null);
+	}
+
+	/** A step that didn't start ends the run, unless a stop interrupted it, which is that stop. */
+	private RunTerminalException startFailure(final Throwable cause) {
+		if (Thread.currentThread().isInterrupted()) {
+			throwUnchecked(new InterruptedException(loadStepId() + ": stopped while starting"));
+		}
+		return new RunTerminalException(
+						IntegrityTerminalException.Category.EXECUTION,
+						loadStepId(),
+						"step failed to start; see the engine log",
+						cause);
+	}
+
+	/**
+	 * Returns the terminal failure a lifecycle phase ends with, or null when the cause is ordinary
+	 * and keeps the legacy non-throwing behavior. A generic typed cause keeps its own category and
+	 * message, also in metadata mode; any other failure of a metadata-mode step becomes the given
+	 * integrity failure.
+	 */
+	private RunTerminalException lifecycleTerminalFailure(
+					final IntegrityTerminalException.Category category,
+					final String integrityMessage,
+					final Throwable cause) {
+		final var typed = RunTerminalException.find(cause);
+		if (typed instanceof IntegrityTerminalException || (typed == null && integrityModeEnabled)) {
+			return terminalFailure(category, integrityMessage, cause);
+		}
+		return typed == null ? null : typed.withStepId(loadStepId());
 	}
 
 	protected final IntegrityTerminalException terminalFailure(

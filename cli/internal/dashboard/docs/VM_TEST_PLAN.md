@@ -15,7 +15,9 @@ Placeholders: `<vm>` is the VM's SSH host (for example `hgoyal7@<vm-host>`), and
 
 Pick one:
 
-**A. Build on the VM** (needs Go 1.25+ and Node 22.6+ there):
+**A. Build on the VM**
+
+Follow the build requirements in the [dashboard README](../README.md#build).
 
 ```sh
 cd <branch-dir>
@@ -56,7 +58,7 @@ ssh -N -L 8000:127.0.0.1:8000 <vm>
 
 Open <http://127.0.0.1:8000> on the laptop.
 
-- [ ] The page loads; the footer says "SPT server connected".
+- [ ] Check that the page loads and shows "SPT server connected".
 - [ ] No Dell branding appears in the UI.
 
 ## 4. HTTP endpoint check (through the tunnel)

@@ -1,21 +1,90 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import { AxiosError, CanceledError } from "axios";
+import { apiClient } from "../api/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "../api/queryClient";
+import { MantineProvider } from "@mantine/core";
+import { theme } from "../theme";
+import type { ReactNode } from "react";
 import {
   cleanup,
   fireEvent,
-  render,
+  render as renderComponent,
   screen,
   waitFor,
 } from "@testing-library/react";
 import type { CatalogRun, CompareResult, LogResponse } from "../types";
-import { Catalog } from "./Catalog";
-import { Compare, DeltaTable, OverlayChart } from "./Compare";
+import { CatalogPage } from "../pages/catalog/CatalogPage";
+import { ComparePage, DeltaTable } from "../pages/compare/ComparePage";
+import { OverlayChart } from "./OverlayChart";
+import { Charts } from "./RunCharts";
 import { RunLog } from "./RunLog";
 import { NodeTable } from "./NodeTable";
+import { RunWarnings } from "./RunWarnings";
+
+const originalAdapter = apiClient.defaults.adapter;
+const clients: QueryClient[] = [];
+
+beforeAll(() => {
+  // jsdom does not implement the observer used by Mantine's selection indicator.
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  );
+});
+
+afterAll(() => vi.unstubAllGlobals());
+
+function render(ui: ReactNode) {
+  const client = new QueryClient({
+    defaultOptions: queryClient.getDefaultOptions(),
+  });
+  clients.push(client);
+  return renderComponent(ui, {
+    wrapper: ({ children }) => (
+      <MantineProvider
+        theme={theme}
+        forceColorScheme="light"
+        env="test"
+        withCssVariables={false}
+        withGlobalClasses={false}
+      >
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      </MantineProvider>
+    ),
+  });
+}
 
 afterEach(() => {
   cleanup();
-  vi.unstubAllGlobals();
+  clients.splice(0).forEach((client) => client.clear());
+  apiClient.defaults.adapter = originalAdapter;
 });
 
 const run = (id: string, over: Partial<CatalogRun> = {}): CatalogRun => ({
@@ -49,23 +118,30 @@ const run = (id: string, over: Partial<CatalogRun> = {}): CatalogRun => ({
   ...over,
 });
 
-function stubFetch(handler: (url: string) => unknown, status = 200) {
+function stubRequests(handler: (url: string) => unknown, status = 200) {
   const calls: string[] = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (url: string, init?: RequestInit) => {
-      calls.push(url);
-      const signal = init?.signal;
-      if (signal?.aborted) {
-        throw new DOMException("Aborted", "AbortError");
-      }
-      const body = await handler(url);
-      if (signal?.aborted) {
-        throw new DOMException("Aborted", "AbortError");
-      }
-      return new Response(JSON.stringify(body), { status });
-    }),
-  );
+  apiClient.defaults.adapter = async (config) => {
+    const url = config.url ?? "";
+    calls.push(url);
+    const body = await handler(url);
+    if (config.signal?.aborted) throw new CanceledError();
+    const response = {
+      data: body,
+      status,
+      statusText: "",
+      headers: { "content-type": "application/json" },
+      config,
+    };
+    if (config.validateStatus && !config.validateStatus(status))
+      throw new AxiosError(
+        "Request failed",
+        undefined,
+        config,
+        undefined,
+        response,
+      );
+    return response;
+  };
   return calls;
 }
 
@@ -139,7 +215,7 @@ const compareResult: CompareResult = {
 
 describe("Catalog", () => {
   it("lists typed artifact downloads and an empty state", async () => {
-    stubFetch((url) => {
+    stubRequests((url) => {
       if (url.startsWith("/api/catalog/artifacts")) {
         if (url.includes("id=empty")) return { run_id: "empty", artifacts: [] };
         return {
@@ -184,7 +260,7 @@ describe("Catalog", () => {
         read_only: true,
       };
     });
-    render(<Catalog onCompare={() => {}} />);
+    render(<CatalogPage onCompare={() => {}} />);
     await screen.findByText("a");
     fireEvent.click(screen.getAllByRole("button", { name: "Details" })[0]);
     expect(
@@ -202,7 +278,7 @@ describe("Catalog", () => {
     const delayedA = new Promise((resolve) => {
       releaseA = resolve;
     });
-    stubFetch((url) => {
+    stubRequests((url) => {
       if (url.startsWith("/api/catalog/artifacts")) {
         if (url.includes("id=empty")) return { run_id: "empty", artifacts: [] };
         return delayedA.then(() => ({
@@ -235,7 +311,7 @@ describe("Catalog", () => {
         read_only: true,
       };
     });
-    render(<Catalog onCompare={() => {}} />);
+    render(<CatalogPage onCompare={() => {}} />);
     await screen.findByText("a");
     fireEvent.click(screen.getAllByRole("button", { name: "Details" })[0]);
     expect(await screen.findByText("Loading artifacts…")).toBeTruthy();
@@ -261,7 +337,7 @@ describe("Catalog", () => {
   });
 
   it("filters through the API and hands the selection to compare", async () => {
-    const calls = stubFetch(() => ({
+    const calls = stubRequests(() => ({
       root: "/results",
       runs: [
         run("a"),
@@ -277,7 +353,7 @@ describe("Catalog", () => {
       read_only: true,
     }));
     const onCompare = vi.fn();
-    render(<Catalog onCompare={onCompare} />);
+    render(<CatalogPage onCompare={onCompare} />);
     await screen.findByText("a");
     expect(screen.getByLabelText("Compare bad")).toHaveProperty(
       "disabled",
@@ -299,11 +375,47 @@ describe("Catalog", () => {
   });
 });
 
+describe("Charts", () => {
+  it("includes a fractional-time sample exactly on the exported window boundary", () => {
+    const startedAt = "2026-11-04T12:00:00.000Z";
+    render(
+      <Charts
+        phase="CREATE"
+        startedAt={startedAt}
+        metrics={{
+          run_id: "boundary",
+          is_active: false,
+          is_aggregate: false,
+          samples: [],
+          chart_samples: [0, 2.2, 5, 62.2].map((time) => ({
+            timestamp: new Date(
+              Date.parse(startedAt) + time * 1000,
+            ).toISOString(),
+            op_type: "CREATE",
+            interval_iops: 1,
+          })),
+        }}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Time window"), {
+      target: { value: "60" },
+    });
+    expect(screen.getByText(/3 visible samples/)).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Export window CSV" })
+        .getAttribute("href"),
+    ).toBe(
+      "/api/runs/boundary/csv?kind=window&phase=CREATE&start=2.2&end=62.2",
+    );
+  });
+});
+
 describe("Compare", () => {
   it("labels the rule honestly and shows settings differences", async () => {
-    const calls = stubFetch(() => compareResult);
+    const calls = stubRequests(() => compareResult);
     render(
-      <Compare ids={["base", "next"]} baseline="base" onBack={() => {}} />,
+      <ComparePage ids={["base", "next"]} baseline="base" onBack={() => {}} />,
     );
     await screen.findByText("Threshold check, not statistical significance");
     expect(screen.getByRole("status").textContent).toContain(
@@ -319,31 +431,44 @@ describe("Compare", () => {
     await waitFor(() => expect(calls.at(-1)).toContain("threshold_pct=5"));
   });
   it("asks for at least two runs", () => {
-    render(<Compare ids={["only"]} baseline="" onBack={() => {}} />);
+    render(<ComparePage ids={["only"]} baseline="" onBack={() => {}} />);
     expect(screen.getByText("Select runs to compare")).toBeTruthy();
   });
-  it("draws one line per run and a dot for a single sample", () => {
-    const { container } = render(
+  it("reads exact samples without inventing values for another run", () => {
+    render(
       <OverlayChart
         phase="WRITE"
         metric="iops"
-        unit="IOPS"
+        title="IOPS"
+        unit="ops/s"
+        baseline="base"
         lines={[
           {
             id: "base",
+            label: "Run 1",
             color: "#000",
             points: compareResult.series.base.WRITE,
           },
           {
             id: "next",
+            label: "Run 2",
             color: "#111",
             points: compareResult.series.next.WRITE,
           },
         ]}
       />,
     );
-    expect(container.querySelectorAll("polyline")).toHaveLength(1);
-    expect(container.querySelectorAll("circle")).toHaveLength(1);
+    expect(screen.getByText("40 ops/s")).toBeTruthy();
+    expect(screen.getByText("30 ops/s")).toBeTruthy();
+    fireEvent.keyDown(
+      screen.getByRole("slider", { name: "Inspect WRITE comparison sample" }),
+      {
+        key: "ArrowRight",
+      },
+    );
+    expect(screen.getByText("50 ops/s")).toBeTruthy();
+    expect(screen.getByText("No sample at this time")).toBeTruthy();
+    expect(screen.queryByText("30 ops/s")).toBeNull();
   });
   it("shows the footnote and reasons in the delta table", () => {
     render(<DeltaTable deltas={compareResult.deltas} baseline="base" />);
@@ -368,21 +493,21 @@ describe("RunLog", () => {
         { file: "console", level: "error", text: "ERROR [REDACTED]" },
       ],
     };
-    const calls = stubFetch(() => body);
+    const calls = stubRequests(() => body);
     render(<RunLog base="/api/runs/r/log" sources={["console", "results"]} />);
     await screen.findByText("WARN slow");
     expect(screen.getByText(/Interim console output/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "ERROR" }));
+    fireEvent.click(screen.getByRole("radio", { name: "ERROR" }));
     await waitFor(() =>
       expect(calls.at(-1)).toBe(
         "/api/runs/r/log?source=console&level=error&tail=200",
       ),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Results logs" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Results logs" }));
     await waitFor(() => expect(calls.at(-1)).toContain("source=results"));
   });
   it("stays closed and does not fetch until opened when collapsed", async () => {
-    const calls = stubFetch(() => ({
+    const calls = stubRequests(() => ({
       run_id: "r",
       source: "results",
       level: "all",
@@ -390,50 +515,63 @@ describe("RunLog", () => {
       truncated: false,
       lines: [{ file: "write.errors.log", level: "error", text: "ERROR boom" }],
     }));
-    const { container } = render(
+    render(
       <RunLog base="/api/catalog/log?id=r" title="Errors and logs" collapsed />,
     );
     expect(calls).toHaveLength(0);
-    const details = container.querySelector("details")!;
-    details.open = true;
-    fireEvent(details, new Event("toggle"));
+    fireEvent.click(screen.getByRole("button", { name: "Errors and logs" }));
     await screen.findByText("ERROR boom");
     expect(screen.getByText("From: write.errors.log")).toBeTruthy();
   });
   it("shows the server error", async () => {
-    stubFetch(() => ({ error: "Saved run not found." }), 404);
+    stubRequests(() => ({ error: "Saved run not found." }), 404);
     render(<RunLog base="/api/catalog/log?id=x" />);
     await screen.findByText("Saved run not found.");
   });
 });
 
 describe("NodeTable", () => {
-  it("renders reporting and unavailable machines", () => {
+  it("renders reporting and distinguishes no-data from measured zero", () => {
     render(
       <NodeTable
         nodes={[
           {
             host: "node-a",
             status: "reporting",
-            iops: 12.5,
+            data_status: "present",
+            iops: 0,
+            failed_ops: 0,
             op_type: "CREATE",
           },
-          { host: "node-b", status: "unavailable" },
+          {
+            host: "node-b",
+            status: "unavailable",
+            data_status: "no_data",
+          },
+          {
+            host: "node-c",
+            status: "reporting",
+            data_status: "delayed",
+            iops: 3,
+            sample_ts: "2026-10-30T12:00:00Z",
+          },
         ]}
       />,
     );
     expect(screen.getByText("Reporting")).toBeTruthy();
-    expect(screen.getByText("Unavailable")).toBeTruthy();
+    expect(screen.getAllByText("No data").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Delayed").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("0").length).toBeGreaterThan(0); // measured zero on node-a
+    expect(screen.getByText("3 (delayed)")).toBeTruthy();
   });
   it("renders nothing without nodes", () => {
     const { container } = render(<NodeTable nodes={[]} />);
     expect(container.innerHTML).toBe("");
   });
 
-
   it("offers Compare with previous for a complete run with an older match", async () => {
     const onCompare = vi.fn();
-    stubFetch(() => ({
+    stubRequests(() => ({
       root: "/tmp/results",
       runs: [
         run("newer", {
@@ -453,7 +591,7 @@ describe("NodeTable", () => {
       truncated: false,
       read_only: true,
     }));
-    render(<Catalog onCompare={onCompare} />);
+    render(<CatalogPage onCompare={onCompare} />);
     expect(
       await screen.findByRole("button", { name: "Compare with previous" }),
     ).toBeTruthy();
@@ -462,6 +600,40 @@ describe("NodeTable", () => {
     );
     expect(onCompare).toHaveBeenCalledWith(["newer", "older"], "older");
   });
+});
 
-
+describe("RunWarnings", () => {
+  it("lists observed warnings with host when known", () => {
+    render(
+      <RunWarnings
+        warnings={[
+          {
+            code: "fleet_partial",
+            severity: "warn",
+            observed:
+              "SPT fleet metrics report partial=true (aggregate incomplete or contributor evidence inconsistent).",
+            source: "fleet_metrics",
+            metric: "fleet_aggregate",
+          },
+          {
+            code: "node_no_data",
+            severity: "warn",
+            observed:
+              "Client machine node-b: SPT /metrics/json did not return a usable live sample in this poll.",
+            host: "node-b",
+            source: "node_metrics",
+            metric: "node_sample",
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText("Incomplete fleet aggregate")).toBeTruthy();
+    expect(screen.getByText("Client metrics unavailable")).toBeTruthy();
+    expect(screen.getByText("node-b")).toBeTruthy();
+    expect(screen.getByText(/partial=true/, { exact: false })).toBeTruthy();
+  });
+  it("renders nothing without warnings", () => {
+    const { container } = render(<RunWarnings warnings={[]} />);
+    expect(container.innerHTML).toBe("");
+  });
 });

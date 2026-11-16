@@ -1,5 +1,7 @@
 package scenario
 
+import "github.com/dell/storage-performance-tool/cli/internal/nicplan"
+
 import "time"
 
 // Params holds all parameters needed to generate a Spt scenario.
@@ -7,7 +9,13 @@ type Params struct {
 	WorkloadType string
 	Endpoint     string
 	Endpoints    []string
-	Region       string // Optional AWS region; empty preserves engine defaults.
+	Region       string // Optional AWS region; empty lets the engine infer it from an AWS endpoint, else us-east-1.
+
+	// TargetBucketProvisionDisabled forbids creating a missing target bucket
+	// (--provision-target-bucket=false); target buckets are still checked.
+	TargetBucketProvisionDisabled bool
+	// BucketMetricsDisabled turns off per-bucket counts and timings (--bucket-metrics=false).
+	BucketMetricsDisabled bool
 
 	// EndpointSelection is the opt-in per-request endpoint selection; the zero value keeps the default.
 	EndpointSelection EndpointSelection
@@ -29,9 +37,23 @@ type Params struct {
 	ServiceThreads  int      // VT carrier thread parallelism (0 = JVM default)
 	EngineOverrides []string // Advanced engine defaults overrides as YAML path=value entries
 	PrefixShards    int      // Optional count of fixed-width object-key prefix directories (0 = disabled)
+	BucketCount     int      // storage.targetBucket.count when greater than 1; 0 or 1 targets the bucket alone
+	RMIRegistryPort int      // Single-host engine RMI registry port (0 = engine default 1099)
+
+	// BucketNames is storage.targetBucket.names when two or more buckets are listed; Bucket is then the
+	// first name, which item.output.path carries as a placeholder. A one-name list is Bucket alone.
+	BucketNames []string `json:",omitempty"`
 
 	// Multi-endpoint controls
 	SliceEndpoints bool // Partition endpoint list across nodes in distributed runs
+
+	// Interfaces is the run's NIC set (--interfaces): auto, or interface names, IPv4 addresses or
+	// RDMA devices. Empty writes no storage.net.interfaces, so the shipped empty default applies.
+	Interfaces []string
+	// HostInterfaces are the --host-interfaces values. They reach the engine as the Entry Node's
+	// arguments, built from the workers that started (NodeInterfacesArgs), so the defaults never
+	// hold them, and run metadata stores them under its own field.
+	HostInterfaces []nicplan.HostInterfaces `json:"-"`
 
 	// Read workload
 	RangeSize             string // Empty disables partial reads.
@@ -164,4 +186,16 @@ func resolveStorageDriverType(s3Driver string) string {
 	default:
 		return storageDriverTypeS3
 	}
+}
+
+// BucketSetSize returns the number of buckets in the target bucket set: the listed names, the
+// generated count, or 1.
+func (p Params) BucketSetSize() int {
+	if len(p.BucketNames) > 0 {
+		return len(p.BucketNames)
+	}
+	if p.BucketCount > 1 {
+		return p.BucketCount
+	}
+	return 1
 }

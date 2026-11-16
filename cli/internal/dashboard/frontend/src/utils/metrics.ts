@@ -1,4 +1,4 @@
-import type { Row } from "../types";
+import type { DataStatus } from "../types";
 export function numeric(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -9,6 +9,35 @@ export function formatNumber(value: unknown, digits = 0): string {
     : new Intl.NumberFormat("en-US", { maximumFractionDigits: digits }).format(
         n,
       );
+}
+/** AC1: missing/delayed telemetry must not look like a measured zero. */
+export function formatMetric(
+  value: unknown,
+  digits = 0,
+  status?: DataStatus,
+): string {
+  if (status === "no_data") return "No data";
+  if (status === "delayed" && numeric(value) === null) return "Delayed";
+  if (status === "delayed" && numeric(value) !== null) {
+    return `${formatNumber(value, digits)} (delayed)`;
+  }
+  return formatNumber(value, digits);
+}
+export function formatChartValue(value: unknown): string {
+  const n = numeric(value);
+  if (n === null) return "—";
+  if (n !== 0 && Math.abs(n) < 0.001) return n.toExponential(2);
+  return Math.abs(n) < 1
+    ? new Intl.NumberFormat("en-US", { maximumSignificantDigits: 3 }).format(n)
+    : formatNumber(n, 2);
+}
+export function formatChartAxisValue(value: number): string {
+  return value !== 0 && Math.abs(value) < 0.001
+    ? value.toExponential(1)
+    : new Intl.NumberFormat("en-US", {
+        notation: "compact",
+        maximumSignificantDigits: 3,
+      }).format(value);
 }
 export function elapsed(value: unknown): string {
   const n = numeric(value);

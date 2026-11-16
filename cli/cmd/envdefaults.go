@@ -35,8 +35,10 @@ func markEnvApplied(cmd *cobra.Command, flag, value string) {
 // Env variables honored:
 //
 //	S3_ENDPOINTS (CSV) or S3_ENDPOINT (single)
-//	S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET
+//	S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKETS (CSV) or S3_BUCKET, S3_REGION
 //	HOSTS (equivalent to --test-hosts)
+//	SPT_INTERFACES (equivalent to --interfaces)
+//	SPT_HOST_INTERFACES (equivalent to --host-interfaces, with ; between hosts)
 func applyEnvDefaultsToRunFlags(cmd *cobra.Command) error {
 	// setFromEnv sets a flag's value and records that it came from env, not
 	// an explicit CLI argument (see markEnvApplied).
@@ -62,12 +64,12 @@ func applyEnvDefaultsToRunFlags(cmd *cobra.Command) error {
 	// Prefer multi-endpoints if provided in env
 	if f := cmd.Flags().Lookup("endpoints"); f != nil && !cmd.Flags().Changed("endpoints") {
 		if !cmd.Flags().Changed("endpoint") {
-			if v := strings.TrimSpace(os.Getenv("S3_ENDPOINTS")); v != "" {
+			if v := strings.TrimSpace(os.Getenv(constants.EnvS3Endpoints)); v != "" {
 				// Cobra accepts CSV for StringSlice Set
 				if err := setFromEnv("endpoints", v); err != nil {
 					return err
 				}
-			} else if v := strings.TrimSpace(os.Getenv("S3_ENDPOINT")); v != "" {
+			} else if v := strings.TrimSpace(os.Getenv(constants.EnvS3Endpoint)); v != "" {
 				if err := setFromEnv("endpoints", v); err != nil {
 					return err
 				}
@@ -78,7 +80,10 @@ func applyEnvDefaultsToRunFlags(cmd *cobra.Command) error {
 	// S3 auth/bucket
 	_ = setIf("access-key", "S3_ACCESS_KEY")
 	_ = setIf("secret-key", "S3_SECRET_KEY")
-	_ = setIf("bucket", "S3_BUCKET")
+	if err := applyBucketEnvDefaults(cmd, setIf, setFromEnv); err != nil {
+		return err
+	}
+	_ = setIf("region", constants.EnvS3Region)
 
 	if f := cmd.Flags().Lookup("auth-version"); f != nil && !cmd.Flags().Changed("auth-version") {
 		if v := strings.TrimSpace(os.Getenv(constants.EnvS3AuthVersion)); v != "" {
@@ -107,7 +112,7 @@ func applyEnvDefaultsToRunFlags(cmd *cobra.Command) error {
 
 	// Concurrency (THREADS): allow .env/OS to set default when --threads not provided
 	if f := cmd.Flags().Lookup("threads"); f != nil && !cmd.Flags().Changed("threads") {
-		if v := strings.TrimSpace(os.Getenv("THREADS")); v != "" {
+		if v := strings.TrimSpace(os.Getenv(constants.EnvThreads)); v != "" {
 			if _, err := strconv.Atoi(v); err != nil {
 				return fmt.Errorf("invalid THREADS value %q: %w", v, err)
 			}
@@ -164,6 +169,11 @@ func applyEnvDefaultsToRunFlags(cmd *cobra.Command) error {
 				markEnvApplied(cmd, flagEngineOverride, strings.Join(overrides, "; "))
 			}
 		}
+	}
+
+	_ = setIf(flagInterfaces, constants.EnvInterfaces)
+	if err := applyHostInterfacesEnv(cmd); err != nil {
+		return err
 	}
 
 	// RDMA string settings
@@ -254,6 +264,32 @@ func applyEnvDefaultsToRunFlags(cmd *cobra.Command) error {
 	return nil
 }
 
+// applyBucketEnvDefaults applies S3_BUCKETS and S3_BUCKET. An explicit --buckets or --buckets-file
+// suppresses both. An explicit --bucket or --bucket-count suppresses S3_BUCKETS, and S3_BUCKET then
+// still supplies a missing --bucket, the generated set's base. When only the environment names
+// buckets, S3_BUCKETS wins over S3_BUCKET, with one line saying so. A command without --buckets,
+// such as replay, reads S3_BUCKET alone.
+func applyBucketEnvDefaults(cmd *cobra.Command, setIf func(flag, envKey string) error,
+	setFromEnv func(flag, value string) error) error {
+	flags := cmd.Flags()
+	if flags.Changed(flagBuckets) || flags.Changed(flagBucketsFile) {
+		return nil
+	}
+	buckets := strings.TrimSpace(os.Getenv(constants.EnvS3Buckets))
+	if buckets == "" || flags.Lookup(flagBuckets) == nil || flags.Changed("bucket") || flags.Changed(flagBucketCount) {
+		_ = setIf("bucket", constants.EnvS3Bucket)
+		return nil
+	}
+	if err := setFromEnv(flagBuckets, buckets); err != nil {
+		return fmt.Errorf("invalid %s value %q: %w", constants.EnvS3Buckets, buckets, err)
+	}
+	if strings.TrimSpace(os.Getenv(constants.EnvS3Bucket)) != "" {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Using %s for the target buckets; %s is ignored\n",
+			constants.EnvS3Buckets, constants.EnvS3Bucket)
+	}
+	return nil
+}
+
 func splitEngineOverridesEnv(value string) []string {
 	fields := strings.FieldsFunc(value, func(r rune) bool {
 		return r == ';' || r == '\n' || r == '\r'
@@ -268,13 +304,41 @@ func splitEngineOverridesEnv(value string) []string {
 	return overrides
 }
 
-// applyEnvDefaultsToVerifyFlags injects HOSTS env into verify flags when not provided.
-func applyEnvDefaultsToVerifyFlags(cmd *cobra.Command) error {
+// applyEnvHostsDefault injects HOSTS env into a command's --test-hosts when not provided.
+func applyEnvHostsDefault(cmd *cobra.Command) error {
 	if !cmd.Flags().Changed("test-hosts") {
 		if v := strings.TrimSpace(os.Getenv("HOSTS")); v != "" {
 			if err := cmd.Flags().Set("test-hosts", v); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+// applyEnvDefaultsToVerifyFlags injects HOSTS env into verify flags when not provided, and
+// SPT_INTERFACES. With a NIC set it also injects the run's S3_ENDPOINTS or S3_ENDPOINT, and THREADS.
+func applyEnvDefaultsToVerifyFlags(cmd *cobra.Command) error {
+	if err := applyEnvHostsDefault(cmd); err != nil {
+		return err
+	}
+
+	if !cmd.Flags().Changed(flagInterfaces) {
+		if v := strings.TrimSpace(os.Getenv(constants.EnvInterfaces)); v != "" {
+			if err := cmd.Flags().Set(flagInterfaces, v); err != nil {
+				return err
+			}
+		}
+	}
+	if err := applyHostInterfacesEnv(cmd); err != nil {
+		return err
+	}
+	// Listing NICs needs no endpoints or concurrency, so their variables are read only for a plan.
+	interfaces, _ := cmd.Flags().GetString(flagInterfaces)
+	hostOverrides, _ := cmd.Flags().GetStringArray(flagHostInterfaces)
+	if strings.TrimSpace(interfaces) != "" || len(hostOverrides) > 0 {
+		if err := applyNicPlanEnvDefaults(cmd); err != nil {
+			return err
 		}
 	}
 
@@ -287,5 +351,31 @@ func applyEnvDefaultsToVerifyFlags(cmd *cobra.Command) error {
 		}
 	}
 
+	return nil
+}
+
+// applyNicPlanEnvDefaults injects the endpoints and THREADS a verify NIC plan uses, as a run reads them.
+func applyNicPlanEnvDefaults(cmd *cobra.Command) error {
+	if !cmd.Flags().Changed("endpoints") {
+		endpoints := strings.TrimSpace(os.Getenv(constants.EnvS3Endpoints))
+		if endpoints == "" {
+			endpoints = strings.TrimSpace(os.Getenv(constants.EnvS3Endpoint))
+		}
+		if endpoints != "" {
+			if err := cmd.Flags().Set("endpoints", endpoints); err != nil {
+				return err
+			}
+		}
+	}
+	if !cmd.Flags().Changed("threads") {
+		if v := strings.TrimSpace(os.Getenv(constants.EnvThreads)); v != "" {
+			if _, err := strconv.Atoi(v); err != nil {
+				return fmt.Errorf("invalid THREADS value %q: %w", v, err)
+			}
+			if err := cmd.Flags().Set("threads", v); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }

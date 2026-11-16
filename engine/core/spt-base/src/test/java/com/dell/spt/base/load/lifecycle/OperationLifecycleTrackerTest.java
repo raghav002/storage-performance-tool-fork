@@ -27,6 +27,25 @@ import org.mockito.Answers;
 
 final class OperationLifecycleTrackerTest {
 
+	/** A duration DELETE's poll compares this with what was generated, so a refusal must never count. */
+	@Test
+	void aRefusedDispatchIsNotCountedAsDispatched() {
+		final var tracker = new OperationLifecycleTracker<DataOperationImpl<DataItemImpl>>();
+		final var sent = operation("sent");
+		final var refused = operation("refused");
+		assertTrue(tracker.driverQueued(sent));
+		assertTrue(tracker.driverQueued(refused));
+		assertTrue(tracker.explicitlyDispatched(sent));
+		assertEquals(1, tracker.dispatchedCount());
+
+		tracker.enforceDispatchDeadline(System.nanoTime() - 1);
+
+		assertFalse(tracker.explicitlyDispatched(refused));
+		assertEquals(1, tracker.dispatchedCount());
+		assertTrue(tracker.unattempted(refused));
+		assertEquals(1, tracker.dispatchedCount());
+	}
+
 	@Test
 	void terminalEvidenceCountsSelectionIndependentlyAndClassifiesExactlyOnce() {
 		final var tracker = new OperationLifecycleTracker<DataOperationImpl<DataItemImpl>>();
@@ -69,6 +88,67 @@ final class OperationLifecycleTrackerTest {
 		assertEquals(0, tracker.counters().failed());
 		assertTrue(tracker.counters().reconciled());
 		assertFalse(OperationLifecycleTracker.disabled().counters().reconciled());
+	}
+
+	@Test
+	void awaitingDispatchCountsOnlyUndispatchedLogicalOperations() {
+		final var tracker = new OperationLifecycleTracker<DataOperationImpl<DataItemImpl>>();
+		final var buffered = operation("buffered");
+		final var queued = operation("queued");
+		final var sent = operation("sent");
+		assertEquals(0, tracker.awaitingDispatchCount());
+		assertTrue(tracker.generatorBuffered(buffered));
+		assertTrue(tracker.generatorBuffered(queued));
+		assertTrue(tracker.driverQueued(queued));
+		assertTrue(tracker.generatorBuffered(sent));
+		assertTrue(tracker.dispatched(sent));
+		assertEquals(2, tracker.awaitingDispatchCount(), "buffered and queued, not dispatched");
+		assertTrue(tracker.dispatched(buffered));
+		assertTrue(tracker.dispatched(queued));
+		assertEquals(0, tracker.awaitingDispatchCount(), "every logical operation is in flight");
+		assertTrue(tracker.completionStarted(sent));
+		sent.status(Operation.Status.SUCC);
+		assertTrue(tracker.terminal(sent));
+		assertEquals(0, tracker.awaitingDispatchCount());
+		assertEquals(-1, OperationLifecycleTracker.disabled().awaitingDispatchCount());
+	}
+
+	@Test
+	void undispatchedOperationsAreReadFromLifecycleStates() {
+		final var tracker = new OperationLifecycleTracker<DataOperationImpl<DataItemImpl>>();
+		final var buffered = operation("buffered");
+		final var queued = operation("queued");
+		assertFalse(tracker.hasUndispatchedOperations());
+		assertTrue(tracker.generatorBuffered(buffered));
+		assertTrue(tracker.hasUndispatchedOperations(), "generator-buffered");
+		assertTrue(tracker.dispatched(buffered));
+		assertFalse(tracker.hasUndispatchedOperations(), "in flight");
+		assertTrue(tracker.driverQueued(queued));
+		assertTrue(tracker.hasUndispatchedOperations(), "driver-queued");
+		assertTrue(tracker.dispatched(queued));
+		assertTrue(tracker.completionStarted(queued));
+		assertFalse(tracker.hasUndispatchedOperations(), "completing");
+		queued.status(Operation.Status.SUCC);
+		assertTrue(tracker.terminal(queued));
+		assertFalse(tracker.hasUndispatchedOperations());
+		assertFalse(OperationLifecycleTracker.disabled().hasUndispatchedOperations());
+	}
+
+	@Test
+	void aStalledTerminalTransitionCannotHideAQueuedOperation() throws Exception {
+		final var tracker = new OperationLifecycleTracker<DataOperationImpl<DataItemImpl>>();
+		final var queued = operation("queued");
+		final var completing = operation("completing");
+		assertTrue(tracker.driverQueued(queued));
+		assertTrue(tracker.dispatched(completing));
+		assertTrue(tracker.completionStarted(completing));
+		completing.status(Operation.Status.SUCC);
+		try (var stalled = StalledTerminalTransition.stall(tracker, completing)) {
+			assertEquals(0, tracker.awaitingDispatchCount(), "removed from custody, still counted in flight");
+			assertTrue(tracker.hasUndispatchedOperations());
+		}
+		assertEquals(1, tracker.awaitingDispatchCount());
+		assertTrue(tracker.hasUndispatchedOperations());
 	}
 
 	@Test
@@ -172,6 +252,39 @@ final class OperationLifecycleTrackerTest {
 		assertFalse(tracker.unresolvedSubmission(dispatchToken),
 						"the prior submission token must not resolve the recycled circulation");
 		assertEquals(OperationLifecycleState.DRIVER_QUEUED, tracker.stateOf(legacy));
+	}
+
+	@Test
+	void aTokenCheckedExplicitDispatchClaimsOnlyItsQueuedCirculationOnce() {
+		final var tracker = new OperationLifecycleTracker<DataOperationImpl<DataItemImpl>>();
+		final var written = operation("written");
+		assertTrue(tracker.driverQueued(written));
+		final var token = tracker.queuedDispatchToken(written);
+		assertTrue(tracker.explicitlyDispatched(token));
+		assertEquals(OperationLifecycleState.DISPATCHED, tracker.stateOf(written));
+		assertTrue(tracker.hasExplicitDispatchBoundary(written));
+		assertFalse(tracker.explicitlyDispatched(token), "a token claims its circulation once");
+
+		final var recovered = operation("recovered");
+		assertTrue(tracker.driverQueued(recovered));
+		final var stale = tracker.queuedDispatchToken(recovered);
+		assertTrue(tracker.unattempted(recovered));
+		assertFalse(tracker.explicitlyDispatched(stale), "a recovered circulation is never written");
+		assertEquals(OperationLifecycleState.UNATTEMPTED, tracker.stateOf(recovered));
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void aTokenCheckedExplicitDispatchRecordsTheBoundaryOfACompatibilityOperation() {
+		final var tracker = new OperationLifecycleTracker<Operation<Item>>();
+		final Operation<Item> legacy = mock(Operation.class, Answers.CALLS_REAL_METHODS);
+		assertTrue(tracker.driverQueued(legacy));
+		final var token = tracker.queuedDispatchToken(legacy);
+		assertTrue(tracker.explicitlyDispatched(token));
+		assertEquals(OperationLifecycleState.DISPATCHED, tracker.stateOf(legacy));
+		assertTrue(tracker.hasExplicitDispatchBoundary(legacy));
+		assertTrue(tracker.hasExplicitDispatchBoundary(token));
+		assertFalse(tracker.explicitlyDispatched(token));
 	}
 
 	@Test

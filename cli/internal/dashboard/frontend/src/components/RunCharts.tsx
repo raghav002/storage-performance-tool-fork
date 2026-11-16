@@ -1,8 +1,33 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  Alert,
+  Badge,
+  Button,
+  Checkbox,
+  NativeSelect,
+  Paper,
+  RangeSlider,
+  Slider,
+  Text,
+  Title,
+} from "@mantine/core";
+import { useCallback, useMemo, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Download,
+  Maximize2,
+  Pause,
+  Play,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import type { Metrics, Sample } from "../types";
 import { TrendChart } from "./TrendChart";
+import { PhaseSummaryChart } from "./PhaseSummaryChart";
+import { dashboardTokens } from "../theme";
 import {
   elapsed,
+  formatChartValue,
   formatNumber as fmt,
   numeric,
   phaseCode,
@@ -13,32 +38,71 @@ import {
 const graphs = [
   {
     key: "throughput" as const,
-    field: "interval_iops" as const,
+    summaryField: "iops" as const,
     label: "IOPS",
     unit: "ops/s",
-    color: "#347bd1",
+    series: [
+      {
+        key: "throughput" as const,
+        label: "IOPS",
+        color: dashboardTokens.charts.throughput,
+      },
+    ],
   },
   {
     key: "bandwidth" as const,
-    field: "bandwidth_mib_s" as const,
+    summaryField: "bandwidth_mib_s" as const,
     label: "Bandwidth",
     unit: "MiB/s",
-    color: "#188a82",
+    series: [
+      {
+        key: "bandwidth" as const,
+        label: "Bandwidth",
+        color: dashboardTokens.charts.bandwidth,
+      },
+    ],
   },
   {
     key: "p50" as const,
-    field: "p50_latency_us" as const,
+    summaryField: "p50_latency_us" as const,
     label: "Latency",
     unit: "µs",
-    color: "#7a63ce",
+    series: [
+      {
+        key: "p50" as const,
+        label: "P50",
+        color: dashboardTokens.charts.latencyP50,
+      },
+      {
+        key: "p99" as const,
+        label: "P99",
+        color: dashboardTokens.charts.latencyP99,
+      },
+    ],
   },
 ];
-type Limits = {
-  iops: number | null;
-  bandwidth: number | null;
-  latency: number | null;
-};
-const noLimits: Limits = { iops: null, bandwidth: null, latency: null };
+
+type TimeWindow = { duration: number | null; end: number | null };
+
+function timeBounds(window: TimeWindow, first: number, last: number) {
+  // Match the millisecond precision of parsed timestamps before calculating bounds.
+  const firstMs = Math.round(first * 1000),
+    lastMs = Math.round(last * 1000);
+  const width = Math.min(
+    lastMs - firstMs,
+    window.duration === null
+      ? lastMs - firstMs
+      : Math.round(window.duration * 1000),
+  );
+  const end =
+    window.end === null
+      ? lastMs
+      : Math.min(
+          lastMs,
+          Math.max(firstMs + width, Math.round(window.end * 1000)),
+        );
+  return [(end - width) / 1000, end / 1000] as const;
+}
 
 export function Charts({
   metrics: m,
@@ -49,8 +113,9 @@ export function Charts({
   phase: string;
   startedAt?: string;
 }) {
-  const history = m.chart_samples ?? (m.is_aggregate ? [] : (m.samples ?? []));
   const samples = useMemo(() => {
+    const history =
+      m.chart_samples ?? (m.is_aggregate ? [] : (m.samples ?? []));
     const rows = history
       .filter(
         (r) =>
@@ -71,44 +136,101 @@ export function Charts({
       p50: numeric(r.p50_latency_us),
       p99: numeric(r.latency_p99_us),
     }));
-  }, [history, phase, startedAt]);
+  }, [m.chart_samples, m.is_aggregate, m.samples, phase, startedAt]);
   const [mode, setMode] = useState<"timeline" | "summary">("timeline"),
     [cleanup, setCleanup] = useState(false),
-    [active, setActive] = useState<number | null>(null);
+    [inspection, setInspection] = useState<{
+      timestamp: string;
+      pinned: boolean;
+    } | null>(null);
   const first = samples[0]?.elapsed ?? 0,
     last = samples.at(-1)?.elapsed ?? first;
-  const [windowSize, setWindowSize] = useState<number | null>(null),
-    [position, setPosition] = useState<number | null>(null);
-  const width = windowSize ?? Math.max(1, last - first),
-    end = position === null ? last : Math.min(last, Math.max(first, position)),
-    start = Math.max(first, end - width);
-  const shown = samples.filter((s) => s.elapsed >= start && s.elapsed <= end);
+  const [timeWindow, setTimeWindow] = useState<TimeWindow>({
+    duration: null,
+    end: null,
+  });
+  const [start, end] = timeBounds(timeWindow, first, last);
+  const width = end - start,
+    span = last - first,
+    minimumWindow = Math.min(1, span),
+    canAdjust = span > 0,
+    following = timeWindow.end === null;
+  const shown = useMemo(
+    () => samples.filter((s) => s.elapsed >= start && s.elapsed <= end),
+    [samples, start, end],
+  );
   const display =
     !samples.length && (m.phase_summaries?.length ?? 0) > 0 ? "summary" : mode;
-  const inspected = shown[active ?? shown.length - 1];
-  useEffect(() => {
-    setActive(null);
-  }, [phase, start, end, shown.length]);
+  const active = inspection
+    ? shown.findIndex((sample) => sample.timestamp === inspection.timestamp)
+    : -1;
+  const inspected = inspection ? shown[active] : shown.at(-1);
+  const timeOriginLabel = Number.isFinite(Date.parse(startedAt ?? ""))
+    ? "from run start"
+    : "from first available phase sample";
+  const inspect = useCallback(
+    (index: number | null, pinned = false) => {
+      const sample = index === null ? undefined : shown[index];
+      setInspection((current) => {
+        if (current?.pinned && !pinned) return current;
+        if (!sample) return null;
+        return current?.timestamp === sample.timestamp &&
+          current.pinned === pinned
+          ? current
+          : { timestamp: sample.timestamp, pinned };
+      });
+      if (sample && pinned && canAdjust)
+        setTimeWindow({ duration: width, end });
+    },
+    [shown, end, width, canAdjust],
+  );
+  function changeWindow(next: TimeWindow) {
+    const [left, right] = timeBounds(next, first, last);
+    setTimeWindow(next);
+    setInspection((current) => {
+      if (!current?.pinned) return null;
+      const sample = samples.find((s) => s.timestamp === current.timestamp);
+      return sample && sample.elapsed >= left && sample.elapsed <= right
+        ? current
+        : null;
+    });
+  }
+  function zoomWindow(factor: number) {
+    const duration = Math.min(span, Math.max(minimumWindow, width * factor));
+    changeWindow({
+      duration: following && duration >= span ? null : duration,
+      end: following ? null : (start + end + duration) / 2,
+    });
+  }
   const summaries = (m.phase_summaries ?? []).filter(
     (r) => cleanup || phaseCode(r.phase) !== "DELETE",
   );
   return (
-    <section className="panel fleet">
-      <div className="section-heading">
-        <div>
-          <h2>Measured performance</h2>
-          <p>
+    <Paper
+      component="section"
+      className="mb-panel p-panel max-[47.5rem]:p-4.25 min-w-0"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") setInspection(null);
+      }}
+    >
+      <div className="mb-comfortable flex flex-wrap items-start justify-between gap-sm">
+        <div className="min-w-0">
+          <Title order={2} size="xl">
+            Measured performance
+          </Title>
+          <Text size="caption" className="mt-1.25 max-[47.5rem]:max-w-62.5">
             {display === "timeline"
               ? `${phaseName(phase)} phase · ${samples.length} recorded samples`
-              : "Final averages by phase"}
-          </p>
+              : "Phase summary"}
+          </Text>
         </div>
-        <select
+        <NativeSelect
           aria-label="Chart view"
+          className="max-w-full"
           value={display}
           onChange={(e) => {
             setMode(e.target.value as "timeline" | "summary");
-            setActive(null);
+            setInspection(null);
           }}
         >
           <option value="timeline" disabled={!samples.length}>
@@ -117,21 +239,26 @@ export function Charts({
           <option value="summary" disabled={!m.phase_summaries?.length}>
             Phase comparison
           </option>
-        </select>
+        </NativeSelect>
       </div>
       {display === "timeline" ? (
         <>
-          <div className="fleet-toolbar">
-            <label className="check-label">
-              Time window
-              <select
-                aria-label="Time window"
-                value={windowSize ?? "all"}
-                onChange={(e) => {
-                  setWindowSize(
-                    e.target.value === "all" ? null : Number(e.target.value),
-                  );
-                  setPosition(null);
+          <Paper p="md" radius="md" bg="var(--spt-surface-subtle)">
+            <div className="flex flex-wrap items-end gap-md">
+              <NativeSelect
+                label="Time window"
+                className="w-40 max-w-full"
+                value={timeWindow.duration ?? "all"}
+                disabled={!canAdjust}
+                onChange={(event) => {
+                  changeWindow({
+                    duration:
+                      event.target.value === "all"
+                        ? null
+                        : Number(event.target.value),
+                    end: null,
+                  });
+                  setInspection(null);
                 }}
               >
                 {[
@@ -140,167 +267,280 @@ export function Charts({
                   ["300", "5 minutes"],
                   ["3600", "1 hour"],
                   ["86400", "1 day"],
-                ].map(([v, label]) => (
-                  <option key={v} value={v}>
+                ].map(([value, label]) => (
+                  <option key={value} value={value}>
                     {label}
                   </option>
                 ))}
-                {windowSize !== null &&
-                  ![60, 300, 3600, 86400].includes(windowSize) && (
-                    <option value={windowSize}>
-                      Custom · {elapsed(windowSize)}
+                {timeWindow.duration !== null &&
+                  ![60, 300, 3600, 86400].includes(timeWindow.duration) && (
+                    <option value={timeWindow.duration}>
+                      Custom · {elapsed(timeWindow.duration)}
                     </option>
                   )}
-              </select>
-            </label>
-            <div className="button-group">
-              <button
-                disabled={samples.length < 2}
-                onClick={() => setWindowSize(Math.max(1, width / 2))}
-              >
-                Zoom in
-              </button>
-              <button
-                disabled={windowSize === null}
-                onClick={() =>
-                  setWindowSize(width * 2 >= last - first ? null : width * 2)
+              </NativeSelect>
+              <div className="flex flex-wrap gap-xs">
+                <Button
+                  size="compact-sm"
+                  variant="default"
+                  leftSection={<ZoomIn size="0.875rem" aria-hidden="true" />}
+                  disabled={!canAdjust || width <= minimumWindow}
+                  onClick={() => zoomWindow(0.5)}
+                >
+                  Zoom in
+                </Button>
+                <Button
+                  size="compact-sm"
+                  variant="default"
+                  leftSection={<ZoomOut size="0.875rem" aria-hidden="true" />}
+                  disabled={!canAdjust || width >= span}
+                  onClick={() => zoomWindow(2)}
+                >
+                  Zoom out
+                </Button>
+                <Button
+                  size="compact-sm"
+                  variant="default"
+                  leftSection={<Maximize2 size="0.875rem" aria-hidden="true" />}
+                  disabled={!canAdjust}
+                  onClick={() => {
+                    changeWindow({ duration: null, end: null });
+                    setInspection(null);
+                  }}
+                >
+                  Fit phase
+                </Button>
+              </div>
+              {(m.is_active || !following) && (
+                <Button
+                  size="compact-sm"
+                  variant={following ? "default" : "light"}
+                  leftSection={
+                    following ? (
+                      <Pause size="0.875rem" aria-hidden="true" />
+                    ) : (
+                      <Play size="0.875rem" aria-hidden="true" />
+                    )
+                  }
+                  disabled={!canAdjust}
+                  onClick={() => {
+                    changeWindow({
+                      duration: following ? width : timeWindow.duration,
+                      end: following ? end : null,
+                    });
+                    if (!following) setInspection(null);
+                  }}
+                >
+                  {following ? "Pause window" : "Follow latest"}
+                </Button>
+              )}
+              {!m.is_active && shown.length > 0 && (
+                <Button
+                  component="a"
+                  size="compact-sm"
+                  variant="light"
+                  leftSection={<Download size="0.875rem" aria-hidden="true" />}
+                  href={`/api/runs/${encodeURIComponent(m.run_id)}/csv?kind=window&phase=${phase}&start=${start}&end=${end}`}
+                  download
+                >
+                  Export window CSV
+                </Button>
+              )}
+            </div>
+            <div className="mt-lg flex flex-wrap items-center justify-between gap-sm">
+              <Text size="sm" fw="var(--mantine-font-weight-semibold)">
+                Visible time range
+              </Text>
+              <Badge variant="light" color={following ? "spt" : "gray"}>
+                {following
+                  ? m.is_active
+                    ? "Following latest"
+                    : "Latest window"
+                  : m.is_active
+                    ? "Paused window"
+                    : "Fixed window"}
+              </Badge>
+            </div>
+            <Text size="caption" className="mt-xs tabular-nums">
+              {elapsed(start)} – {elapsed(end)} {timeOriginLabel} ·{" "}
+              {shown.length} visible samples
+            </Text>
+            <div className="mt-md px-xs">
+              <RangeSlider
+                min={first}
+                max={canAdjust ? last : first + 1}
+                step={Math.min(1, Math.max(0.001, span / 100))}
+                precision={3}
+                minRange={minimumWindow}
+                pushOnOverlap={false}
+                value={[start, end]}
+                disabled={!canAdjust}
+                thumbFromLabel="Visible window start"
+                thumbToLabel="Visible window end"
+                thumbValueText={(value) =>
+                  `${fmt(value, 3)} seconds ${timeOriginLabel}`
                 }
-              >
-                Zoom out
-              </button>
-              <button
-                onClick={() => {
-                  setWindowSize(null);
-                  setPosition(null);
-                }}
-              >
-                Fit phase
-              </button>
-              <button
-                disabled={position === null}
-                onClick={() => setPosition(null)}
-              >
-                Follow latest
-              </button>
-            </div>
-            {!m.is_active && shown.length > 0 && (
-              <a
-                className="button-link"
-                href={`/api/runs/${encodeURIComponent(m.run_id)}/csv?kind=window&phase=${phase}&start=${start}&end=${end}`}
-                download
-              >
-                Export window CSV
-              </a>
-            )}
-          </div>
-          {samples.length > 1 && (
-            <label className="timeline-pan">
-              Move time window
-              <input
-                aria-label="Move time window"
-                type="range"
-                min={Math.min(last, first + width)}
-                max={last}
-                step="any"
-                disabled={windowSize === null || width >= last - first}
-                value={end}
-                onChange={(e) => setPosition(Number(e.target.value))}
+                label={(value) => `${fmt(value, 3)}s`}
+                onChange={([left, right]) =>
+                  changeWindow({ duration: right - left, end: right })
+                }
               />
-              <span>
-                {elapsed(start)} – {elapsed(end)} from run start
-              </span>
-            </label>
-          )}
-          {!samples.length && (
-            <div className="notice">
-              No interval history recorded for this phase. Final phase averages
-              appear once SPT reports them.
             </div>
+            <div className="mt-md flex flex-wrap items-center justify-between gap-sm">
+              <div className="flex flex-wrap gap-xs">
+                <Button
+                  size="compact-xs"
+                  variant="default"
+                  leftSection={<ArrowLeft size="0.875rem" aria-hidden="true" />}
+                  disabled={!canAdjust || start <= first}
+                  onClick={() =>
+                    changeWindow({ duration: width, end: end - width / 2 })
+                  }
+                >
+                  Earlier
+                </Button>
+                <Button
+                  size="compact-xs"
+                  variant="default"
+                  rightSection={
+                    <ArrowRight size="0.875rem" aria-hidden="true" />
+                  }
+                  disabled={!canAdjust || end >= last}
+                  onClick={() =>
+                    changeWindow({ duration: width, end: end + width / 2 })
+                  }
+                >
+                  Later
+                </Button>
+              </div>
+              <Text size="xs" c="var(--spt-text-subtle)">
+                Drag either handle or use arrow keys to adjust the range.
+              </Text>
+            </div>
+          </Paper>
+          {!samples.length && (
+            <Alert role="note">
+              No interval history recorded for this phase. Phase summaries
+              appear once SPT reports them.
+            </Alert>
           )}
           {samples.length === 1 && (
-            <div className="notice">
+            <Alert role="note">
               One measured point is available. It cannot establish a trend.
-            </div>
+            </Alert>
           )}
-          {graphs.map((g) => (
-            <TrendChart
-              key={g.key}
-              samples={shown}
-              title={g.label}
-              unit={g.unit}
-              series={
-                g.key === "p50"
-                  ? [
-                      { key: "p50", label: "P50", color: g.color },
-                      { key: "p99", label: "P99", color: "#b096e7" },
-                    ]
-                  : [{ key: g.key, label: g.label, color: g.color }]
+          <div className="mt-lg grid gap-lg">
+            {graphs.map((g) => (
+              <TrendChart
+                key={g.key}
+                samples={shown}
+                title={g.label}
+                unit={g.unit}
+                series={g.series}
+                start={start}
+                end={end}
+                active={inspection ? active : null}
+                pinned={inspection?.pinned ?? false}
+                onInspect={inspect}
+              />
+            ))}
+          </div>
+          <Paper p="md" radius="md" bg="var(--spt-surface-subtle)" mt="md">
+            <div className="mb-md flex flex-wrap items-center justify-between gap-sm">
+              <Text
+                size="sm"
+                c="var(--spt-text-primary)"
+                fw="var(--mantine-font-weight-semibold)"
+              >
+                Inspect time
+              </Text>
+              {inspection?.pinned && <Badge>Selected sample</Badge>}
+              {inspection && (
+                <Button
+                  size="compact-xs"
+                  variant="subtle"
+                  onClick={() => setInspection(null)}
+                >
+                  Clear selection
+                </Button>
+              )}
+            </div>
+            <Slider
+              min={0}
+              max={Math.max(1, shown.length - 1)}
+              step={1}
+              value={active < 0 ? Math.max(0, shown.length - 1) : active}
+              disabled={shown.length < 2}
+              thumbLabel="Inspect chart sample"
+              thumbValueText={(index) =>
+                `${elapsed(shown[index]?.elapsed)} ${timeOriginLabel}`
               }
-              active={active !== null && active < shown.length ? active : null}
-              onInspect={setActive}
+              label={(index) => elapsed(shown[index]?.elapsed)}
+              onChange={(index) => inspect(index, true)}
             />
-          ))}
-          <p className="chart-readout" aria-live="polite">
-            {inspected
-              ? `${elapsed(inspected.elapsed)} · ${utc(inspected.timestamp)} · IOPS ${fmt(inspected.throughput, 2)} ops/s · bandwidth ${fmt(inspected.bandwidth, 2)} MiB/s · P50 ${fmt(inspected.p50, 1)} µs`
-              : "Waiting for measured samples in this time window."}
-          </p>
-          <p className="subtle">
-            All three graphs share the time window and inspector. Each uses its
-            own scale. Missing measurements are shown as gaps.
-          </p>
+            <Text
+              size="caption"
+              className="mt-md tabular-nums"
+              aria-live={inspection ? "polite" : "off"}
+            >
+              {inspected ? (
+                <>
+                  {elapsed(inspected.elapsed)} {timeOriginLabel} ·{" "}
+                  {utc(inspected.timestamp)}
+                  <span className="sr-only">
+                    {" "}
+                    · IOPS {formatChartValue(inspected.throughput)} ops/s ·
+                    bandwidth {formatChartValue(inspected.bandwidth)} MiB/s ·
+                    P50 {formatChartValue(inspected.p50)} µs · P99{" "}
+                    {formatChartValue(inspected.p99)} µs
+                  </span>
+                </>
+              ) : inspection ? (
+                "The selected sample is no longer available in this window. Clear selection to inspect available measurements."
+              ) : (
+                "No measured samples in this time window."
+              )}
+            </Text>
+            <Text size="xs" c="var(--spt-text-subtle)" className="mt-xs">
+              Hover to inspect. Click a plot or use the slider to hold a sample;
+              Escape clears selection. All three plots share the time window and
+              cursor. Missing values remain gaps.
+            </Text>
+          </Paper>
         </>
       ) : (
         <>
-          <label className="check-label">
-            <input
-              type="checkbox"
-              checked={cleanup}
-              onChange={(e) => setCleanup(e.target.checked)}
-            />
-            Include cleanup in comparison
-          </label>
-          <div className="comparison-grid">
-            {graphs.map((g) => {
-              const field = g.key === "throughput" ? "iops" : g.field;
-              const max = Math.max(
-                1,
-                ...summaries.map((r) => numeric(r[field]) ?? 0),
-              );
-              return (
-                <article className="comparison" key={g.key}>
-                  <h3>
-                    {g.label} <span>{g.unit}</span>
-                  </h3>
-                  {summaries.map((r) => {
-                    const v = numeric(r[field]);
-                    return (
-                      <div className="comparison-row" key={r.phase}>
-                        <span>{phaseName(r.phase)}</span>
-                        <div>
-                          {v !== null && (
-                            <i
-                              style={{
-                                width: `${(v / max) * 100}%`,
-                                background: g.color,
-                              }}
-                            />
-                          )}
-                        </div>
-                        <strong>{fmt(v, 2)}</strong>
-                      </div>
-                    );
-                  })}
-                </article>
-              );
-            })}
-          </div>
-          <p className="subtle">
-            These bars are final phase averages. They do not represent interval
-            history. Cleanup normally transfers no object payload.
-          </p>
+          <Checkbox
+            label="Include cleanup in comparison"
+            checked={cleanup}
+            onChange={(e) => setCleanup(e.target.checked)}
+          />
+          {summaries.length ? (
+            <div className="my-lg grid grid-cols-1 gap-md min-[93.75rem]:grid-cols-3">
+              {graphs.map((graph) => (
+                <PhaseSummaryChart
+                  key={graph.key}
+                  summaries={summaries}
+                  field={graph.summaryField}
+                  title={graph.key === "p50" ? "P50 latency" : graph.label}
+                  unit={graph.unit}
+                  color={graph.series[0].color}
+                />
+              ))}
+            </div>
+          ) : (
+            <Alert role="note" my="md">
+              No phase summaries available for this selection.
+            </Alert>
+          )}
+          <Text size="xs" c="var(--spt-text-subtle)" className="tabular-nums">
+            Each chart uses its own scale. Hover for full values; “Not reported”
+            means missing data, not zero. P50 is a latency percentile. These are
+            phase summaries, not interval history. Cleanup normally transfers no
+            object payload.
+          </Text>
         </>
       )}
-    </section>
+    </Paper>
   );
 }

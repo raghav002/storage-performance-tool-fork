@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/dell/storage-performance-tool/cli/internal/results/summary"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -983,7 +984,7 @@ func TestReplayCommandReleasesLaunchersOnAuthoritativeWorkloadTerminal(t *testin
 			}
 			discoverFleetStepIDsFunc = func(context.Context, string, int64) ([]string, error) { return nil, nil }
 			newResultsFetcherFunc = func(_, output string) autoResultsFetcher { return &fakeFetcher{output: output} }
-			generateRunSummaryFunc = func(context.Context, string, io.Writer) error { return nil }
+			generateRunSummaryFunc = func(context.Context, string, io.Writer) (*summary.RunSummary, error) { return nil, nil }
 
 			// Mirror the real runners: never complete on our own, only on the
 			// authoritative session signal.
@@ -1112,4 +1113,25 @@ func newReplayCommandForTest(t *testing.T) *cobra.Command {
 	cmd.Flags().Bool("shutdown-on-complete", true, "")
 	cmd.Flags().Int("shutdown-linger", 5, "")
 	return cmd
+}
+
+func TestReplayCommandPrintsTheFailureClassOfARejectedInterfacesValue(t *testing.T) {
+	for name, args := range map[string][]string{
+		"a value that does not parse":   {"--interfaces", "auto,eth0"},
+		"a NIC set on a bridge network": {"--interfaces", "eth0", "--network-mode", "bridge"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var out bytes.Buffer
+			cmd := newReplayCommandForTest(t)
+			cmd.Flags().String(flagInterfaces, "", "")
+			cmd.SetOut(&out)
+			cmd.SetArgs(append([]string{"--from", "http://192.0.2.1/", "--generate-only", "--endpoints", "http://192.0.2.1:9020"}, args...))
+			if err := cmd.Execute(); err == nil {
+				t.Fatal("Execute() error = nil, want a rejected --interfaces value")
+			}
+			if want := "Replay failure class: invalid_interfaces\n"; !strings.Contains(out.String(), want) {
+				t.Fatalf("output missing %q\n%s", want, out.String())
+			}
+		})
+	}
 }

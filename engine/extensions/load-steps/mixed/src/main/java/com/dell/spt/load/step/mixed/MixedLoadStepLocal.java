@@ -1,7 +1,10 @@
 package com.dell.spt.load.step.mixed;
 
+import com.dell.spt.base.control.run.RunTerminalException;
+import com.dell.spt.base.integrity.IntegrityTerminalException;
 import com.dell.spt.base.concurrent.ServiceTaskExecutor;
 import com.dell.spt.base.config.ConstantValueInputImpl;
+import com.dell.spt.base.config.NicSetConfig;
 import com.dell.spt.base.config.IllegalConfigurationException;
 import com.dell.spt.base.data.DataInput;
 import com.dell.spt.base.env.Extension;
@@ -26,6 +29,7 @@ import com.dell.spt.base.metrics.context.MetricsContext;
 import com.dell.spt.base.storage.Credential;
 import com.dell.spt.base.storage.driver.StorageDriver;
 import com.dell.spt.base.util.BinarySizeFormat;
+import com.dell.spt.base.storage.driver.bucket.TargetBucketSet;
 import com.github.akurilov.commons.io.Input;
 import com.github.akurilov.commons.io.Output;
 import com.github.akurilov.commons.reflection.TypeUtil;
@@ -61,8 +65,8 @@ import static com.github.akurilov.confuse.Config.deepToMap;
  *
  * <p>PUT-created items are:
  * <ol>
- *   <li>Written to {@code put-remaining.csv} for post-run cleanup. Exact remaining-set
- *       generation is deferred.
+ *   <li>Written to {@code item.output.file}, by default {@code put-remaining.csv} in the step's
+ *       log directory, for post-run cleanup. Exact remaining-set generation is deferred.
  *   <li>Pushed into the {@link PoolItemInput} delete queue so freshly-written objects
  *       are eligible for deletion in the same run.
  * </ol>
@@ -180,10 +184,7 @@ public final class MixedLoadStepLocal extends LoadStepLocalBase {
 		if (itemInputFile != null && !itemInputFile.isEmpty()) {
 			loadSeedItems(itemInputFile, seedItems, itemFactory);
 		}
-		if (seedItems.isEmpty() && (getWeight > 0 || statWeight > 0)) {
-			throw new IllegalStateException(
-							"MixedLoad: GET/STAT weights are non-zero but no seed items loaded from item.input.file");
-		}
+		requireSeedItems(seedItems, getWeight, statWeight);
 		final PoolItemInput pool = new PoolItemInput(seedItems);
 
 		// Pre-populate delete queue from explicit file if provided
@@ -212,19 +213,21 @@ public final class MixedLoadStepLocal extends LoadStepLocalBase {
 		}
 
 		// ── 7. put-remaining.csv path ──────────────────────────────────────
-		final String homeDir = ThreadContext.get("home_dir");
-		final Path putRemainingFilePath;
-		if (homeDir != null && !homeDir.isEmpty()) {
-			putRemainingFilePath = Paths.get(homeDir, "log", stepId, "put-remaining.csv");
-		} else {
-			putRemainingFilePath = Paths.get(System.getProperty("user.dir"), "put-remaining-" + stepId + ".csv");
-		}
+		// In a distributed step the client names each remote slice's file and collects them all.
+		final String itemOutputFile = itemConfig.stringVal("output-file");
+		final Path putRemainingFilePath = itemOutputFile != null && !itemOutputFile.isEmpty()
+						? Paths.get(itemOutputFile)
+						: defaultPutRemainingFile(stepId);
 
 		// ── 8. Create single StorageDriver ─────────────────────────────────
 		final StorageDriver driver;
 		try {
 			final boolean effectiveVerifyFlag = effectiveVerifyFlag(
 							dataConfig.boolVal("verify"), dataConfig.boolVal("dedupable"), stepId);
+			if (putWeight > 0) {
+				NicSetConfig.requireSupportedWorkload(
+								storageConfig, OpType.CREATE, itemConfig.configVal("input").stringVal("path"));
+			}
 			driver = StorageDriver.instance(
 							extensions, storageConfig, dataInput,
 							effectiveVerifyFlag, batchSize, stepId);
@@ -250,9 +253,6 @@ public final class MixedLoadStepLocal extends LoadStepLocalBase {
 
 		// Output path for CREATE ops (bucket prefix)
 		final String outputPath = itemConfig.stringVal("output-path");
-		final Input<String> outputPathInput = outputPath != null
-						? new ConstantValueInputImpl<>(outputPath)
-						: null;
 
 		// Multipart threshold — same logic as LoadGeneratorBuilderImpl
 		final Config rangesConfig = itemConfig.configVal("data-ranges");
@@ -269,7 +269,8 @@ public final class MixedLoadStepLocal extends LoadStepLocalBase {
 		if (getWeight > 0)
 			builders.put(OpType.READ, makeOpsBuilder(originIdx++, OpType.READ, itemInputPath, null, credInput, sizeThreshold));
 		if (putWeight > 0)
-			builders.put(OpType.CREATE, makeOpsBuilder(originIdx++, OpType.CREATE, itemInputPath, outputPathInput, credInput, sizeThreshold));
+			builders.put(OpType.CREATE, makePutBuilder(
+							originIdx++, itemInputPath, outputPath, credInput, sizeThreshold, storageConfig, itemConfig));
 		if (deleteWeight > 0)
 			builders.put(OpType.DELETE, makeOpsBuilder(originIdx++, OpType.DELETE, itemInputPath, null, credInput, sizeThreshold));
 		if (statWeight > 0)
@@ -332,6 +333,7 @@ public final class MixedLoadStepLocal extends LoadStepLocalBase {
 						metricsContexts.get(0),
 						metricsCtxByOpType,
 						loadConfig, tracePersist, null);
+		stepCtx.bucketRecorder(initBucketMetrics(mergedConfig, metricsContexts.get(0), metricsCtxByOpType));
 
 		// ── 14b. Wrap the driver result output to release generator permits ──
 		// The LoadStepContextImpl constructor sets itself as the driver's
@@ -445,8 +447,48 @@ public final class MixedLoadStepLocal extends LoadStepLocalBase {
 
 	// ── Helpers ────────────────────────────────────────────────────────────────
 
+	/** The file that lists a step's created items when {@code item.output.file} is not set. */
+	static Path defaultPutRemainingFile(final String stepId) {
+		final String homeDir = ThreadContext.get("home_dir");
+		if (homeDir != null && !homeDir.isEmpty()) {
+			return Paths.get(homeDir, "log", stepId, "put-remaining.csv");
+		}
+		return Paths.get(System.getProperty("user.dir"), "put-remaining-" + stepId + ".csv");
+	}
+
+	/**
+	 * Creates the PUT builder. With more than one target bucket its new objects are spread over the
+	 * members of the bucket set: generated from the output path's bucket, or the listed names.
+	 */
+	static DataOperationsBuilderImpl makePutBuilder(
+					final int originIndex,
+					final String inputPath,
+					final String outputPath,
+					final Input credInput,
+					final long sizeThreshold,
+					final Config storageConfig,
+					final Config itemConfig) {
+		final int bucketCount = TargetBucketSet.countOfStorage(storageConfig);
+		final var names = TargetBucketSet.namesOfStorage(storageConfig);
+		// a one-name list is a single target bucket at that name, whatever the output path's placeholder says
+		final var singlePath = names.size() == 1 ? TargetBucketSet.memberPaths(outputPath, 1, names).get(0) : outputPath;
+		final var builder = makeOpsBuilder(
+						originIndex,
+						OpType.CREATE,
+						inputPath,
+						singlePath != null ? new ConstantValueInputImpl<>(singlePath) : null,
+						credInput,
+						sizeThreshold);
+		if (bucketCount > 1) {
+			builder.targetBucketMembers(
+							TargetBucketSet.memberPaths(outputPath, bucketCount, names),
+							ItemNameInputFactory.shardCount(itemConfig.configVal("naming")));
+		}
+		return builder;
+	}
+
 	/** Creates an {@link OperationsBuilder} for the given op type. */
-	private static OperationsBuilder makeOpsBuilder(
+	private static DataOperationsBuilderImpl makeOpsBuilder(
 					final int originIndex,
 					final OpType opType,
 					final String inputPath,
@@ -488,59 +530,66 @@ public final class MixedLoadStepLocal extends LoadStepLocalBase {
 
 	/** Loads seed items from a file into the given list. Uses {@link ItemInputFactory} to handle
 	 *  both CSV (.csv) and binary (temp slicer) formats automatically. */
-	private static void loadSeedItems(
+	static void loadSeedItems(
 					final String filePath,
 					final List items,
 					final ItemFactory factory) {
-		final Path path = Paths.get(filePath);
-		if (!Files.exists(path)) {
-			Loggers.ERR.warn("MixedLoad: seed items file not found: {}", filePath);
-			return;
-		}
-		try (final Input fileInput = ItemInputFactory.createFileItemInput(factory, filePath)) {
-			if (fileInput == null) {
-				Loggers.ERR.warn("MixedLoad: failed to open seed items file: {}", filePath);
-				return;
-			}
-			Object item;
-			while ((item = fileInput.get()) != null) {
-				items.add(item);
-			}
-		} catch (final java.io.EOFException eof) {
-			// BinFileInput throws EOFException at end of stream — normal termination
-		} catch (final Exception e) {
-			LogUtil.exception(Level.WARN, e, "MixedLoad: failed to load seed items from {}", filePath);
-		}
+		loadItems("seed items file", filePath, factory, items::add);
 		Loggers.MSG.info("MixedLoad: loaded {} seed items from {}", items.size(), filePath);
 	}
 
+	/** Each engine reads from its own share of the items, so it needs at least one of them. */
+	static void requireSeedItems(final List seedItems, final int getWeight, final int statWeight) {
+		if (seedItems.isEmpty() && (getWeight > 0 || statWeight > 0)) {
+			throw itemsFileFailure(
+							"GET/STAT weights are non-zero but an engine has no seed items; each engine needs at least one", null);
+		}
+	}
+
 	/** Loads items from a file into the PoolItemInput's delete queue. */
-	private static void loadDeleteItems(
+	static void loadDeleteItems(
 					final String filePath,
 					final PoolItemInput pool,
 					final ItemFactory factory) {
-		final Path path = Paths.get(filePath);
-		if (!Files.exists(path)) {
-			Loggers.ERR.warn("MixedLoad: delete-items-file not found: {}", filePath);
-			return;
+		final long count = loadItems("delete items file", filePath, factory, item -> pool.addDeleteItem((Item) item));
+		if (count == 0) {
+			throw itemsFileFailure("delete items file has no items", null);
 		}
+		Loggers.MSG.info("MixedLoad: pre-populated DELETE queue with {} items from {}", count, filePath);
+	}
+
+	/** A file that can't be read in full ends the run: the mix it would leave isn't the one asked for. */
+	private static long loadItems(
+					final String label,
+					final String filePath,
+					final ItemFactory factory,
+					final java.util.function.Consumer<Object> items) {
+		if (!Files.exists(Paths.get(filePath))) {
+			throw itemsFileFailure(label + " was not found", null);
+		}
+		long count = 0;
 		try (final Input fileInput = ItemInputFactory.createFileItemInput(factory, filePath)) {
 			if (fileInput == null) {
-				Loggers.ERR.warn("MixedLoad: failed to open delete-items-file: {}", filePath);
-				return;
+				throw itemsFileFailure(label + " could not be opened", null);
 			}
 			Object item;
-			int count = 0;
 			while ((item = fileInput.get()) != null) {
-				pool.addDeleteItem((Item) item);
+				items.accept(item);
 				count++;
 			}
-			Loggers.MSG.info("MixedLoad: pre-populated DELETE queue with {} items from {}", count, filePath);
 		} catch (final java.io.EOFException eof) {
 			// BinFileInput throws EOFException at end of stream — normal termination
+		} catch (final RunTerminalException e) {
+			throw e;
 		} catch (final Exception e) {
-			LogUtil.exception(Level.WARN, e, "MixedLoad: failed to populate DELETE queue from {}", filePath);
+			LogUtil.exception(Level.WARN, e, "MixedLoad: failed to load the items from {}", filePath);
+			throw itemsFileFailure(label + " could not be read", e);
 		}
+		return count;
+	}
+
+	private static RunTerminalException itemsFileFailure(final String message, final Throwable cause) {
+		return new RunTerminalException(IntegrityTerminalException.Category.INPUT, "MixedLoad: " + message, cause);
 	}
 
 	/** Reads {@code load.op.delete.input.file} from the merged config. */

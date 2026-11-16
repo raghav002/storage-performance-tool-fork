@@ -11,6 +11,7 @@ import com.dell.spt.base.integrity.IntegrityVerificationResult;
 import com.dell.spt.base.item.DataItem;
 import com.dell.spt.base.item.Item;
 import com.dell.spt.base.item.ItemFactory;
+import com.dell.spt.base.item.ItemNamePaths;
 import com.dell.spt.base.item.PathItem;
 import com.dell.spt.base.item.VersionedItem;
 import com.dell.spt.base.item.io.DataItemInputStream;
@@ -289,6 +290,9 @@ public class S3AwsStorageDriver<I extends Item, O extends Operation<I>> extends 
 		this.uploadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
 		this.bucketName = resolveBucketName(config);
+		// The controller engine checks and creates target buckets before any slice starts, so a
+		// worker initializes no bucket and no output path costs a bucket request.
+		this.requestNewPathFunc = null;
 
 		boolean ckEnabled = false;
 		ChecksumAlgorithm ckAlgo = null;
@@ -847,39 +851,15 @@ public class S3AwsStorageDriver<I extends Item, O extends Operation<I>> extends 
 		return Status.FAIL_UNKNOWN;
 	}
 
+	/**
+	 * Returns the bucket path of an output path without any request. The driver does not
+	 * initialize paths: the controller engine provisions target buckets before slices start.
+	 */
 	@Override
 	protected String requestNewPath(final String path) {
-		// Extract bucket name from path and validate/create it
-		// Path format: /bucketname or /bucketname/prefix
 		final String relPath = path.startsWith("/") ? path.substring(1) : path;
 		final int slashPos = relPath.indexOf('/');
-		final String targetBucket = slashPos > 0 ? relPath.substring(0, slashPos) : relPath;
-		final String bucketPath = "/" + targetBucket;
-
-		try {
-			// Validate that the target bucket exists
-			s3AsyncClient.headBucket(HeadBucketRequest.builder().bucket(targetBucket).build()).join();
-		} catch (Exception e) {
-			if (e.getCause() instanceof NoSuchBucketException || isNoSuchBucket(e)) {
-				// Bucket doesn't exist — create it (matches standard S3 driver behavior)
-				try {
-					s3AsyncClient.createBucket(CreateBucketRequest.builder().bucket(targetBucket).build()).join();
-				} catch (Exception createEx) {
-					throw new RuntimeException("Failed to create bucket: " + targetBucket, createEx);
-				}
-			} else {
-				throw new RuntimeException("Failed to validate bucket: " + targetBucket, e);
-			}
-		}
-
-		return bucketPath;
-	}
-
-	private boolean isNoSuchBucket(Exception e) {
-		if (e.getCause() instanceof S3Exception) {
-			return ((S3Exception) e.getCause()).statusCode() == 404;
-		}
-		return false;
+		return "/" + (slashPos > 0 ? relPath.substring(0, slashPos) : relPath);
 	}
 
 	@Override
@@ -927,9 +907,8 @@ public class S3AwsStorageDriver<I extends Item, O extends Operation<I>> extends 
 			// name, e.g. "mkk0lurmliru" → "/spttest/mkk0lurmliru".  Strip the
 			// prefix so we recover the original key.
 			var key = itemName;
-			final var dstNorm = dstPath.endsWith("/") ? dstPath : dstPath + "/";
-			if (key.startsWith(dstNorm)) {
-				key = key.substring(dstNorm.length());
+			if (ItemNamePaths.holdsPath(key, dstPath)) {
+				key = ItemNamePaths.relativeToPath(key, dstPath);
 			} else if (key.startsWith("/")) {
 				key = key.substring(1);
 			}
@@ -937,16 +916,8 @@ public class S3AwsStorageDriver<I extends Item, O extends Operation<I>> extends 
 			if (slashPos > 0) {
 				final var bucket = rel.substring(0, slashPos);
 				final var prefix = rel.substring(slashPos + 1);
-				// Strip prefix too when buildItemPath already prepended it
-				if (key.startsWith(prefix + "/")) {
-					key = key.substring(prefix.length() + 1);
-				}
 				return new String[]{bucket, prefix + "/" + key
 				};
-			}
-			// Strip bucket name when buildItemPath already prepended it
-			if (key.startsWith(rel + "/")) {
-				key = key.substring(rel.length() + 1);
 			}
 			return new String[]{rel, key
 			};

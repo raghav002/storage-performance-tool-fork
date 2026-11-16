@@ -223,6 +223,10 @@ export function ConfigurePage({
                   verified={verified}
                   clients={clients}
                   driver={driver}
+                  setDriver={(d) => {
+                    setDriver(d);
+                    setReview(false);
+                  }}
                   advanced={advanced}
                   setAdvanced={setAdvanced}
                   advancedErrors={advancedErrors}

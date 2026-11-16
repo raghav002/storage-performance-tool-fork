@@ -215,6 +215,75 @@ describe("expert flag groups", () => {
     ]);
   });
 
+  it("saves and reloads a profile with its workload and flags", async () => {
+    renderExpert();
+    fireEvent.click(screen.getByRole("radio", { name: /Mock driver/ }));
+    await openGroup("Cleanup");
+    fireEvent.click(
+      await screen.findByRole("switch", { name: /^Add a delete phase/ }),
+    );
+    fireEvent.change(screen.getByLabelText("Save this configuration"), {
+      target: { value: "Smoke" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
+    expect(
+      screen.getByText(/Saved in this browser with 1 preview-only flag/),
+    ).toBeTruthy();
+    const saved = JSON.parse(
+      localStorage.getItem("spt-dashboard-expert-profiles-v2") ?? "[]",
+    );
+    expect(saved[0]).toMatchObject({
+      name: "Smoke",
+      workload: "mock",
+      advanced: { cleanup: true },
+    });
+
+    fireEvent.click(screen.getByRole("radio", { name: /S3 write \+ verify/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Saved profile/ }));
+    fireEvent.change(screen.getByLabelText("Saved configurations"), {
+      target: { value: "Smoke" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Load profile" }));
+    expect(
+      (screen.getByRole("radio", { name: /Mock driver/ }) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    expect(within(tags("cleanup", "mock")).getByText("1 changed")).toBeTruthy();
+  });
+
+  it("lists profiles saved before expert flags as write-verify", () => {
+    localStorage.setItem(
+      "spt-dashboard-expert-profiles-v1",
+      JSON.stringify([
+        {
+          name: "Old",
+          options: {
+            object_count: 50,
+            object_size: "1MiB",
+            threads: 2,
+            max_runtime_seconds: 120,
+          },
+        },
+      ]),
+    );
+    renderExpert();
+    fireEvent.click(screen.getByRole("button", { name: /^Saved profile/ }));
+    expect(
+      screen.getByRole("option", { name: "Old · Write + verify" }),
+    ).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Saved configurations"), {
+      target: { value: "Old" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Load profile" }));
+    expect(
+      (
+        screen.getByRole("spinbutton", {
+          name: /^Maximum objects/,
+        }) as HTMLInputElement
+      ).value,
+    ).toBe("50");
+  });
+
   it("keeps each workload's flags when switching drivers", async () => {
     renderExpert();
     await openGroup("Object data");

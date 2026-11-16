@@ -5,6 +5,7 @@ import type { Options } from "../types";
 import {
   advancedDefaults,
   findFlag,
+  isWorkload,
   type FlagValue,
   type Workload,
 } from "./schema";
@@ -84,8 +85,7 @@ export function readProfiles(storage: StorageLike): ExpertProfile[] {
       if (!isObject(item) || typeof item.name !== "string") return [];
       const workload = item.workload;
       const options = readCore(item.options);
-      if (!options || (workload !== "mock" && workload !== "write-verify"))
-        return [];
+      if (!options || !isWorkload(workload)) return [];
       return [
         {
           version: 2 as const,

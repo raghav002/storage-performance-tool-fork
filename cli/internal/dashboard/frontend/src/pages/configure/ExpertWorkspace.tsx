@@ -9,7 +9,7 @@ import {
   Title,
 } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
-import type { Driver, Options, State } from "../../types";
+import type { Options, State } from "../../types";
 import { defaults } from "../../config";
 import {
   formatBytes,
@@ -31,8 +31,7 @@ import {
 import {
   appliedWorkloads,
   changedFlags,
-  driverForWorkload,
-  workloadForDriver,
+  workloadName,
   type FlagValue,
   type Workload,
 } from "../../flags/schema";
@@ -41,7 +40,6 @@ import {
   CommandPrompt,
   looksLikeSptCommand,
   reviewCommand,
-  workloadName as nameOfWorkload,
   type CommandReview,
 } from "./CommandPrompt";
 import { ExpertFields } from "./ExpertFields";
@@ -72,8 +70,8 @@ export function ExpertWorkspace({
   limits,
   verified,
   clients,
-  driver,
-  setDriver,
+  workload,
+  setWorkload,
   advanced,
   setAdvanced,
   advancedErrors,
@@ -84,14 +82,13 @@ export function ExpertWorkspace({
   limits: NonNullable<State["limits"]>;
   verified: boolean;
   clients: number;
-  driver: Driver;
-  setDriver: (d: Driver) => void;
+  workload: Workload;
+  setWorkload: (w: Workload) => void;
   advanced: AdvancedValues;
   setAdvanced: (workload: Workload, values: AdvancedValues) => void;
   advancedErrors: FlagErrors;
 }) {
-  const workloadName = driver === "mock" ? "Mock driver" : "Write + verify";
-  const workload = workloadForDriver(driver);
+  const name = workloadName(workload);
   const advancedChanged = changedFlags(workload, advanced);
   const applied = appliedWorkloads.has(workload);
   const advancedValid = Object.keys(advancedErrors).length === 0;
@@ -152,7 +149,7 @@ export function ExpertWorkspace({
 
   // A profile restores its workload, the four core settings and every flag.
   function loadProfile(p: ExpertProfile) {
-    setDriver(driverForWorkload(p.workload));
+    setWorkload(p.workload);
     setDraft(toDraft(p.options));
     setAdvanced(p.workload, p.advanced);
   }
@@ -185,12 +182,12 @@ export function ExpertWorkspace({
   function applyCommand() {
     if (commandReview?.kind !== "apply") return;
     const { workload: next, options: core, advanced: flags } = commandReview;
-    setDriver(driverForWorkload(next));
+    setWorkload(next);
     setDraft(toDraft(core));
     setAdvanced(next, flags);
     const count = commandReview.settings.length;
     setAppliedNote(
-      `Command applied: ${nameOfWorkload(next)}${count ? ` with ${count} flag${count === 1 ? "" : "s"}` : ""}. Settings not in the command were reset to their defaults.`,
+      `Command applied: ${workloadName(next)}${count ? ` with ${count} flag${count === 1 ? "" : "s"}` : ""}. Settings not in the command were reset to their defaults.`,
     );
     setCommandReview(null);
   }
@@ -282,8 +279,7 @@ export function ExpertWorkspace({
                 <option value="">Choose a saved profile</option>
                 {profiles.map((p) => (
                   <option key={p.name} value={p.name}>
-                    {p.name} ·{" "}
-                    {p.workload === "mock" ? "Mock driver" : "Write + verify"}
+                    {p.name} · {workloadName(p.workload)}
                   </option>
                 ))}
               </NativeSelect>
@@ -356,7 +352,7 @@ export function ExpertWorkspace({
 
         <div className="flex flex-col gap-1.25 mt-5.75">
           <strong className="text-base/[inherit] text-foreground">
-            {workloadName} · SPT flags
+            {name} · SPT flags
           </strong>
           <span className="text-[#6b7b90] text-sm/[inherit]">
             Open a group to change its flags. Each flag shows its SPT name and
@@ -400,11 +396,11 @@ export function ExpertWorkspace({
           CONFIGURATION SUMMARY
         </span>
         <Title order={3} size="lg" className="mb-0.75">
-          {workloadName}
+          {name}
         </Title>
         <span className="text-[#697c93] text-caption/[inherit]">
           {clients} client machine{clients === 1 ? "" : "s"} ·{" "}
-          {driver === "mock"
+          {workload === "mock"
             ? "No storage used"
             : verified
               ? "Storage verified"
@@ -490,11 +486,11 @@ export function ExpertWorkspace({
                 fz="xs"
               >
                 {valid && advancedValid
-                  ? expertCommand(draft, driver, advanced)
+                  ? expertCommand(draft, workload, advanced)
                   : "Correct the settings to generate a command preview."}
               </Code>
               <small className="font-normal text-[#738198] text-xs/[inherit]">
-                {driver === "mock"
+                {workload === "mock"
                   ? "The Go backend adds the client machines, safe flags and the results directory. No storage credentials are passed."
                   : "The Go backend adds storage credentials, safe flags and the results directory."}
                 {!applied &&

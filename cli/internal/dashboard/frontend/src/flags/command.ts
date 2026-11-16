@@ -33,9 +33,8 @@ export class CommandError extends Error {
   }
 }
 
-const workloads: readonly Workload[] = ["write-verify", "mock"];
+const workloads: readonly Workload[] = ["write-verify", "write", "mock"];
 const otherWorkloads = [
-  "write",
   "read",
   "read-verify",
   "mixed",
@@ -125,14 +124,14 @@ export function parseSptCommand(text: string): ParsedCommand {
     words[1] !== "run"
   )
     throw new CommandError([
-      "Start with spt run write-verify or spt run mock.",
+      "Start with spt run write-verify, spt run write or spt run mock.",
     ]);
   const name = words[2];
   if (!workloads.includes(name as Workload))
     throw new CommandError([
       otherWorkloads.includes(name)
-        ? `The dashboard runs write-verify and mock only, not ${name}.`
-        : "Name the workload: spt run write-verify or spt run mock.",
+        ? `The dashboard runs write-verify, write and mock only, not ${name}.`
+        : "Name the workload: spt run write-verify, spt run write or spt run mock.",
     ]);
   const workload = name as Workload;
   const problems: string[] = [];

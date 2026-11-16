@@ -1,7 +1,12 @@
 import { Button, Code, Group, List, Modal, Text } from "@mantine/core";
 import { defaults } from "../../config";
 import { CommandError, parseSptCommand } from "../../flags/command";
-import { findFlag, type FlagValue, type Workload } from "../../flags/schema";
+import {
+  findFlag,
+  workloadName,
+  type FlagValue,
+  type Workload,
+} from "../../flags/schema";
 import type { Options, RunLimits } from "../../types";
 import { validateOptions } from "../../utils/validation";
 
@@ -21,9 +26,6 @@ export type CommandReview =
 export function looksLikeSptCommand(text: string): boolean {
   return /^\s*(\S*[\\/])?spt(\.exe)?\s+run(\s|$)/.test(text);
 }
-
-export const workloadName = (w: Workload) =>
-  w === "mock" ? "Mock driver" : "Write + verify";
 
 // Reads a command into the full expert state it describes: settings the
 // command leaves out return to their defaults, so the GUI matches it exactly.

@@ -75,6 +75,31 @@ var writeVerifyFlags = []expertFlag{
 	{name: "save-items", kind: flagBool},
 }
 
+// writeFlags are the flags of `spt run write` that expert runs may set: the
+// write-verify flags without the verification-only ones (defer-verification
+// and the integrity flags), which spt run rejects for write.
+var writeFlags = []expertFlag{
+	{name: "object-data-compressibility", kind: flagFloat, min: 0, max: 100, dashboard: "0"},
+	{name: "object-data-dedupable", kind: flagBool, dashboard: "true"},
+	{name: "checksum", kind: flagEnum, options: []string{"crc32", "crc32c", "sha1", "sha256", "crc64-nvme"}},
+	{name: "part-size", kind: flagSize},
+	{name: "mpu-concurrent-objects", kind: flagInt, min: 0, max: 1024},
+	{name: "mpu-concurrent-parts", kind: flagInt, min: 0, max: 1024},
+	{name: "cleanup", kind: flagBool, dashboard: "true"},
+	{name: "prefix-shards", kind: flagInt, min: -1, max: 65536},
+	{name: "s3-driver", kind: flagEnum, options: []string{"default", "aws"}, dashboard: "default"},
+	{name: "auth-version", kind: flagEnum, options: []string{"2", "4"}, dashboard: "4"},
+	{name: "region", kind: flagRegion},
+	{name: "endpoint-selection", kind: flagEnum, options: []string{"default", "round-robin", "per-request-dns"}},
+	{name: "endpoint-hostname", kind: flagHostname},
+	{name: "dns-timeout", kind: flagDuration},
+	{name: "endpoint-connect-timeout", kind: flagDuration},
+	{name: "slice-endpoints", kind: flagBool},
+	{name: "min-hosts", kind: flagInt, min: 0, max: maxHosts},
+	{name: "service-threads", kind: flagInt, min: 1, max: 1024},
+	{name: "save-items", kind: flagBool},
+}
+
 // mockFlags are the flags of `spt run mock` that expert runs may set. Dashboard
 // mock runs pass no --cleanup, so the delete phase is off unless set.
 var mockFlags = []expertFlag{
@@ -89,11 +114,17 @@ func expertFlagsFor(workload string) []expertFlag {
 	switch workload {
 	case driverWriteVerify:
 		return writeVerifyFlags
+	case workloadWrite:
+		return writeFlags
 	case driverMock:
 		return mockFlags
 	}
 	return nil
 }
+
+// Write runs pass writeFlags' dashboard defaults, but do not take expert
+// flags yet; the expert write workload is enabled separately.
+var expertFlagsClosed = map[string]bool{workloadWrite: true}
 
 func findExpertFlag(flags []expertFlag, name string) (expertFlag, bool) {
 	for _, f := range flags {
@@ -192,7 +223,7 @@ func expertFlagValues(workload string, flags map[string]any, objectSize string) 
 		return map[string]string{}, nil
 	}
 	allowed := expertFlagsFor(workload)
-	if allowed == nil {
+	if allowed == nil || expertFlagsClosed[workload] {
 		return nil, userErrorf("Expert flags are not available for %s runs.", workload)
 	}
 	names := make([]string, 0, len(flags))

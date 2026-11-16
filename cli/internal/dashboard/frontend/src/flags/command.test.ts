@@ -130,13 +130,22 @@ describe("parseSptCommand", () => {
 
   it("names the supported workloads", () => {
     expect(problems("spt run read")).toEqual([
-      "The dashboard runs write-verify and mock only, not read.",
+      "The dashboard runs write-verify, write and mock only, not read.",
     ]);
     expect(problems("spt run")).toEqual([
-      "Name the workload: spt run write-verify or spt run mock.",
+      "Name the workload: spt run write-verify, spt run write or spt run mock.",
     ]);
     expect(problems("docker run mock")).toEqual([
-      "Start with spt run write-verify or spt run mock.",
+      "Start with spt run write-verify, spt run write or spt run mock.",
+    ]);
+  });
+
+  it("reads a write command, which takes only the core settings", () => {
+    const parsed = parseSptCommand("spt run write -n 50 --object-size 1MiB");
+    expect(parsed.workload).toBe("write");
+    expect(parsed.core).toEqual({ object_count: 50, object_size: "1MiB" });
+    expect(problems("spt run write --checksum crc32")).toEqual([
+      "--checksum: not available for write in the dashboard.",
     ]);
   });
 });

@@ -79,7 +79,7 @@ const state = {
   },
 } as unknown as State;
 
-function renderExpert() {
+function renderExpert(mode: "guided" | "expert" = "expert") {
   const posts: unknown[] = [];
   apiClient.defaults.adapter = async (config) => {
     if (config.url === "/api/runs" && config.method === "post")
@@ -99,7 +99,7 @@ function renderExpert() {
   renderComponent(
     <ConfigurePage
       state={state}
-      mode="expert"
+      mode={mode}
       offline={false}
       onStarted={onStarted}
     />,
@@ -474,5 +474,47 @@ describe("expert flag groups", () => {
     expect((await screen.findByRole("tooltip")).textContent).toBe(
       "Stop the run after this many seconds, even if objects remain.",
     );
+  });
+  it("starts a guided write run", async () => {
+    const { posts, onStarted } = renderExpert("guided");
+    fireEvent.click(screen.getByRole("radio", { name: /^S3 write$/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Review run" }));
+    expect(
+      screen.getByRole("heading", { name: /^Write · Guided/ }),
+    ).toBeTruthy();
+    expect(screen.getByText(/written but not read back/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Start run" }));
+    await waitFor(() => expect(onStarted).toHaveBeenCalled());
+    expect(posts).toEqual([
+      {
+        mode: "guided",
+        object_count: 100,
+        object_size: "64KiB",
+        threads: 1,
+        max_runtime_seconds: 60,
+        workload: "write",
+      },
+    ]);
+  });
+
+  it("offers only the core settings for an expert write run so far", async () => {
+    const { posts, onStarted } = renderExpert();
+    fireEvent.click(screen.getByRole("radio", { name: /^S3 write$/ }));
+    expect(groupButton("Run size & limits")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Object data" })).toBeNull();
+    expect(screen.queryByText(/runs only the four settings above/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Review run" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start run" }));
+    await waitFor(() => expect(onStarted).toHaveBeenCalled());
+    expect(posts).toEqual([
+      {
+        mode: "expert",
+        object_count: 100,
+        object_size: "64KiB",
+        threads: 1,
+        max_runtime_seconds: 60,
+        workload: "write",
+      },
+    ]);
   });
 });

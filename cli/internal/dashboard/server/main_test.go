@@ -15,33 +15,33 @@ import (
 func TestValidateOptionsBounds(t *testing.T) {
 	a := &app{} // no settings file: the built-in default limits apply
 	for _, good := range []options{
-		{"", 100, "1MiB", 1, 60, "", nil},
-		{"guided", 320, "16MiB", 2, 600, "", nil},
-		{"expert", 1, "1KiB", 1, 10, "", nil},
-		{"expert", 777, "3MiB", 13, 1234, "", nil},
-		{"expert", 100_000, "1MiB", 64, 3600, "", nil},
-		{"expert", 100, "1GiB", 1, 60, "", nil},
+		{"", 100, "1MiB", 1, 60, "", "", nil},
+		{"guided", 320, "16MiB", 2, 600, "", "", nil},
+		{"expert", 1, "1KiB", 1, 10, "", "", nil},
+		{"expert", 777, "3MiB", 13, 1234, "", "", nil},
+		{"expert", 100_000, "1MiB", 64, 3600, "", "", nil},
+		{"expert", 100, "1GiB", 1, 60, "", "", nil},
 	} {
 		if err := a.validateOptions(good); err != nil {
 			t.Errorf("rejected %+v: %v", good, err)
 		}
 	}
 	bad := []options{
-		{"", 1000, "1MiB", 1, 60, "", nil},
-		{"guided", 100, "100MiB", 1, 60, "", nil},
-		{"guided", 100, "1MiB", 20, 60, "", nil},
-		{"guided", 100, "1MiB", 1, 999, "", nil},
-		{"guided", 777, "3MiB", 13, 1234, "", nil},
-		{"admin", 100, "1MiB", 1, 60, "", nil},
-		{"expert", 0, "1MiB", 1, 60, "", nil},
-		{"expert", 100_001, "1KiB", 1, 60, "", nil},
-		{"expert", 100, "1MiB", 0, 60, "", nil},
-		{"expert", 100, "1MiB", 65, 60, "", nil},
-		{"expert", 100, "1MiB", 1, 9, "", nil},
-		{"expert", 100, "1MiB", 1, 3601, "", nil},
-		{"expert", 100, "2GiB", 1, 60, "", nil},
-		{"expert", 101, "1GiB", 1, 60, "", nil},
-		{"expert", 100, "--help", 1, 60, "", nil},
+		{"", 1000, "1MiB", 1, 60, "", "", nil},
+		{"guided", 100, "100MiB", 1, 60, "", "", nil},
+		{"guided", 100, "1MiB", 20, 60, "", "", nil},
+		{"guided", 100, "1MiB", 1, 999, "", "", nil},
+		{"guided", 777, "3MiB", 13, 1234, "", "", nil},
+		{"admin", 100, "1MiB", 1, 60, "", "", nil},
+		{"expert", 0, "1MiB", 1, 60, "", "", nil},
+		{"expert", 100_001, "1KiB", 1, 60, "", "", nil},
+		{"expert", 100, "1MiB", 0, 60, "", "", nil},
+		{"expert", 100, "1MiB", 65, 60, "", "", nil},
+		{"expert", 100, "1MiB", 1, 9, "", "", nil},
+		{"expert", 100, "1MiB", 1, 3601, "", "", nil},
+		{"expert", 100, "2GiB", 1, 60, "", "", nil},
+		{"expert", 101, "1GiB", 1, 60, "", "", nil},
+		{"expert", 100, "--help", 1, 60, "", "", nil},
 	}
 	for _, got := range bad {
 		if a.validateOptions(got) == nil {

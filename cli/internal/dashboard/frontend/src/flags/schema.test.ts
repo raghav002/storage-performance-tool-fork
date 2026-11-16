@@ -7,7 +7,7 @@ import {
   flagGroups,
   flagsFor,
   shortAliases,
-  workloadForDriver,
+  workloadRequest,
   type FlagDef,
   type Workload,
 } from "./schema";
@@ -152,11 +152,13 @@ describe("expert flag schema", () => {
     });
   });
 
-  it("maps drivers and workloads both ways", () => {
-    expect(workloadForDriver(undefined)).toBe("write-verify");
-    expect(workloadForDriver("s3")).toBe("write-verify");
-    expect(workloadForDriver("mock")).toBe("mock");
-    for (const w of workloads)
-      expect(workloadForDriver(driverForWorkload(w))).toBe(w);
+  it("picks each workload's driver and request fields", () => {
+    expect(driverForWorkload("write-verify")).toBe("s3");
+    expect(driverForWorkload("write")).toBe("s3");
+    expect(driverForWorkload("mock")).toBe("mock");
+    // Write-verify is the server's default, so it sends neither field.
+    expect(workloadRequest("write-verify")).toEqual({});
+    expect(workloadRequest("write")).toEqual({ workload: "write" });
+    expect(workloadRequest("mock")).toEqual({ driver: "mock" });
   });
 });

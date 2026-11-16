@@ -238,6 +238,12 @@ func (a *app) validateOptions(o options) error {
 	if o.Driver != "" && o.Driver != driverS3 && o.Driver != driverMock {
 		return userError("Choose the S3 or mock storage driver.")
 	}
+	switch {
+	case o.Workload != "" && o.Workload != driverWriteVerify && o.Workload != workloadWrite:
+		return userError("Choose the write + verify or write workload.")
+	case o.Workload != "" && o.Driver == driverMock:
+		return userError("A mock run takes no workload; it always runs SPT's mock workload.")
+	}
 	switch o.Mode {
 	case "", modeGuided:
 		if len(o.Flags) > 0 {
@@ -257,8 +263,11 @@ func (a *app) validateOptions(o options) error {
 
 // runWorkload is the spt run workload a request starts.
 func runWorkload(o options) string {
-	if o.Driver == driverMock {
+	switch {
+	case o.Driver == driverMock:
 		return driverMock
+	case o.Workload == workloadWrite:
+		return workloadWrite
 	}
 	return driverWriteVerify
 }
@@ -362,9 +371,10 @@ func (a *app) buildArgv(runDir, runID string, o options, target map[string]any) 
 		return append(argv, "--label", sourceDashboard, "--results-dir", runDir)
 	}
 	// validateOptions has already accepted the flags, so this cannot fail here.
-	flags, _ := expertFlagValues(driverWriteVerify, o.Flags, o.ObjectSize)
-	argv := []string{a.sptBin, "run", driverWriteVerify, "--headless", "--endpoints", fmt.Sprint(target["endpoint"]), "--bucket", fmt.Sprint(target["bucket"]), "--prefix", "dashboard/" + runID + "/", "--object-count", strconv.Itoa(o.ObjectCount), "--object-size", o.ObjectSize, "--threads", strconv.Itoa(o.Threads), "--test-hosts", targetHosts(target), "--service-threads", serviceThreads(flags, o.Threads), "--auto-terminate-seconds", strconv.Itoa(o.MaxRuntimeSeconds)}
-	argv = append(argv, expertArgs(driverWriteVerify, flags)...)
+	workload := runWorkload(o)
+	flags, _ := expertFlagValues(workload, o.Flags, o.ObjectSize)
+	argv := []string{a.sptBin, "run", workload, "--headless", "--endpoints", fmt.Sprint(target["endpoint"]), "--bucket", fmt.Sprint(target["bucket"]), "--prefix", "dashboard/" + runID + "/", "--object-count", strconv.Itoa(o.ObjectCount), "--object-size", o.ObjectSize, "--threads", strconv.Itoa(o.Threads), "--test-hosts", targetHosts(target), "--service-threads", serviceThreads(flags, o.Threads), "--auto-terminate-seconds", strconv.Itoa(o.MaxRuntimeSeconds)}
+	argv = append(argv, expertArgs(workload, flags)...)
 	return append(argv, "--label", "dashboard", "--results-dir", runDir)
 }
 

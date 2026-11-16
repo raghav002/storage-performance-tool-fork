@@ -1,12 +1,17 @@
 import { Alert, Button, Code, Text, Title } from "@mantine/core";
-import type { FlagDef, FlagValue } from "../../flags/schema";
-import type { Driver, Options, RunMode } from "../../types";
+import {
+  workloadName,
+  type FlagDef,
+  type FlagValue,
+  type Workload,
+} from "../../flags/schema";
+import type { Options, RunMode } from "../../types";
 import { formatNumber as fmt } from "../../utils/metrics";
 import { expertCommand, type ExpertDraft } from "./configuration";
 
 export function RunReview({
   config,
-  driver,
+  workload,
   mode,
   clients,
   totalBytes,
@@ -21,7 +26,7 @@ export function RunReview({
   onStart,
 }: {
   config: Options;
-  driver: Driver;
+  workload: Workload;
   mode: RunMode;
   clients: number;
   totalBytes: number;
@@ -49,8 +54,8 @@ export function RunReview({
       )}
       <div className="p-lg bg-surface-review rounded-md mb-lg">
         <Title order={2}>
-          {driver === "mock" ? "Mock driver" : "Write + verify"} ·{" "}
-          {mode === "expert" ? "Expert" : "Guided"} · {clients} client machine
+          {workloadName(workload)} · {mode === "expert" ? "Expert" : "Guided"} ·{" "}
+          {clients} client machine
           {clients === 1 ? "" : "s"}
         </Title>
         <dl className="grid grid-cols-2 gap-lg max-[47.5rem]:grid-cols-1">
@@ -99,15 +104,16 @@ export function RunReview({
             </div>
           </div>
         )}
-        {driver === "mock" ? (
+        {workload === "mock" ? (
           <Text size="sm" className="mt-xs">
             Mock run: no data is written to S3. Results show SPT's mock driver,
             not storage performance.
           </Text>
         ) : (
           <Text size="sm" className="mt-xs">
-            Up to {fmt(totalBytes / 1048576, 2)} MiB of test data. A unique
-            prefix isolates this run. Cleanup is best effort.
+            Up to {fmt(totalBytes / 1048576, 2)} MiB of test data
+            {workload === "write" ? ", written but not read back" : ""}. A
+            unique prefix isolates this run. Cleanup is best effort.
           </Text>
         )}
         {mode === "expert" && (
@@ -120,7 +126,7 @@ export function RunReview({
               fz="xs"
             >
               {advancedValid
-                ? expertCommand(draft, driver, advanced)
+                ? expertCommand(draft, workload, advanced)
                 : "Correct the advanced flags to generate a command preview."}
             </Code>
             <small className="font-normal text-[#738198] text-xs/[inherit]">
@@ -144,7 +150,7 @@ export function RunReview({
         </Button>
       </div>
       <Text size="sm" className="my-comfortable">
-        {driver === "mock"
+        {workload === "mock"
           ? "Starting runs SPT with the mock driver on the verified client machines."
           : "Starting runs a real benchmark on the configured storage target."}
       </Text>

@@ -5,17 +5,34 @@
 import { defaults } from "../config";
 import type { Driver, Options } from "../types";
 
-export type Workload = "write-verify" | "mock";
+export type Workload = "write-verify" | "write" | "mock";
 
-export const workloadForDriver = (d: Driver | undefined): Workload =>
-  d === "mock" ? "mock" : "write-verify";
+export const workloads: readonly Workload[] = ["write-verify", "write", "mock"];
+export const isWorkload = (w: unknown): w is Workload =>
+  workloads.includes(w as Workload);
+export const workloadName = (w: Workload) =>
+  w === "mock" ? "Mock driver" : w === "write" ? "Write" : "Write + verify";
+// The storage driver a workload runs on: only mock uses SPT's mock driver.
 export const driverForWorkload = (w: Workload): Driver =>
   w === "mock" ? "mock" : "s3";
+// The run request fields that pick a workload: write-verify is the default, so
+// it sends neither; mock is chosen by its driver.
+export const workloadRequest = (
+  w: Workload,
+): Pick<Options, "driver" | "workload"> =>
+  w === "mock"
+    ? { driver: "mock" }
+    : w === "write"
+      ? { workload: "write" }
+      : {};
 
 export type FlagKind =
   "int" | "float" | "bool" | "size" | "duration" | "enum" | "string";
 export type FlagValue = string | boolean;
-export type CoreField = Exclude<keyof Options, "mode" | "driver" | "flags">;
+export type CoreField = Exclude<
+  keyof Options,
+  "mode" | "driver" | "workload" | "flags"
+>;
 
 export type FlagDef = {
   name: string; // without the leading "--"
@@ -341,6 +358,8 @@ const mockGroups: readonly GroupDef[] = [
 
 export const flagGroups: Record<Workload, readonly GroupDef[]> = {
   "write-verify": writeVerifyGroups,
+  // Write takes only the four core settings until expert write flags arrive.
+  write: [runSize],
   mock: mockGroups,
 };
 

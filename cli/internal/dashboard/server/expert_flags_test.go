@@ -242,3 +242,72 @@ func TestBuildArgvAppliesExpertFlagsOnce(t *testing.T) {
 		t.Errorf("placement changed: %v", argv)
 	}
 }
+
+func TestWriteWorkloadRequests(t *testing.T) {
+	a := &app{}
+	guided := options{ObjectCount: 100, ObjectSize: "1MiB", Threads: 1, MaxRuntimeSeconds: 60, Workload: workloadWrite}
+	if err := a.validateOptions(guided); err != nil {
+		t.Errorf("guided write run rejected: %v", err)
+	}
+	if got := runWorkload(guided); got != workloadWrite {
+		t.Errorf("runWorkload = %q, want write", got)
+	}
+	for name, o := range map[string]options{
+		"unknown workload":     {ObjectCount: 100, ObjectSize: "1MiB", Threads: 1, MaxRuntimeSeconds: 60, Workload: "delete"},
+		"mock with a workload": {ObjectCount: 100, ObjectSize: "1MiB", Threads: 1, MaxRuntimeSeconds: 60, Driver: driverMock, Workload: workloadWrite},
+	} {
+		if err := a.validateOptions(o); err == nil {
+			t.Errorf("%s: accepted %+v", name, o)
+		}
+	}
+	// Expert write runs take only the four core settings until expert write is enabled.
+	expert := expertRun(map[string]any{"checksum": "crc32"})
+	expert.Workload = workloadWrite
+	if err := a.validateOptions(expert); err == nil || !strings.Contains(err.Error(), "not available for write") {
+		t.Errorf("expert write run with flags: %v", err)
+	}
+	expert.Flags = nil
+	if err := a.validateOptions(expert); err != nil {
+		t.Errorf("expert write run without flags: %v", err)
+	}
+}
+
+func TestBuildArgvRunsTheWriteWorkload(t *testing.T) {
+	a := &app{sptBin: "spt"}
+	target := map[string]any{"hosts": []string{"10.0.0.1"}, "endpoint": "https://s3", "bucket": "b"}
+	argv := a.buildArgv("/r", "mt-dashboard-x", options{ObjectCount: 10, ObjectSize: "64KiB", Threads: 2, MaxRuntimeSeconds: 60, Workload: workloadWrite}, target)
+	if argv[1] != "run" || argv[2] != workloadWrite {
+		t.Fatalf("wrong command: %v", argv)
+	}
+	got := argFlags(t, argv)
+	// The same safe defaults as write-verify, cleanup included.
+	for flag, want := range map[string]string{
+		"--cleanup": "true", "--s3-driver": "default", "--auth-version": "4",
+		"--object-data-compressibility": "0", "--object-data-dedupable": "true",
+		"--prefix": "dashboard/mt-dashboard-x/", "--bucket": "b", "--service-threads": "2",
+	} {
+		if got[flag] != want {
+			t.Errorf("%s = %q, want %q", flag, got[flag], want)
+		}
+	}
+	for _, flag := range []string{"--defer-verification", "--integrity-max-console-failures", "--integrity-runtime-identity-tier"} {
+		if _, ok := got[flag]; ok {
+			t.Errorf("write run passed verification flag %s", flag)
+		}
+	}
+}
+
+func TestJobWorkloadNamesTheWriteWorkload(t *testing.T) {
+	for want, opts := range map[string]any{
+		workloadWrite:     map[string]any{"workload": "write"},
+		driverWriteVerify: map[string]any{},
+		driverMock:        map[string]any{"driver": "mock"},
+	} {
+		if got := jobWorkload(map[string]any{keyOptions: opts}); got != want {
+			t.Errorf("jobWorkload(%v) = %q, want %q", opts, got, want)
+		}
+	}
+	if got := jobWorkload(map[string]any{keyOptions: options{Workload: workloadWrite}}); got != workloadWrite {
+		t.Errorf("jobWorkload(options) = %q, want write", got)
+	}
+}

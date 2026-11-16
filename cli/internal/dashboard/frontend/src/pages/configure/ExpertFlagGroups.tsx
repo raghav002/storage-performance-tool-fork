@@ -206,7 +206,7 @@ export function ExpertFlagGroups({
           {core}
         </GroupItem>
       </Accordion>
-      {!applied && (
+      {!applied && rest.length > 0 && (
         <Alert role="note" title="Preview only">
           The groups below shape the CLI preview, but this dashboard version
           runs only the four settings above.

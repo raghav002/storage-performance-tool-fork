@@ -169,7 +169,8 @@ export function runWorkloadType(
   job?: Pick<Job, "options"> | null,
 ): string | undefined {
   if (metrics?.workload_type) return metrics.workload_type;
-  return job?.options?.driver === "mock" ? "mock" : undefined;
+  if (job?.options?.driver === "mock") return "mock";
+  return job?.options?.workload === "write" ? "write" : undefined;
 }
 
 /** True when optional shape fields agree (only compared when both sides define them). */

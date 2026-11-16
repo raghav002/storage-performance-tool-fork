@@ -1,6 +1,6 @@
 import { buildSptCommand } from "../../flags/command";
-import { workloadForDriver, type FlagValue } from "../../flags/schema";
-import type { Driver, Options } from "../../types";
+import type { FlagValue, Workload } from "../../flags/schema";
+import type { Options } from "../../types";
 import { parseWhole, splitSize, type SizeUnit } from "../../utils/validation";
 
 export type ExpertDraft = {
@@ -63,8 +63,8 @@ export function fromDraft(d: ExpertDraft): Options {
 // preview-only flag that differs from the dashboard default.
 export function expertCommand(
   draft: ExpertDraft,
-  driver: Driver,
+  workload: Workload,
   advanced: Record<string, FlagValue>,
 ): string {
-  return buildSptCommand(workloadForDriver(driver), fromDraft(draft), advanced);
+  return buildSptCommand(workload, fromDraft(draft), advanced);
 }

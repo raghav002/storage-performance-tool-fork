@@ -62,6 +62,9 @@ type options struct {
 	// Driver is "s3" (default, write + verify against the configured bucket) or
 	// "mock" (SPT's dummy-mock storage driver; no S3 endpoint or credentials).
 	Driver string `json:"driver,omitempty"`
+	// Workload picks the S3 workload: "write-verify" (the default when empty)
+	// or "write". Mock runs set the mock driver instead and leave it empty.
+	Workload string `json:"workload,omitempty"`
 	// Flags are expert-mode spt run flags by name (without "--"): booleans as
 	// JSON true/false, everything else as text. Only the workload's allow-list
 	// in expert_flags.go is accepted, and only in expert mode.

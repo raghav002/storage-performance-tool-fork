@@ -34,6 +34,7 @@ const (
 	metricP50Latency = "p50_latency_us"
 
 	driverWriteVerify = "write-verify"
+	workloadWrite     = "write"
 
 	// History chart query kind (the "kind" parameter).
 	kindWindow = "window"

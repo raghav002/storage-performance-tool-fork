@@ -62,6 +62,10 @@ type options struct {
 	// Driver is "s3" (default, write + verify against the configured bucket) or
 	// "mock" (SPT's dummy-mock storage driver; no S3 endpoint or credentials).
 	Driver string `json:"driver,omitempty"`
+	// Flags are expert-mode spt run flags by name (without "--"): booleans as
+	// JSON true/false, everything else as text. Only the workload's allow-list
+	// in expert_flags.go is accepted, and only in expert mode.
+	Flags map[string]any `json:"flags,omitempty"`
 }
 
 const (

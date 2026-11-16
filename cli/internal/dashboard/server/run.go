@@ -240,12 +240,27 @@ func (a *app) validateOptions(o options) error {
 	}
 	switch o.Mode {
 	case "", modeGuided:
+		if len(o.Flags) > 0 {
+			return userError("SPT flags can only be set in expert mode.")
+		}
 		return a.validateGuided(o)
 	case modeExpert:
-		return a.validateExpert(o)
+		if err := a.validateExpert(o); err != nil {
+			return err
+		}
+		_, err := expertFlagValues(runWorkload(o), o.Flags, o.ObjectSize)
+		return err
 	default:
 		return userError("Choose the guided or expert run mode.")
 	}
+}
+
+// runWorkload is the spt run workload a request starts.
+func runWorkload(o options) string {
+	if o.Driver == driverMock {
+		return driverMock
+	}
+	return driverWriteVerify
 }
 
 func (a *app) validateGuided(o options) error {
@@ -343,7 +358,11 @@ func (a *app) buildArgv(runDir, runID string, o options, target map[string]any) 
 		// "spt run mock" selects the dummy-mock driver; it takes no endpoint, bucket, or credentials.
 		return []string{a.sptBin, "run", "mock", "--headless", "--object-count", strconv.Itoa(o.ObjectCount), "--object-size", o.ObjectSize, "--threads", strconv.Itoa(o.Threads), "--test-hosts", targetHosts(target), "--service-threads", strconv.Itoa(o.Threads), "--auto-terminate-seconds", strconv.Itoa(o.MaxRuntimeSeconds), "--label", sourceDashboard, "--results-dir", runDir}
 	}
-	return []string{a.sptBin, "run", driverWriteVerify, "--headless", "--endpoints", fmt.Sprint(target["endpoint"]), "--bucket", fmt.Sprint(target["bucket"]), "--prefix", "dashboard/" + runID + "/", "--object-count", strconv.Itoa(o.ObjectCount), "--object-size", o.ObjectSize, "--threads", strconv.Itoa(o.Threads), "--test-hosts", targetHosts(target), "--service-threads", strconv.Itoa(o.Threads), "--auto-terminate-seconds", strconv.Itoa(o.MaxRuntimeSeconds), "--s3-driver", "default", "--auth-version", "4", "--object-data-compressibility", "0", "--object-data-dedupable=true", "--cleanup", "--label", "dashboard", "--results-dir", runDir}
+	// validateOptions has already accepted the flags, so this cannot fail here.
+	flags, _ := expertFlagValues(driverWriteVerify, o.Flags, o.ObjectSize)
+	argv := []string{a.sptBin, "run", driverWriteVerify, "--headless", "--endpoints", fmt.Sprint(target["endpoint"]), "--bucket", fmt.Sprint(target["bucket"]), "--prefix", "dashboard/" + runID + "/", "--object-count", strconv.Itoa(o.ObjectCount), "--object-size", o.ObjectSize, "--threads", strconv.Itoa(o.Threads), "--test-hosts", targetHosts(target), "--service-threads", serviceThreads(flags, o.Threads), "--auto-terminate-seconds", strconv.Itoa(o.MaxRuntimeSeconds)}
+	argv = append(argv, expertArgs(driverWriteVerify, flags)...)
+	return append(argv, "--label", "dashboard", "--results-dir", runDir)
 }
 
 func (a *app) childEnvironment(o options, target map[string]any) []string {

@@ -132,7 +132,7 @@ func TestS3LaunchContract(t *testing.T) {
 				"--test-hosts": "root@node-a,node-b", "--service-threads": strconv.Itoa(tt.opts.Threads),
 				"--auto-terminate-seconds": strconv.Itoa(tt.opts.MaxRuntimeSeconds), "--s3-driver": "default",
 				"--auth-version": "4", "--object-data-compressibility": "0", "--object-data-dedupable": "true",
-				"--cleanup": "", "--label": "dashboard", "--results-dir": runDir,
+				"--cleanup": "true", "--label": "dashboard", "--results-dir": runDir,
 			}
 			gotArgs := readLaunchFields(t, argsPath)
 			if gotFlags := launchFlags(t, gotArgs); !reflect.DeepEqual(gotFlags, wantFlags) {
@@ -194,7 +194,7 @@ func launchFlags(t *testing.T, args []string) map[string]string {
 		if _, duplicate := flags[key]; duplicate {
 			t.Fatalf("duplicate child option %q", key)
 		}
-		if !assigned && key != "--headless" && key != "--cleanup" {
+		if !assigned && key != "--headless" {
 			i++
 			if i >= len(args) {
 				t.Fatalf("missing value for %q", key)

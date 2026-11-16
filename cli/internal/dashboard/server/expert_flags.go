@@ -75,11 +75,22 @@ var writeVerifyFlags = []expertFlag{
 	{name: "save-items", kind: flagBool},
 }
 
+// mockFlags are the flags of `spt run mock` that expert runs may set. Dashboard
+// mock runs pass no --cleanup, so the delete phase is off unless set.
+var mockFlags = []expertFlag{
+	{name: "cleanup", kind: flagBool},
+	{name: "min-hosts", kind: flagInt, min: 0, max: maxHosts},
+	{name: "service-threads", kind: flagInt, min: 1, max: 1024},
+}
+
 // expertFlagsFor returns the flags a workload accepts, or nil when the
 // workload takes no expert flags.
 func expertFlagsFor(workload string) []expertFlag {
-	if workload == driverWriteVerify {
+	switch workload {
+	case driverWriteVerify:
 		return writeVerifyFlags
+	case driverMock:
+		return mockFlags
 	}
 	return nil
 }

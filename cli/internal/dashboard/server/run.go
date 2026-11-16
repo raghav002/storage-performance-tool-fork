@@ -356,7 +356,10 @@ func unlockClose(f *os.File) {
 func (a *app) buildArgv(runDir, runID string, o options, target map[string]any) []string {
 	if o.Driver == driverMock {
 		// "spt run mock" selects the dummy-mock driver; it takes no endpoint, bucket, or credentials.
-		return []string{a.sptBin, "run", "mock", "--headless", "--object-count", strconv.Itoa(o.ObjectCount), "--object-size", o.ObjectSize, "--threads", strconv.Itoa(o.Threads), "--test-hosts", targetHosts(target), "--service-threads", strconv.Itoa(o.Threads), "--auto-terminate-seconds", strconv.Itoa(o.MaxRuntimeSeconds), "--label", sourceDashboard, "--results-dir", runDir}
+		flags, _ := expertFlagValues(driverMock, o.Flags, o.ObjectSize)
+		argv := []string{a.sptBin, "run", "mock", "--headless", "--object-count", strconv.Itoa(o.ObjectCount), "--object-size", o.ObjectSize, "--threads", strconv.Itoa(o.Threads), "--test-hosts", targetHosts(target), "--service-threads", serviceThreads(flags, o.Threads), "--auto-terminate-seconds", strconv.Itoa(o.MaxRuntimeSeconds)}
+		argv = append(argv, expertArgs(driverMock, flags)...)
+		return append(argv, "--label", sourceDashboard, "--results-dir", runDir)
 	}
 	// validateOptions has already accepted the flags, so this cannot fail here.
 	flags, _ := expertFlagValues(driverWriteVerify, o.Flags, o.ObjectSize)

@@ -371,6 +371,7 @@ export function advancedDefaults(
 // the CLI preview and saved in profiles, never sent with a run.
 export const appliedWorkloads: ReadonlySet<Workload> = new Set<Workload>([
   "write-verify",
+  "mock",
 ]);
 
 // The flags a run request carries: only those that differ from the

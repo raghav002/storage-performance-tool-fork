@@ -158,7 +158,7 @@ const spin = (name: RegExp) =>
   screen.getByRole("spinbutton", { name }) as HTMLInputElement;
 
 describe("expert flag groups", () => {
-  it("applies every write-verify group and previews mock's", () => {
+  it("applies every group of both workloads", () => {
     renderExpert();
     expect(groupButton("Run size & limits").getAttribute("aria-expanded")).toBe(
       "true",
@@ -173,9 +173,9 @@ describe("expert flag groups", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: /Mock driver/ }));
     expect(
-      within(tags("cleanup", "mock")).getByText("Preview only"),
+      within(tags("cleanup", "mock")).getByText("Applied to runs"),
     ).toBeTruthy();
-    expect(screen.getByText(/runs only the four settings above/)).toBeTruthy();
+    expect(screen.queryByText(/runs only the four settings above/)).toBeNull();
   });
 
   it("counts, previews and resets changed flags", async () => {
@@ -219,7 +219,7 @@ describe("expert flag groups", () => {
     ).toBe(true);
   });
 
-  it("lets a run start while a preview-only flag is invalid", async () => {
+  it("blocks a mock run while a flag is invalid", async () => {
     renderExpert();
     fireEvent.click(screen.getByRole("radio", { name: /Mock driver/ }));
     await openGroup("Distribution & engine");
@@ -232,7 +232,7 @@ describe("expert flag groups", () => {
     expect(
       (screen.getByRole("button", { name: "Review run" }) as HTMLButtonElement)
         .disabled,
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("sends changed write-verify flags with the run", async () => {
@@ -257,7 +257,7 @@ describe("expert flag groups", () => {
     ]);
   });
 
-  it("sends only the core settings for a preview-only workload", async () => {
+  it("sends changed mock flags with the run", async () => {
     const { posts, onStarted } = renderExpert();
     fireEvent.click(screen.getByRole("radio", { name: /Mock driver/ }));
     await openGroup("Cleanup");
@@ -265,7 +265,8 @@ describe("expert flag groups", () => {
       await screen.findByRole("switch", { name: /^Add a delete phase/ }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Review run" }));
-    expect(screen.getByText(/1 preview-only flag is set/)).toBeTruthy();
+    expect(screen.getByText("SPT flags (1)")).toBeTruthy();
+    expect(screen.queryByText(/preview-only flag/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Start run" }));
     await waitFor(() => expect(onStarted).toHaveBeenCalled());
     expect(posts).toEqual([
@@ -276,6 +277,7 @@ describe("expert flag groups", () => {
         threads: 1,
         max_runtime_seconds: 60,
         driver: "mock",
+        flags: { cleanup: true },
       },
     ]);
   });
@@ -292,7 +294,7 @@ describe("expert flag groups", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
     expect(
-      screen.getByText(/Saved in this browser with 1 preview-only flag/),
+      screen.getByText(/Saved in this browser with 1 flag\./),
     ).toBeTruthy();
     const saved = JSON.parse(
       localStorage.getItem("spt-dashboard-expert-profiles-v2") ?? "[]",

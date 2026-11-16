@@ -99,16 +99,67 @@ func TestExpertFlagsApplyCrossFlagRules(t *testing.T) {
 	}
 }
 
-func TestExpertFlagsOnlyInExpertWriteVerifyRuns(t *testing.T) {
+func TestExpertFlagsOnlyInExpertRuns(t *testing.T) {
 	a := &app{}
 	guided := options{ObjectCount: 100, ObjectSize: "1MiB", Threads: 1, MaxRuntimeSeconds: 60, Flags: map[string]any{"cleanup": false}}
 	if err := a.validateOptions(guided); err == nil || !strings.Contains(err.Error(), "expert mode") {
 		t.Errorf("guided run with flags: %v", err)
 	}
-	mock := expertRun(map[string]any{"cleanup": true})
-	mock.Driver = driverMock
-	if err := a.validateOptions(mock); err == nil || !strings.Contains(err.Error(), "not available for mock") {
-		t.Errorf("mock run with flags: %v", err)
+}
+
+// mockRun is a valid expert mock request carrying flags.
+func mockRun(flags map[string]any) options {
+	o := expertRun(flags)
+	o.Driver = driverMock
+	return o
+}
+
+func TestExpertFlagsForMockRuns(t *testing.T) {
+	a := &app{}
+	for _, flags := range []map[string]any{
+		{"cleanup": true},
+		{"cleanup": false},
+		{"min-hosts": "1", "service-threads": "8"},
+	} {
+		if err := a.validateOptions(mockRun(flags)); err != nil {
+			t.Errorf("mock rejected %v: %v", flags, err)
+		}
+	}
+	// Storage flags mean nothing to the mock driver, and blocked flags stay blocked.
+	for _, flags := range []map[string]any{
+		{"checksum": "crc32"},
+		{"part-size": "8MiB"},
+		{"s3-driver": "aws"},
+		{"secret-key": "abc"},
+		{"min-hosts": "9"},
+		{"cleanup": "yes"},
+	} {
+		if err := a.validateOptions(mockRun(flags)); err == nil {
+			t.Errorf("mock accepted %v", flags)
+		}
+	}
+}
+
+func TestBuildArgvAppliesMockFlags(t *testing.T) {
+	a := &app{sptBin: "spt"}
+	target := map[string]any{"hosts": []string{"10.0.0.1"}, "endpoint": "https://s3", "bucket": "b"}
+	plain := argFlags(t, a.buildArgv("/r", "mt-dashboard-x", mockRun(nil), target))
+	if _, ok := plain["--cleanup"]; ok {
+		t.Errorf("a mock run without flags passed --cleanup: %v", plain)
+	}
+	if plain["--service-threads"] != "4" {
+		t.Errorf("--service-threads = %q, want the thread count", plain["--service-threads"])
+	}
+	got := argFlags(t, a.buildArgv("/r", "mt-dashboard-x", mockRun(map[string]any{"cleanup": true, "min-hosts": "1", "service-threads": "8"}), target))
+	for flag, want := range map[string]string{"--cleanup": "true", "--min-hosts": "1", "--service-threads": "8"} {
+		if got[flag] != want {
+			t.Errorf("%s = %q, want %q", flag, got[flag], want)
+		}
+	}
+	for _, flag := range []string{"--endpoints", "--bucket", "--s3-driver", "--prefix"} {
+		if _, ok := got[flag]; ok {
+			t.Errorf("mock run passed storage flag %s", flag)
+		}
 	}
 }
 

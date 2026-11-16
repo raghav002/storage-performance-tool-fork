@@ -1,10 +1,10 @@
 # SPT Dashboard
 
-A small Go web server with an embedded React dashboard for running a bounded SPT write/verify workload and reviewing its metrics.
+A small Go web server with an embedded React dashboard for running bounded SPT write + verify, write and mock workloads and reviewing their metrics.
 
 ## Build
 
-Use Go 1.25.14 or newer, npm, and a Node.js version supported by `frontend/package.json`. CI uses Node.js 22. Run lint and formatting checks before building the frontend.
+Use Go 1.26 or newer (the CLI module requires it), npm, and a Node.js version supported by `frontend/package.json`. CI uses Node.js 22. Run lint and formatting checks before building the frontend.
 
 ```sh
 cd cli/internal/dashboard/frontend
@@ -93,36 +93,43 @@ The settings file supports `branding.product_name`, `branding.environment_label`
 
 ### Expert flags
 
-Expert mode shows the relevant `spt run` flags for the selected workload in collapsible groups. Write + verify has nine groups:
-- Run size & limits
-- Object data
-- Multipart upload
-- Verification & cleanup
-- Key layout
-- Protocol & driver
-- Endpoint routing
-- Distribution & engine
-- Results
+Expert mode shows the `spt run` flags each workload accepts, in collapsible groups:
 
-Mock has three: Run size & limits, Cleanup, and Distribution & engine.
+| Workload | Groups |
+|---|---|
+| Write + verify | Run size & limits, Object data, Multipart upload, Verification & cleanup, Key layout, Protocol & driver, Endpoint routing, Distribution & engine, Results |
+| Write | The same, with a **Cleanup** group in place of Verification & cleanup. `spt run write` rejects `--defer-verification` and the integrity flags. |
+| Mock | Run size & limits, Cleanup (adds the mock delete phase), Distribution & engine |
 
-Each flag shows its SPT name, its default, a reset button and any validation error. Each group header shows how many flags are changed or invalid.
+- **Each flag** shows its label and SPT name, its default, a reset button and any validation error.
+- **Hovering a flag's name** shows its one- or two-sentence description. The field also carries it as `aria-description`.
+- **Each group header** shows how many flags are changed or invalid.
 
-**Only the first group is applied to runs.** "Run size & limits" holds the four settings that `POST /api/runs` accepts. Every other group is **preview only**. Those flags are:
-- shown in the CLI preview, so the full command can be copied to the SPT CLI
-- saved in profiles
-- never sent to the server
+**Every group is applied to runs.** The run request carries only the flags that differ from the dashboard default, so unchanged flags keep the server's defaults. An invalid flag blocks the run, and the review step lists the SPT flags the run passes.
 
-The review step lists any preview-only flags that are set. Their errors never block a run. The schema, the validation rules and the list of flags the GUI never sets are in `frontend/src/flags/`.
+The server checks every flag against its own allow-list (`server/expert_flags.go`) before SPT starts:
+- value types and ranges
+- enum choices, sizes and durations
+- the cross-flag rules from `cli/cmd/validation.go`
+
+Each accepted flag is passed as a single `--name=value` argument. The server never accepts, from any workload:
+- credentials
+- the endpoint, the bucket, the hosts or the prefix
+- paths
+- the image or engine overrides
+- ports, RDMA or NIC sets
+- `--duration`
+
+The browser's schema, validation and blocked-flag reasons are in `frontend/src/flags/`. Tests read the CLI's Go sources and `server/expert_flags.go`, and fail if the browser's flag lists drift from either.
 
 **Profiles** are saved in the browser's `localStorage`, up to 12. A profile holds:
 - the workload
 - the four core settings
-- every preview-only flag
+- every expert flag
 
 It never holds credentials. Loading a profile switches the workload. Values that aren't valid flags for that workload are dropped. Profiles saved before expert flags existed load as write-verify, with default flags.
 
-**Pasting an `spt run write-verify …` or `spt run mock …` command** anywhere in Expert mode opens a prompt:
+**Pasting an `spt run write-verify …`, `spt run write …` or `spt run mock …` command** anywhere in Expert mode opens a prompt:
 - Paste into a field outside the Expert workspace, such as Storage configuration, and no prompt opens.
 - The **CLI command** start option opens the same prompt.
 - Applying the command switches to its workload and sets every flag it names. Settings it leaves out return to their defaults.
@@ -139,14 +146,18 @@ The app opens on **Configure run**, which has two steps. Workload settings stay 
 
 Changing the client machines or the endpoint requires verifying again. Verification and runs never overlap, because both start SPT containers on the same ports. Settings and the last job are kept in the dashboard state directory under the user configuration location.
 
-## Storage driver: S3 write + verify or mock
+## Workloads: S3 write + verify, S3 write, or mock
 
-Step 2 of **Configure run** offers two drivers:
+Step 2 of **Configure run** offers three workloads, in Guided and Expert mode:
 
-- **S3 write + verify** (default) runs SPT's write/verify workload against the configured S3 target. It needs a passing storage verification, including the endpoint check, and the bucket and credentials from `.env`.
+- **S3 write + verify** (default) runs SPT's write/verify workload against the configured S3 target: it writes objects, reads them back to verify them, then cleans them up. It needs a passing storage verification, including the endpoint check, and the bucket and credentials from `.env`.
+- **S3 write** runs `spt run write`: it writes objects to the configured bucket without reading them back, then cleans them up (Expert mode can turn cleanup off). It has the same storage requirements, safe defaults and run-owned `dashboard/<runID>/` prefix as write + verify.
 - **Mock driver** runs `spt run mock` (SPT's `dummy-mock` storage driver). No S3 endpoint, bucket, or credentials are used or passed to SPT, so only the client machines must pass verification. Use it to check the client machines, the dashboard, and the charts on a VM without touching storage. Mock results describe the mock driver, not storage performance; the UI labels them **Mock driver** everywhere.
 
-`/api/state` reports `target.mock_ready` and `target.mock_reasons` next to the S3 `ready`/`reasons`. `POST /api/runs` accepts `"driver": "mock"`; omitting `driver` keeps the S3 workload, so existing clients are unaffected.
+`/api/state` reports `target.mock_ready` and `target.mock_reasons` next to the S3 `ready`/`reasons`. In `POST /api/runs`:
+- `"driver": "mock"` starts a mock run.
+- `"workload": "write"` starts an S3 write run.
+- Omitting both keeps the S3 write + verify workload, so existing clients are unaffected.
 
 With more than one client machine, the live dashboard also shows a **per-machine** table read from each machine's own `/metrics/json`. These rows are shown next to the fleet totals and are never summed with them.
 
@@ -188,7 +199,7 @@ All endpoints answer only on loopback with a loopback `Host` header; any other h
 |---|---|
 | `GET /api/state` | Dashboard state, limits, target readiness (S3 and mock), job, live metrics |
 | `POST /api/storage/verify` | Save and verify client machines and the optional endpoint |
-| `POST /api/runs` | Start a run; body is the workload options plus optional `"driver": "mock"` |
+| `POST /api/runs` | Start a run; body is the four core options plus optional `"driver": "mock"`, `"workload": "write"`, and, in expert mode, `"flags"` (expert `spt run` flags by name) |
 | `POST /api/runs/{id}/stop` | Gracefully stop the active dashboard run `{id}` (`409` if it is not the run in progress) |
 | `GET /api/runs`, `GET /api/runs/{id}`, `GET /api/runs/{id}/csv` | Dashboard run history and CSV export |
 | `GET /api/runs/{id}/log?level=all\|warn\|error&tail=N&source=console\|results` | Logs for a dashboard run |
@@ -214,5 +225,5 @@ npm run typecheck && npm test
 The Go tests use fixture result folders under `server/testdata/catalog/results` (baseline, regressed, corrupt, partial, malformed, different-thread runs) and a fake SPT executable for the mock driver, so they need neither S3 nor Docker. The Vitest suite covers:
 - the catalog/compare helpers and driver readiness
 - the catalog, compare and log components
-- the expert flag schema, validation, command parsing and profiles
-- the expert flag groups and the paste prompt
+- the expert flag schema, validation, command parsing and profiles, including checks against the CLI's registered flags and the server's allow-list
+- the expert flag groups, tooltips, profiles, the paste prompt and the run requests each workload sends

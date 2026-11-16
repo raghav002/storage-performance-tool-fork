@@ -121,6 +121,15 @@ describe("expert flag schema", () => {
       expect(blockedFlags[name], name).toBeTruthy();
   });
 
+  it.each(workloads)("%s describes each flag in one or two sentences", (w) => {
+    for (const f of flagsFor(w)) {
+      const sentences = f.help.match(/[.!?](\s|$)/g) ?? [];
+      expect(sentences.length, f.name).toBeGreaterThan(0);
+      expect(sentences.length, f.name).toBeLessThanOrEqual(2);
+      expect(f.help.length, f.name).toBeLessThanOrEqual(160);
+    }
+  });
+
   it("blocks only real flags and aliases real names", () => {
     for (const name of Object.keys(blockedFlags))
       expect(allRunFlags.has(name), name).toBe(true);

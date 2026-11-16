@@ -19,6 +19,7 @@ import {
   type Workload,
 } from "../../flags/schema";
 import type { FlagErrors } from "../../flags/validate";
+import { FlagHelp } from "./FlagHelp";
 
 // What an empty default means for flags that show it differently.
 const emptyLabel: Record<string, string> = { checksum: "Off" };
@@ -36,7 +37,7 @@ export const defaultText = (f: FlagDef) =>
 function FlagLabel({ flag }: { flag: FlagDef }) {
   return (
     <span className="inline-flex flex-wrap items-baseline gap-x-xs">
-      {flag.label}
+      <FlagHelp help={flag.help}>{flag.label}</FlagHelp>
       <Code fz="xs">--{flag.name}</Code>
     </span>
   );
@@ -59,6 +60,7 @@ function FlagControl({
   const common = {
     id,
     label: <FlagLabel flag={flag} />,
+    "aria-description": flag.help,
     description: error ? undefined : `Default: ${defaultText(flag)}`,
     error,
   };

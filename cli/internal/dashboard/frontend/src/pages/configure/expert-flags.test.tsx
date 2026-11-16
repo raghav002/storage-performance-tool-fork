@@ -403,4 +403,27 @@ describe("expert flag groups", () => {
     await waitFor(() => expect(spin(/^Parallel threads/).value).toBe("3"));
     expect(within(tags("object-data")).getByText("1 changed")).toBeTruthy();
   });
+  it("shows a flag's description when hovering its name", async () => {
+    renderExpert();
+    await openGroup("Multipart upload");
+    // Keyboard and screen-reader users get the description without hovering.
+    expect(
+      (await field(/^Part size/)).getAttribute("aria-description"),
+    ).toMatch(/^Upload each object in parts/);
+    fireEvent.mouseEnter(screen.getByText("Part size"));
+    expect((await screen.findByRole("tooltip")).textContent).toMatch(
+      /^Upload each object in parts of this size\./,
+    );
+  });
+
+  it("describes the four core settings the same way", async () => {
+    renderExpert();
+    const name = screen
+      .getAllByText("Safety time limit (seconds)")
+      .find((el) => el.classList.contains("cursor-help"))!;
+    fireEvent.mouseEnter(name);
+    expect((await screen.findByRole("tooltip")).textContent).toBe(
+      "Stop the run after this many seconds, even if objects remain.",
+    );
+  });
 });

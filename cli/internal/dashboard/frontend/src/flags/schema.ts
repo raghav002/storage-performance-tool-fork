@@ -337,6 +337,26 @@ const writeVerifyGroups: readonly GroupDef[] = [
   },
 ];
 
+// spt run write rejects the verification-only flags (defer-verification and the
+// integrity flags), so write keeps only cleanup from that group.
+const writeCleanup: GroupDef = {
+  id: "cleanup",
+  title: "Cleanup",
+  purpose: "What is removed after the run.",
+  flags: [
+    {
+      name: "cleanup",
+      kind: "bool",
+      label: "Clean up written objects",
+      help: "Delete each written object after the run. Off leaves them under the run's own prefix.",
+      default: true,
+    },
+  ],
+};
+const writeGroups: readonly GroupDef[] = writeVerifyGroups.map((g) =>
+  g.id === "verification" ? writeCleanup : g,
+);
+
 const mockGroups: readonly GroupDef[] = [
   runSize,
   {
@@ -358,8 +378,7 @@ const mockGroups: readonly GroupDef[] = [
 
 export const flagGroups: Record<Workload, readonly GroupDef[]> = {
   "write-verify": writeVerifyGroups,
-  // Write takes only the four core settings until expert write flags arrive.
-  write: [runSize],
+  write: writeGroups,
   mock: mockGroups,
 };
 
@@ -390,6 +409,7 @@ export function advancedDefaults(
 // the CLI preview and saved in profiles, never sent with a run.
 export const appliedWorkloads: ReadonlySet<Workload> = new Set<Workload>([
   "write-verify",
+  "write",
   "mock",
 ]);
 

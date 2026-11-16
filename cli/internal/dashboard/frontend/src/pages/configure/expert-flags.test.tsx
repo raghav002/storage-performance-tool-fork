@@ -497,13 +497,26 @@ describe("expert flag groups", () => {
     ]);
   });
 
-  it("offers only the core settings for an expert write run so far", async () => {
+  it("runs expert write flags without the verification group", async () => {
     const { posts, onStarted } = renderExpert();
     fireEvent.click(screen.getByRole("radio", { name: /^S3 write$/ }));
-    expect(groupButton("Run size & limits")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Object data" })).toBeNull();
-    expect(screen.queryByText(/runs only the four settings above/)).toBeNull();
+    expect(groupButton("Object data")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Verification & cleanup" }),
+    ).toBeNull();
+    expect(
+      within(tags("cleanup", "write")).getByText("Applied to runs"),
+    ).toBeTruthy();
+    await openGroup("Cleanup");
+    const cleanup = await screen.findByRole("switch", {
+      name: /^Clean up written objects/,
+    });
+    expect(cleanup.getAttribute("aria-description")).toMatch(
+      /^Delete each written object/,
+    );
+    fireEvent.click(cleanup);
     fireEvent.click(screen.getByRole("button", { name: "Review run" }));
+    expect(screen.getByText("SPT flags (1)")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Start run" }));
     await waitFor(() => expect(onStarted).toHaveBeenCalled());
     expect(posts).toEqual([
@@ -514,6 +527,7 @@ describe("expert flag groups", () => {
         threads: 1,
         max_runtime_seconds: 60,
         workload: "write",
+        flags: { cleanup: false },
       },
     ]);
   });

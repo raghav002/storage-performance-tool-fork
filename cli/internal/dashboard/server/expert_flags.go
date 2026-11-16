@@ -122,10 +122,6 @@ func expertFlagsFor(workload string) []expertFlag {
 	return nil
 }
 
-// Write runs pass writeFlags' dashboard defaults, but do not take expert
-// flags yet; the expert write workload is enabled separately.
-var expertFlagsClosed = map[string]bool{workloadWrite: true}
-
 func findExpertFlag(flags []expertFlag, name string) (expertFlag, bool) {
 	for _, f := range flags {
 		if f.name == name {
@@ -223,7 +219,7 @@ func expertFlagValues(workload string, flags map[string]any, objectSize string) 
 		return map[string]string{}, nil
 	}
 	allowed := expertFlagsFor(workload)
-	if allowed == nil || expertFlagsClosed[workload] {
+	if allowed == nil {
 		return nil, userErrorf("Expert flags are not available for %s runs.", workload)
 	}
 	names := make([]string, 0, len(flags))

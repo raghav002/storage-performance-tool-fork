@@ -140,12 +140,18 @@ describe("parseSptCommand", () => {
     ]);
   });
 
-  it("reads a write command, which takes only the core settings", () => {
-    const parsed = parseSptCommand("spt run write -n 50 --object-size 1MiB");
+  it("reads a write command and refuses verification-only flags", () => {
+    const parsed = parseSptCommand(
+      "spt run write -n 50 --object-size 1MiB --checksum crc32 --cleanup=false",
+    );
     expect(parsed.workload).toBe("write");
     expect(parsed.core).toEqual({ object_count: 50, object_size: "1MiB" });
-    expect(problems("spt run write --checksum crc32")).toEqual([
-      "--checksum: not available for write in the dashboard.",
+    expect(parsed.advanced).toMatchObject({
+      checksum: "crc32",
+      cleanup: false,
+    });
+    expect(problems("spt run write --defer-verification")).toEqual([
+      "--defer-verification: not available for write in the dashboard.",
     ]);
   });
 });

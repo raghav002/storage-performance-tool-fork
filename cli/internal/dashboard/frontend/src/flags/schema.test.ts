@@ -21,6 +21,39 @@ const goSources = import.meta.glob("../../../../../cmd/*.go", {
   eager: true,
 }) as Record<string, string>;
 
+// The dashboard server's own expert-flag allow-list, read at test time.
+const serverFlagsSource = Object.values(
+  import.meta.glob("../../../server/expert_flags.go", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }) as Record<string, string>,
+)[0];
+
+// Each workload's allow-list in expert_flags.go: name -> [min, max] for
+// numeric flags, or null for the others. maxHosts is the server's 8 machines.
+function serverAllowList(
+  workload: Workload,
+): Map<string, [number, number] | null> {
+  const variable = {
+    "write-verify": "writeVerifyFlags",
+    write: "writeFlags",
+    mock: "mockFlags",
+  }[workload];
+  const block = new RegExp(
+    `var ${variable} = \\[\\]expertFlag\\{([\\s\\S]*?)\\n\\}`,
+  ).exec(serverFlagsSource)?.[1];
+  const out = new Map<string, [number, number] | null>();
+  for (const line of (block ?? "").split("\n")) {
+    const name = /name: "([^"]+)"/.exec(line)?.[1];
+    if (!name) continue;
+    const range = /min: (-?\d+), max: (\w+)/.exec(line);
+    const max = range?.[2] === "maxHosts" ? 8 : Number(range?.[2]);
+    out.set(name, range ? [Number(range[1]), max] : null);
+  }
+  return out;
+}
+
 // Flag names spt run registers: runCmd.Flags().X(...) in run.go, plus the
 // helpers run.go calls with runCmd.Flags() (bucket sets, endpoint selection).
 function registeredRunFlags(): Set<string> {
@@ -102,6 +135,20 @@ describe("expert flag schema", () => {
       if (f.short) expect(shortAliases[f.short]).toBe(f.name);
     }
   });
+
+  it.each(workloads)(
+    "%s offers exactly the flags the server applies, with its ranges",
+    (w) => {
+      const server = serverAllowList(w);
+      expect(server.size, "allow-list found").toBeGreaterThan(0);
+      const gui = flagsFor(w).filter((f) => !f.core);
+      expect(gui.map((f) => f.name).sort()).toEqual([...server.keys()].sort());
+      for (const f of gui) {
+        const range = server.get(f.name);
+        if (range) expect([f.min, f.max], f.name).toEqual(range);
+      }
+    },
+  );
 
   it("lists exactly the flags spt run registers", () => {
     const registered = registeredRunFlags();

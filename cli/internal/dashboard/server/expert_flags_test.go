@@ -260,15 +260,49 @@ func TestWriteWorkloadRequests(t *testing.T) {
 			t.Errorf("%s: accepted %+v", name, o)
 		}
 	}
-	// Expert write runs take only the four core settings until expert write is enabled.
-	expert := expertRun(map[string]any{"checksum": "crc32"})
-	expert.Workload = workloadWrite
-	if err := a.validateOptions(expert); err == nil || !strings.Contains(err.Error(), "not available for write") {
-		t.Errorf("expert write run with flags: %v", err)
+}
+
+// writeRun is a valid expert write request carrying flags.
+func writeRun(flags map[string]any) options {
+	o := expertRun(flags)
+	o.Workload = workloadWrite
+	return o
+}
+
+func TestExpertFlagsForWriteRuns(t *testing.T) {
+	a := &app{}
+	for _, flags := range []map[string]any{
+		nil,
+		{"checksum": "crc32", "cleanup": false},
+		{"part-size": "8MiB", "mpu-concurrent-parts": "4"},
+		{"endpoint-selection": "round-robin", "endpoint-hostname": "s3.lab.example"},
+		{"save-items": true, "min-hosts": "1", "service-threads": "8", "prefix-shards": "0"},
+	} {
+		if err := a.validateOptions(writeRun(flags)); err != nil {
+			t.Errorf("write rejected %v: %v", flags, err)
+		}
 	}
-	expert.Flags = nil
-	if err := a.validateOptions(expert); err != nil {
-		t.Errorf("expert write run without flags: %v", err)
+	// spt run write rejects the verification-only flags, so the dashboard does too.
+	for _, flags := range []map[string]any{
+		{"defer-verification": true, "cleanup": false},
+		{"integrity-max-console-failures": "5"},
+		{"integrity-runtime-identity-tier": "payload"},
+		{"secret-key": "abc"},
+	} {
+		if err := a.validateOptions(writeRun(flags)); err == nil {
+			t.Errorf("write accepted %v", flags)
+		}
+	}
+}
+
+func TestBuildArgvAppliesWriteFlags(t *testing.T) {
+	a := &app{sptBin: "spt"}
+	target := map[string]any{"hosts": []string{"10.0.0.1"}, "endpoint": "https://s3", "bucket": "b"}
+	got := argFlags(t, a.buildArgv("/r", "mt-dashboard-x", writeRun(map[string]any{"cleanup": false, "checksum": "sha256"}), target))
+	for flag, want := range map[string]string{"--cleanup": "false", "--checksum": "sha256", "--s3-driver": "default"} {
+		if got[flag] != want {
+			t.Errorf("%s = %q, want %q", flag, got[flag], want)
+		}
 	}
 }
 

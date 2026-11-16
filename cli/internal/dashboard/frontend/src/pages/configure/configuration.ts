@@ -1,12 +1,7 @@
 import { buildSptCommand } from "../../flags/command";
 import { workloadForDriver, type FlagValue } from "../../flags/schema";
-import type { Driver, Options, State } from "../../types";
-import {
-  parseWhole,
-  splitSize,
-  validateOptions,
-  type SizeUnit,
-} from "../../utils/validation";
+import type { Driver, Options } from "../../types";
+import { parseWhole, splitSize, type SizeUnit } from "../../utils/validation";
 
 export type ExpertDraft = {
   object_count: string;
@@ -62,59 +57,6 @@ export function fromDraft(d: ExpertDraft): Options {
     threads: parseWhole(d.threads) ?? NaN,
     max_runtime_seconds: parseWhole(d.max_runtime_seconds) ?? NaN,
   };
-}
-
-export function parseExpertCommand(
-  text: string,
-  base: Options,
-  limits: NonNullable<State["limits"]>,
-): Options {
-  const parts = text
-    .replace(/\\\s*\r?\n/g, " ")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  if (
-    parts.length < 3 ||
-    !["spt", "./spt"].includes(parts[0]) ||
-    parts[1] !== "run" ||
-    parts[2] !== "write-verify"
-  ) {
-    throw new Error("Start with: spt run write-verify");
-  }
-  const result: Options = { ...base, mode: "expert" };
-  const map = {
-    "--object-count": "object_count",
-    "--object-size": "object_size",
-    "--threads": "threads",
-    "--auto-terminate-seconds": "max_runtime_seconds",
-  } as const;
-  const seen = new Set<string>();
-  for (let i = 3; i < parts.length; i++) {
-    const [flag, inline] = parts[i].split("=", 2);
-    if (!(flag in map))
-      throw new Error(
-        `Unsupported flag: ${flag}. Only the four dashboard run settings can be imported.`,
-      );
-    if (seen.has(flag)) throw new Error(`Duplicate flag: ${flag}`);
-    seen.add(flag);
-    const value = inline ?? parts[++i];
-    if (!value || value.startsWith("--"))
-      throw new Error(`Missing value for ${flag}.`);
-    const key = map[flag as keyof typeof map];
-    if (key === "object_size") {
-      result.object_size = value;
-    } else {
-      if (!/^\d+$/.test(value))
-        throw new Error(`${flag} must be a whole number.`);
-      result[key] = Number(value);
-    }
-  }
-  if (seen.size === 0) throw new Error("Include at least one supported flag.");
-  const errors = validateOptions(result, limits);
-  const first = Object.values(errors).find(Boolean);
-  if (first) throw new Error(first);
-  return result;
 }
 
 // The equivalent spt run command: the four core settings, then every

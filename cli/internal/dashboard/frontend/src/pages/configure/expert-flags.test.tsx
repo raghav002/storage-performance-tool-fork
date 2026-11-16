@@ -11,6 +11,7 @@ import {
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render as renderComponent,
@@ -138,6 +139,23 @@ async function preview() {
   fireEvent.click(screen.getByRole("button", { name: "Preview CLI settings" }));
   return (await screen.findByText(/^spt run /)).textContent ?? "";
 }
+
+// Dispatches a paste event carrying text, as a browser does.
+function paste(target: Element, text: string): Event {
+  const event = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", {
+    value: { getData: () => text },
+  });
+  act(() => {
+    target.dispatchEvent(event);
+  });
+  return event;
+}
+const dialog = () => screen.findByRole("dialog");
+const radio = (name: RegExp) =>
+  screen.getByRole("radio", { name }) as HTMLInputElement;
+const spin = (name: RegExp) =>
+  screen.getByRole("spinbutton", { name }) as HTMLInputElement;
 
 describe("expert flag groups", () => {
   it("opens the applied group and collapses the preview-only ones", () => {
@@ -292,6 +310,97 @@ describe("expert flag groups", () => {
     expect(screen.queryByRole("button", { name: "Object data" })).toBeNull();
     expect(groupButton("Cleanup")).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: /S3 write \+ verify/ }));
+    expect(within(tags("object-data")).getByText("1 changed")).toBeTruthy();
+  });
+  it("applies a command pasted anywhere and resets the rest", async () => {
+    renderExpert();
+    fireEvent.change(spin(/^Parallel threads/), { target: { value: "4" } });
+    paste(document.body, "spt run mock --object-count 500 --cleanup");
+    const prompt = await dialog();
+    expect(within(prompt).getByText("Apply this command?")).toBeTruthy();
+    expect(
+      within(prompt).getByText(/switches from Write \+ verify/),
+    ).toBeTruthy();
+    expect(within(prompt).getByText("Sets 2 flags:")).toBeTruthy();
+    expect(within(prompt).getByText("--object-count 500")).toBeTruthy();
+    fireEvent.click(within(prompt).getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(radio(/Mock driver/).checked).toBe(true);
+    expect(spin(/^Maximum objects/).value).toBe("500");
+    expect(spin(/^Parallel threads/).value).toBe("1");
+    expect(within(tags("cleanup", "mock")).getByText("1 changed")).toBeTruthy();
+    expect(
+      screen.getByText(/Command applied: Mock driver with 2 flags/),
+    ).toBeTruthy();
+  });
+
+  it("keeps a pasted command out of the workspace field it lands on", async () => {
+    renderExpert();
+    const field = spin(/^Maximum objects/);
+    const event = paste(field, "spt run write-verify --threads 2");
+    expect(event.defaultPrevented).toBe(true);
+    expect(await dialog()).toBeTruthy();
+  });
+
+  it("lets the CLI command box keep a pasted command", async () => {
+    renderExpert();
+    fireEvent.click(screen.getByRole("button", { name: /^CLI command/ }));
+    const box = screen.getByLabelText("Paste an SPT command");
+    const event = paste(box, "spt run write-verify --threads 2");
+    expect(event.defaultPrevented).toBe(false);
+    expect(await dialog()).toBeTruthy();
+  });
+
+  it("ignores other text and pastes into fields outside the workspace", async () => {
+    renderExpert();
+    expect(paste(document.body, "hello").defaultPrevented).toBe(false);
+    const host = screen.getByLabelText("Client machine 1");
+    expect(paste(host, "spt run mock").defaultPrevented).toBe(false);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("explains a rejected command and changes nothing", async () => {
+    renderExpert();
+    paste(
+      document.body,
+      "spt run mock --secret-key abc123 --duration 5m --object-count 7",
+    );
+    const prompt = await dialog();
+    expect(
+      within(prompt).getByText("This command can't be applied"),
+    ).toBeTruthy();
+    expect(within(prompt).getByText(/--secret-key: Credentials/)).toBeTruthy();
+    expect(
+      within(prompt).getByText(/--duration: Dashboard runs are count-based/),
+    ).toBeTruthy();
+    expect(prompt.textContent).not.toContain("abc123");
+    fireEvent.click(within(prompt).getByRole("button", { name: "OK" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(radio(/S3 write \+ verify/).checked).toBe(true);
+    expect(spin(/^Maximum objects/).value).toBe("100");
+  });
+
+  it("closes the prompt on Escape without applying", async () => {
+    renderExpert();
+    paste(document.body, "spt run mock --object-count 500");
+    const prompt = await dialog();
+    fireEvent.keyDown(prompt, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(radio(/S3 write \+ verify/).checked).toBe(true);
+    expect(spin(/^Maximum objects/).value).toBe("100");
+  });
+
+  it("imports a command through the CLI command box", async () => {
+    renderExpert();
+    fireEvent.click(screen.getByRole("button", { name: /^CLI command/ }));
+    fireEvent.change(screen.getByLabelText("Paste an SPT command"), {
+      target: { value: "spt run write-verify --threads 3 --checksum crc32" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Import command" }));
+    const prompt = await dialog();
+    fireEvent.click(within(prompt).getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(spin(/^Parallel threads/).value).toBe("3"));
     expect(within(tags("object-data")).getByText("1 changed")).toBeTruthy();
   });
 });

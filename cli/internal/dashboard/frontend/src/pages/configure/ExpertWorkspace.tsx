@@ -8,7 +8,7 @@ import {
   Textarea,
   Title,
 } from "@mantine/core";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Driver, Options, State } from "../../types";
 import { defaults } from "../../config";
 import {
@@ -20,7 +20,6 @@ import {
   expertCommand,
   expertPresets,
   fromDraft,
-  parseExpertCommand,
   toDraft,
   type ExpertDraft,
 } from "./configuration";
@@ -37,6 +36,13 @@ import {
   type Workload,
 } from "../../flags/schema";
 import type { FlagErrors } from "../../flags/validate";
+import {
+  CommandPrompt,
+  looksLikeSptCommand,
+  reviewCommand,
+  workloadName as nameOfWorkload,
+  type CommandReview,
+} from "./CommandPrompt";
 import { ExpertFields } from "./ExpertFields";
 import { ExpertFlagGroups } from "./ExpertFlagGroups";
 import { PreviousRunPicker } from "./PreviousRunPicker";
@@ -93,8 +99,11 @@ export function ExpertWorkspace({
   const [profileName, setProfileName] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
   const [commandText, setCommandText] = useState("");
-  const [commandMessage, setCommandMessage] = useState("");
-  const [importError, setImportError] = useState(false);
+  const [commandReview, setCommandReview] = useState<CommandReview | null>(
+    null,
+  );
+  const [appliedNote, setAppliedNote] = useState("");
+  const workspaceRef = useRef<HTMLDivElement>(null);
   const options = fromDraft(draft);
   const valid = Object.keys(errors).length === 0;
   const changed = [
@@ -146,23 +155,49 @@ export function ExpertWorkspace({
     setAdvanced(p.workload, p.advanced);
   }
 
-  function importCommand() {
-    try {
-      setDraft(toDraft(parseExpertCommand(commandText, options, limits)));
-      setCommandMessage(
-        "Supported settings imported. Review the fields and host limits below.",
-      );
-      setImportError(false);
-    } catch (e) {
-      setCommandMessage(
-        e instanceof Error ? e.message : "Command could not be parsed.",
-      );
-      setImportError(true);
+  // Pasting an spt run command anywhere in expert mode asks whether to apply
+  // it. Pastes into fields outside the workspace (e.g. storage settings) are
+  // left alone; pastes into workspace fields do not land in the field, except
+  // the CLI command box, where keeping the text is useful.
+  useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      const text = e.clipboardData?.getData("text") ?? "";
+      if (!looksLikeSptCommand(text)) return;
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      const inside = !!target && !!workspaceRef.current?.contains(target);
+      const editable =
+        !!target &&
+        (target.isContentEditable ||
+          ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+      if (!inside && editable) return;
+      if (target?.id !== "expert-cli-input") e.preventDefault();
+      // A second paste does not replace a prompt that is already open.
+      setCommandReview((open) => open ?? reviewCommand(text, limits));
     }
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [limits]);
+
+  // The command replaces the whole expert configuration: workload, core
+  // settings and every flag, with unmentioned settings back at their defaults.
+  function applyCommand() {
+    if (commandReview?.kind !== "apply") return;
+    const { workload: next, options: core, advanced: flags } = commandReview;
+    setDriver(driverForWorkload(next));
+    setDraft(toDraft(core));
+    setAdvanced(next, flags);
+    const count = commandReview.settings.length;
+    setAppliedNote(
+      `Command applied: ${nameOfWorkload(next)}${count ? ` with ${count} flag${count === 1 ? "" : "s"}` : ""}. Settings not in the command were reset to their defaults.`,
+    );
+    setCommandReview(null);
   }
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_17.1875rem] items-start gap-6.25 mt-panel max-[62.5rem]:grid-cols-1">
+    <div
+      ref={workspaceRef}
+      className="grid grid-cols-[minmax(0,1fr)_17.1875rem] items-start gap-6.25 mt-panel max-[62.5rem]:grid-cols-1"
+    >
       <div className="min-w-0">
         <div className="flex flex-col gap-1.25">
           <strong className="text-base/[inherit] text-foreground">
@@ -182,7 +217,7 @@ export function ExpertWorkspace({
               ["new", "New configuration", "Use a simple starting point"],
               ["saved", "Saved profile", "Reuse your browser profile"],
               ["previous", "Previous run", "Duplicate completed run settings"],
-              ["command", "CLI command", "Import supported SPT flags"],
+              ["command", "CLI command", "Import an spt run command"],
             ] as const
           ).map(([key, name, detail]) => (
             <Button
@@ -293,27 +328,29 @@ export function ExpertWorkspace({
                 onChange={(e) => setCommandText(e.target.value)}
               />
               <div className="flex flex-wrap items-end gap-compact">
-                <Button size="xs" type="button" onClick={importCommand}>
-                  Import supported settings
+                <Button
+                  size="xs"
+                  type="button"
+                  disabled={!commandText.trim()}
+                  onClick={() =>
+                    setCommandReview(reviewCommand(commandText, limits))
+                  }
+                >
+                  Import command
                 </Button>
                 <span className="text-caption/[inherit] text-[#738198]">
-                  Import only; commands are never executed. Four flags
-                  supported.
+                  Commands are only read, never executed. Write-verify and mock
+                  are supported. Tip: paste a command anywhere in Expert mode.
                 </span>
               </div>
-              {commandMessage && (
-                <Text
-                  c={importError ? "#b73a2b" : "#23754e"}
-                  size="caption"
-                  className="mt-2.25"
-                  role="status"
-                >
-                  {commandMessage}
-                </Text>
-              )}
             </div>
           )}
         </div>
+        {appliedNote && (
+          <Text c="#23754e" size="caption" className="mt-2.25" role="status">
+            {appliedNote}
+          </Text>
+        )}
 
         <div className="flex flex-col gap-1.25 mt-5.75">
           <strong className="text-base/[inherit] text-foreground">
@@ -487,6 +524,12 @@ export function ExpertWorkspace({
           )}
         </div>
       </aside>
+      <CommandPrompt
+        review={commandReview}
+        currentWorkload={workload}
+        onApply={applyCommand}
+        onClose={() => setCommandReview(null)}
+      />
     </div>
   );
 }

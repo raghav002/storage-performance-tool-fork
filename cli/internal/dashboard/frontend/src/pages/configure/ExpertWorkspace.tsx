@@ -8,8 +8,8 @@ import {
   Textarea,
   Title,
 } from "@mantine/core";
-import { useState } from "react";
-import type { Driver, Options, State } from "../../types";
+import { useEffect, useRef, useState } from "react";
+import type { Options, State } from "../../types";
 import { defaults } from "../../config";
 import {
   formatBytes,
@@ -20,39 +20,47 @@ import {
   expertCommand,
   expertPresets,
   fromDraft,
-  parseExpertCommand,
   toDraft,
   type ExpertDraft,
 } from "./configuration";
+import {
+  readProfiles,
+  saveProfile as writeProfile,
+  type ExpertProfile,
+} from "../../flags/profiles";
+import {
+  appliedWorkloads,
+  changedFlags,
+  workloadName,
+  type FlagValue,
+  type Workload,
+} from "../../flags/schema";
+import type { FlagErrors } from "../../flags/validate";
+import {
+  CommandPrompt,
+  looksLikeSptCommand,
+  reviewCommand,
+  type CommandReview,
+} from "./CommandPrompt";
 import { ExpertFields } from "./ExpertFields";
+import { ExpertFlagGroups } from "./ExpertFlagGroups";
 import { PreviousRunPicker } from "./PreviousRunPicker";
 
-type ExpertStart = "new" | "saved" | "previous" | "command";
-type SavedExpertProfile = { name: string; options: Options };
-const expertProfileStorageKey = "spt-dashboard-expert-profiles-v1";
+type AdvancedValues = Record<string, FlagValue>;
 
-function readExpertProfiles(): SavedExpertProfile[] {
+type ExpertStart = "new" | "saved" | "previous" | "command";
+// localStorage itself can throw, e.g. when the browser blocks site data.
+function browserStorage(): Storage | null {
   try {
-    const parsed: unknown = JSON.parse(
-      localStorage.getItem(expertProfileStorageKey) ?? "[]",
-    );
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(
-        (item): item is SavedExpertProfile =>
-          !!item &&
-          typeof item === "object" &&
-          typeof item.name === "string" &&
-          !!item.options &&
-          typeof item.options.object_count === "number" &&
-          typeof item.options.object_size === "string" &&
-          typeof item.options.threads === "number" &&
-          typeof item.options.max_runtime_seconds === "number",
-      )
-      .slice(0, 12);
+    return window.localStorage;
   } catch {
-    return [];
+    return null;
   }
+}
+
+function readExpertProfiles(): ExpertProfile[] {
+  const storage = browserStorage();
+  return storage ? readProfiles(storage) : [];
 }
 
 export function ExpertWorkspace({
@@ -62,7 +70,11 @@ export function ExpertWorkspace({
   limits,
   verified,
   clients,
-  driver,
+  workload,
+  setWorkload,
+  advanced,
+  setAdvanced,
+  advancedErrors,
 }: {
   draft: ExpertDraft;
   setDraft: (d: ExpertDraft) => void;
@@ -70,17 +82,27 @@ export function ExpertWorkspace({
   limits: NonNullable<State["limits"]>;
   verified: boolean;
   clients: number;
-  driver: Driver;
+  workload: Workload;
+  setWorkload: (w: Workload) => void;
+  advanced: AdvancedValues;
+  setAdvanced: (workload: Workload, values: AdvancedValues) => void;
+  advancedErrors: FlagErrors;
 }) {
-  const workloadName = driver === "mock" ? "Mock driver" : "Write + verify";
+  const name = workloadName(workload);
+  const advancedChanged = changedFlags(workload, advanced);
+  const applied = appliedWorkloads.has(workload);
+  const advancedValid = Object.keys(advancedErrors).length === 0;
   const [start, setStart] = useState<ExpertStart>("new");
   const [profiles, setProfiles] = useState(readExpertProfiles);
   const [chosenProfile, setChosenProfile] = useState("");
   const [profileName, setProfileName] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
   const [commandText, setCommandText] = useState("");
-  const [commandMessage, setCommandMessage] = useState("");
-  const [importError, setImportError] = useState(false);
+  const [commandReview, setCommandReview] = useState<CommandReview | null>(
+    null,
+  );
+  const [appliedNote, setAppliedNote] = useState("");
+  const workspaceRef = useRef<HTMLDivElement>(null);
   const options = fromDraft(draft);
   const valid = Object.keys(errors).length === 0;
   const changed = [
@@ -97,7 +119,7 @@ export function ExpertWorkspace({
 
   function saveProfile() {
     const name = profileName.trim().slice(0, 60);
-    if (!name || !valid) {
+    if (!name || !valid || !advancedValid) {
       setSaveMessage(
         name
           ? "Correct invalid settings before saving."
@@ -105,17 +127,18 @@ export function ExpertWorkspace({
       );
       return;
     }
-    const next = [
-      { name, options: { ...options, mode: "expert" as const } },
-      ...profiles.filter((p) => p.name !== name),
-    ].slice(0, 12);
     try {
-      localStorage.setItem(expertProfileStorageKey, JSON.stringify(next));
-      setProfiles(next);
+      const storage = browserStorage();
+      if (!storage) throw new Error("unavailable");
+      setProfiles(
+        writeProfile(storage, profiles, { name, workload, options, advanced }),
+      );
       setChosenProfile(name);
       setProfileName("");
       setSaveMessage(
-        "Saved in this browser. Storage credentials are not saved.",
+        advancedChanged.length
+          ? `Saved in this browser with ${advancedChanged.length} ${applied ? "" : "preview-only "}flag${advancedChanged.length === 1 ? "" : "s"}. Storage credentials are not saved.`
+          : "Saved in this browser. Storage credentials are not saved.",
       );
     } catch {
       setSaveMessage(
@@ -124,23 +147,56 @@ export function ExpertWorkspace({
     }
   }
 
-  function importCommand() {
-    try {
-      setDraft(toDraft(parseExpertCommand(commandText, options, limits)));
-      setCommandMessage(
-        "Supported settings imported. Review the fields and host limits below.",
-      );
-      setImportError(false);
-    } catch (e) {
-      setCommandMessage(
-        e instanceof Error ? e.message : "Command could not be parsed.",
-      );
-      setImportError(true);
+  // A profile restores its workload, the four core settings and every flag.
+  function loadProfile(p: ExpertProfile) {
+    setWorkload(p.workload);
+    setDraft(toDraft(p.options));
+    setAdvanced(p.workload, p.advanced);
+  }
+
+  // Pasting an spt run command anywhere in expert mode asks whether to apply
+  // it. Pastes into fields outside the workspace (e.g. storage settings) are
+  // left alone; pastes into workspace fields do not land in the field, except
+  // the CLI command box, where keeping the text is useful.
+  useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      const text = e.clipboardData?.getData("text") ?? "";
+      if (!looksLikeSptCommand(text)) return;
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      const inside = !!target && !!workspaceRef.current?.contains(target);
+      const editable =
+        !!target &&
+        (target.isContentEditable ||
+          ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+      if (!inside && editable) return;
+      if (target?.id !== "expert-cli-input") e.preventDefault();
+      // A second paste does not replace a prompt that is already open.
+      setCommandReview((open) => open ?? reviewCommand(text, limits));
     }
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [limits]);
+
+  // The command replaces the whole expert configuration: workload, core
+  // settings and every flag, with unmentioned settings back at their defaults.
+  function applyCommand() {
+    if (commandReview?.kind !== "apply") return;
+    const { workload: next, options: core, advanced: flags } = commandReview;
+    setWorkload(next);
+    setDraft(toDraft(core));
+    setAdvanced(next, flags);
+    const count = commandReview.settings.length;
+    setAppliedNote(
+      `Command applied: ${workloadName(next)}${count ? ` with ${count} flag${count === 1 ? "" : "s"}` : ""}. Settings not in the command were reset to their defaults.`,
+    );
+    setCommandReview(null);
   }
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_17.1875rem] items-start gap-6.25 mt-panel max-[62.5rem]:grid-cols-1">
+    <div
+      ref={workspaceRef}
+      className="grid grid-cols-[minmax(0,1fr)_17.1875rem] items-start gap-6.25 mt-panel max-[62.5rem]:grid-cols-1"
+    >
       <div className="min-w-0">
         <div className="flex flex-col gap-1.25">
           <strong className="text-base/[inherit] text-foreground">
@@ -160,7 +216,7 @@ export function ExpertWorkspace({
               ["new", "New configuration", "Use a simple starting point"],
               ["saved", "Saved profile", "Reuse your browser profile"],
               ["previous", "Previous run", "Duplicate completed run settings"],
-              ["command", "CLI command", "Import supported SPT flags"],
+              ["command", "CLI command", "Import an spt run command"],
             ] as const
           ).map(([key, name, detail]) => (
             <Button
@@ -223,7 +279,7 @@ export function ExpertWorkspace({
                 <option value="">Choose a saved profile</option>
                 {profiles.map((p) => (
                   <option key={p.name} value={p.name}>
-                    {p.name}
+                    {p.name} · {workloadName(p.workload)}
                   </option>
                 ))}
               </NativeSelect>
@@ -235,7 +291,7 @@ export function ExpertWorkspace({
                   const p = profiles.find(
                     (item) => item.name === chosenProfile,
                   );
-                  if (p) setDraft(toDraft(p.options));
+                  if (p) loadProfile(p);
                 }}
               >
                 Load profile
@@ -270,88 +326,67 @@ export function ExpertWorkspace({
                 onChange={(e) => setCommandText(e.target.value)}
               />
               <div className="flex flex-wrap items-end gap-compact">
-                <Button size="xs" type="button" onClick={importCommand}>
-                  Import supported settings
+                <Button
+                  size="xs"
+                  type="button"
+                  disabled={!commandText.trim()}
+                  onClick={() =>
+                    setCommandReview(reviewCommand(commandText, limits))
+                  }
+                >
+                  Import command
                 </Button>
                 <span className="text-caption/[inherit] text-[#738198]">
-                  Import only; commands are never executed. Four flags
-                  supported.
+                  Commands are only read, never executed. Write-verify and mock
+                  are supported. Tip: paste a command anywhere in Expert mode.
                 </span>
               </div>
-              {commandMessage && (
-                <Text
-                  c={importError ? "#b73a2b" : "#23754e"}
-                  size="caption"
-                  className="mt-2.25"
-                  role="status"
-                >
-                  {commandMessage}
-                </Text>
-              )}
             </div>
           )}
         </div>
+        {appliedNote && (
+          <Text c="#23754e" size="caption" className="mt-2.25" role="status">
+            {appliedNote}
+          </Text>
+        )}
 
         <div className="flex flex-col gap-1.25 mt-5.75">
           <strong className="text-base/[inherit] text-foreground">
-            {workloadName} · Essential settings
+            {name} · SPT flags
           </strong>
           <span className="text-[#6b7b90] text-sm/[inherit]">
-            The current dashboard API supports this workload and these four run
-            settings.
+            Open a group to change its flags. Each flag shows its SPT name and
+            default.
           </span>
         </div>
-        <ExpertFields
-          draft={draft}
-          setDraft={setDraft}
-          errors={errors}
-          limits={limits}
+        <ExpertFlagGroups
+          workload={workload}
+          coreChanged={changed.length}
+          values={advanced}
+          errors={advancedErrors}
+          onChange={(values) => setAdvanced(workload, values)}
+          core={
+            <>
+              <ExpertFields
+                draft={draft}
+                setDraft={setDraft}
+                errors={errors}
+                limits={limits}
+              />
+              <Accordion>
+                <Accordion.Item value="section">
+                  <Accordion.Control>Host limits</Accordion.Control>
+                  <Accordion.Panel>
+                    <Text size="caption" className="pt-sm">
+                      The dashboard server enforces these limits on every run.
+                    </Text>
+                    <HostLimits limits={limits} />
+                  </Accordion.Panel>
+                </Accordion.Item>
+              </Accordion>
+            </>
+          }
         />
-        <Accordion>
-          <Accordion.Item value="section">
-            <Accordion.Control>
-              Host limits &amp; advanced settings
-            </Accordion.Control>
-            <Accordion.Panel>
-              <Text size="caption" className="pt-sm">
-                Other SPT CLI flags are not available through this version of
-                the Dashboard API. Defaults are enforced by the Go server.
-              </Text>
-              <dl className="mx-0 mt-compact mb-0">
-                <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
-                  <dt className="text-muted">Maximum objects</dt>
-                  <dd className="m-0 font-heading text-right wrap-anywhere">
-                    {limits.expert.object_count.max.toLocaleString("en-US")}
-                  </dd>
-                </div>
-                <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
-                  <dt className="text-muted">Maximum threads / client</dt>
-                  <dd className="m-0 font-heading text-right wrap-anywhere">
-                    {limits.expert.threads.max}
-                  </dd>
-                </div>
-                <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
-                  <dt className="text-muted">Maximum object size</dt>
-                  <dd className="m-0 font-heading text-right wrap-anywhere">
-                    {formatBytes(limits.expert.object_size_bytes.max)}
-                  </dd>
-                </div>
-                <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
-                  <dt className="text-muted">Maximum runtime</dt>
-                  <dd className="m-0 font-heading text-right wrap-anywhere">
-                    {limits.expert.max_runtime_seconds.max}s
-                  </dd>
-                </div>
-                <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
-                  <dt className="text-muted">Maximum data</dt>
-                  <dd className="m-0 font-heading text-right wrap-anywhere">
-                    {formatBytes(limits.expert.max_total_bytes)}
-                  </dd>
-                </div>
-              </dl>
-            </Accordion.Panel>
-          </Accordion.Item>
-        </Accordion>
       </div>
       <aside
         className="p-lg border-[0.0625rem] border-[#dbe5f0] rounded-lg bg-[#f7fafe] sticky top-lg min-w-0 max-[62.5rem]:static"
@@ -361,11 +396,11 @@ export function ExpertWorkspace({
           CONFIGURATION SUMMARY
         </span>
         <Title order={3} size="lg" className="mb-0.75">
-          {workloadName}
+          {name}
         </Title>
         <span className="text-[#697c93] text-caption/[inherit]">
           {clients} client machine{clients === 1 ? "" : "s"} ·{" "}
-          {driver === "mock"
+          {workload === "mock"
             ? "No storage used"
             : verified
               ? "Storage verified"
@@ -410,15 +445,29 @@ export function ExpertWorkspace({
         <div className="mx-0 my-md text-caption/[inherit]">
           <strong>Modified from defaults</strong>
           <div className="flex gap-1.25 flex-wrap mt-2.25">
-            {changed.length ? (
-              changed.map(([, label]) => (
-                <span
-                  className="px-1.75 py-xxs rounded-chip bg-[#e4effe] text-(--mantine-color-spt-7) text-xs/[inherit]"
-                  key={label}
-                >
-                  {label}
-                </span>
-              ))
+            {changed.length || advancedChanged.length ? (
+              <>
+                {changed.map(([, label]) => (
+                  <span
+                    className="px-1.75 py-xxs rounded-chip bg-[#e4effe] text-(--mantine-color-spt-7) text-xs/[inherit]"
+                    key={label}
+                  >
+                    {label}
+                  </span>
+                ))}
+                {advancedChanged.map((f) => (
+                  <span
+                    className={
+                      applied
+                        ? "px-1.75 py-xxs rounded-chip bg-[#e4effe] text-(--mantine-color-spt-7) text-xs/[inherit]"
+                        : "px-1.75 py-xxs rounded-chip border border-dashed border-[#9fb3cc] text-muted text-xs/[inherit]"
+                    }
+                    key={f.name}
+                  >
+                    {f.label}
+                  </span>
+                ))}
+              </>
             ) : (
               <span className="px-1.75 py-xxs rounded-chip bg-[#e8edf3] text-muted text-xs/[inherit]">
                 Using defaults
@@ -436,14 +485,17 @@ export function ExpertWorkspace({
                 p="sm"
                 fz="xs"
               >
-                {valid
-                  ? expertCommand(draft, driver)
+                {valid && advancedValid
+                  ? expertCommand(draft, workload, advanced)
                   : "Correct the settings to generate a command preview."}
               </Code>
               <small className="font-normal text-[#738198] text-xs/[inherit]">
-                {driver === "mock"
+                {workload === "mock"
                   ? "The Go backend adds the client machines, safe flags and the results directory. No storage credentials are passed."
                   : "The Go backend adds storage credentials, safe flags and the results directory."}
+                {!applied &&
+                  advancedChanged.length > 0 &&
+                  " Dashboard runs apply only the four core settings; copy this command to run the rest with the SPT CLI."}
               </small>
             </Accordion.Panel>
           </Accordion.Item>
@@ -475,6 +527,50 @@ export function ExpertWorkspace({
           )}
         </div>
       </aside>
+      <CommandPrompt
+        review={commandReview}
+        currentWorkload={workload}
+        onApply={applyCommand}
+        onClose={() => setCommandReview(null)}
+      />
     </div>
+  );
+}
+
+// The server's expert limits, shown next to the four settings they bound.
+function HostLimits({ limits }: { limits: NonNullable<State["limits"]> }) {
+  return (
+    <dl className="mx-0 mt-compact mb-0">
+      <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
+        <dt className="text-muted">Maximum objects</dt>
+        <dd className="m-0 font-heading text-right wrap-anywhere">
+          {limits.expert.object_count.max.toLocaleString("en-US")}
+        </dd>
+      </div>
+      <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
+        <dt className="text-muted">Maximum threads / client</dt>
+        <dd className="m-0 font-heading text-right wrap-anywhere">
+          {limits.expert.threads.max}
+        </dd>
+      </div>
+      <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
+        <dt className="text-muted">Maximum object size</dt>
+        <dd className="m-0 font-heading text-right wrap-anywhere">
+          {formatBytes(limits.expert.object_size_bytes.max)}
+        </dd>
+      </div>
+      <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
+        <dt className="text-muted">Maximum runtime</dt>
+        <dd className="m-0 font-heading text-right wrap-anywhere">
+          {limits.expert.max_runtime_seconds.max}s
+        </dd>
+      </div>
+      <div className="px-0 py-xs flex justify-between gap-sm border-b-[0.0625rem] border-b-[#e7edf5] text-caption/[inherit]">
+        <dt className="text-muted">Maximum data</dt>
+        <dd className="m-0 font-heading text-right wrap-anywhere">
+          {formatBytes(limits.expert.max_total_bytes)}
+        </dd>
+      </div>
+    </dl>
   );
 }

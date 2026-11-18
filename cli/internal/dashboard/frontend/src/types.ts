@@ -7,6 +7,11 @@ export type Options = {
   max_runtime_seconds: number;
   // "s3" (default): write + verify on the configured bucket. "mock": SPT's mock driver, no S3.
   driver?: Driver;
+  // The S3 workload: "write-verify" (the default when omitted) or "write".
+  workload?: "write-verify" | "write";
+  // Expert spt run flags by name, without "--": booleans as true/false,
+  // everything else as text. Only sent for workloads whose flags are applied.
+  flags?: Record<string, string | boolean>;
 };
 export type Driver = "s3" | "mock";
 export type Row = {

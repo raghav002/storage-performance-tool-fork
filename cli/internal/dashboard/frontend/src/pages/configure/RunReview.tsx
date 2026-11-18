@@ -1,26 +1,42 @@
-import { Button, Code, Text, Title } from "@mantine/core";
-import type { Driver, Options, RunMode } from "../../types";
+import { Alert, Button, Code, Text, Title } from "@mantine/core";
+import {
+  workloadName,
+  type FlagDef,
+  type FlagValue,
+  type Workload,
+} from "../../flags/schema";
+import type { Options, RunMode } from "../../types";
 import { formatNumber as fmt } from "../../utils/metrics";
 import { expertCommand, type ExpertDraft } from "./configuration";
 
 export function RunReview({
   config,
-  driver,
+  workload,
   mode,
   clients,
   totalBytes,
   draft,
+  advanced,
+  advancedValid,
+  previewOnly,
+  appliedFlags,
   busy,
   ready,
   onEdit,
   onStart,
 }: {
   config: Options;
-  driver: Driver;
+  workload: Workload;
   mode: RunMode;
   clients: number;
   totalBytes: number;
   draft: ExpertDraft;
+  advanced: Record<string, FlagValue>;
+  advancedValid: boolean;
+  // Changed flags that this run will not apply.
+  previewOnly: FlagDef[];
+  // Changed flags that this run passes to SPT.
+  appliedFlags: FlagDef[];
   busy: boolean;
   ready: boolean;
   onEdit: () => void;
@@ -28,10 +44,18 @@ export function RunReview({
 }) {
   return (
     <>
+      {previewOnly.length > 0 && (
+        <Alert color="yellow" role="note" mb="lg">
+          {previewOnly.length} preview-only flag
+          {previewOnly.length === 1 ? " is" : "s are"} set (
+          {previewOnly.map((f) => `--${f.name}`).join(", ")}). This run applies
+          only the four core settings; the other flags are not sent.
+        </Alert>
+      )}
       <div className="p-lg bg-surface-review rounded-md mb-lg">
         <Title order={2}>
-          {driver === "mock" ? "Mock driver" : "Write + verify"} ·{" "}
-          {mode === "expert" ? "Expert" : "Guided"} · {clients} client machine
+          {workloadName(workload)} · {mode === "expert" ? "Expert" : "Guided"} ·{" "}
+          {clients} client machine
           {clients === 1 ? "" : "s"}
         </Title>
         <dl className="grid grid-cols-2 gap-lg max-[47.5rem]:grid-cols-1">
@@ -68,15 +92,28 @@ export function RunReview({
             </dd>
           </div>
         </dl>
-        {driver === "mock" ? (
+        {appliedFlags.length > 0 && (
+          <div className="mt-sm">
+            <span className="block text-muted text-caption/[inherit] mb-1.75">
+              SPT flags ({appliedFlags.length})
+            </span>
+            <div className="flex flex-wrap gap-1.25">
+              {appliedFlags.map((f) => (
+                <Code key={f.name}>--{f.name}</Code>
+              ))}
+            </div>
+          </div>
+        )}
+        {workload === "mock" ? (
           <Text size="sm" className="mt-xs">
             Mock run: no data is written to S3. Results show SPT's mock driver,
             not storage performance.
           </Text>
         ) : (
           <Text size="sm" className="mt-xs">
-            Up to {fmt(totalBytes / 1048576, 2)} MiB of test data. A unique
-            prefix isolates this run. Cleanup is best effort.
+            Up to {fmt(totalBytes / 1048576, 2)} MiB of test data
+            {workload === "write" ? ", written but not read back" : ""}. A
+            unique prefix isolates this run. Cleanup is best effort.
           </Text>
         )}
         {mode === "expert" && (
@@ -88,7 +125,9 @@ export function RunReview({
               p="sm"
               fz="xs"
             >
-              {expertCommand(draft, driver)}
+              {advancedValid
+                ? expertCommand(draft, workload, advanced)
+                : "Correct the advanced flags to generate a command preview."}
             </Code>
             <small className="font-normal text-[#738198] text-xs/[inherit]">
               The server generates the complete command and validates all
@@ -111,7 +150,7 @@ export function RunReview({
         </Button>
       </div>
       <Text size="sm" className="my-comfortable">
-        {driver === "mock"
+        {workload === "mock"
           ? "Starting runs SPT with the mock driver on the verified client machines."
           : "Starting runs a real benchmark on the configured storage target."}
       </Text>

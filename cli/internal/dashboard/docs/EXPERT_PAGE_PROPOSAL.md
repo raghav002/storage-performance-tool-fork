@@ -1,5 +1,21 @@
 # Expert page: analysis and proposal
 
+> **Status (2026-11-16): implemented for `write-verify`, `write` and `mock`.**
+>
+> **Implemented:**
+> - collapsible flag groups with hover descriptions
+> - the blocked-flag list
+> - browser profiles
+> - paste-to-apply commands
+> - expert flags applied to real runs: the server checks them against its own allow-list in `server/expert_flags.go` and passes each one as a single `--name=value` argument
+> - the `write` workload, in Guided and Expert
+>
+> See the README's "Expert flags" and "Workloads" sections and `frontend/src/flags/`.
+>
+> **Not implemented:**
+> - the other workloads (`read`, `read-verify`, `mixed`, `delete`, `list`, `tables`)
+> - `GET /api/expert/schema`: the browser keeps its own schema, and tests check it against the server's allow-list instead
+
 *Spec only. Expert mode belongs to Yine (PR #15, Expert view redesign). Her redesign reaches this branch through #16, but the workloads and flag groups proposed here are not implemented. IDs (H-, P-) refer to the requirements traceability list kept with the branch artifacts.*
 
 Source: `spt run --help` (SPT 5.16.1-dev), the 10/14 punch list (P-10), Mike 10-21 [00:23:06]–[00:23:40] (H-42) and 10/5 (P-15).

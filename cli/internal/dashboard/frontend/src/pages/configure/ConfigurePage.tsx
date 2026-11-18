@@ -8,7 +8,7 @@ import {
   Title,
 } from "@mantine/core";
 import { useState } from "react";
-import type { Driver, Options, RunMode, State } from "../../types";
+import type { Options, RunMode, State } from "../../types";
 import { useStartRun } from "../../api/mutations";
 import { defaults } from "../../config";
 import { formatNumber as fmt } from "../../utils/metrics";
@@ -20,7 +20,20 @@ import {
   validateOptions,
   type OptionErrors,
 } from "../../utils/validation";
+import {
+  advancedDefaults,
+  appliedWorkloads,
+  changedFlags,
+  runFlags,
+  driverForWorkload,
+  workloadRequest,
+  type FlagValue,
+  type Workload,
+} from "../../flags/schema";
+import { validateAdvanced } from "../../flags/validate";
 import { fromDraft, toDraft, type ExpertDraft } from "./configuration";
+
+type AdvancedValues = Record<string, FlagValue>;
 import { ExpertWorkspace } from "./ExpertWorkspace";
 import { GuidedFields } from "./GuidedFields";
 import { RunReview } from "./RunReview";
@@ -41,17 +54,46 @@ export function ConfigurePage({
     [draft, setDraft] = useState<ExpertDraft>(() => toDraft(defaults)),
     [review, setReview] = useState(false),
     [storageDirty, setStorageDirty] = useState(false),
-    [driver, setDriver] = useState<Driver>("s3");
+    [workload, setWorkload] = useState<Workload>("write-verify"),
+    // Expert flags, kept per workload so switching keeps each one's values.
+    // Sent with a run only for workloads whose flags the server applies.
+    [advancedByWorkload, setAdvancedByWorkload] = useState<
+      Record<Workload, AdvancedValues>
+    >(() => ({
+      "write-verify": advancedDefaults("write-verify"),
+      write: advancedDefaults("write"),
+      mock: advancedDefaults("mock"),
+    }));
+  // Only mock runs on SPT's mock driver; both S3 workloads need verified storage.
+  const driver = driverForWorkload(workload);
+  const advanced = advancedByWorkload[workload];
+  const setAdvanced = (w: Workload, values: AdvancedValues) =>
+    setAdvancedByWorkload((all) => ({ ...all, [w]: values }));
   const startMutation = useStartRun();
   const busy = startMutation.isPending;
   const error = startMutation.error?.message ?? "";
   const limits = state?.limits ?? fallbackLimits;
+  // Expert flags reach the run only where the server applies them.
+  const applied = mode === "expert" && appliedWorkloads.has(workload);
+  const flags = applied ? runFlags(workload, advanced) : {};
   const config: Options = {
     ...(mode === "expert" ? fromDraft(draft) : { ...guided, mode: "guided" }),
-    ...(driver === "mock" ? { driver } : {}),
+    ...workloadRequest(workload),
+    ...(Object.keys(flags).length ? { flags } : {}),
   };
   const errors: OptionErrors = validateOptions(config, limits);
-  const valid = Object.keys(errors).length === 0;
+  const advancedErrors = validateAdvanced(
+    workload,
+    advanced,
+    config.object_size,
+  );
+  // Applied flags must be valid to start a run; preview-only ones never block.
+  const valid =
+    Object.keys(errors).length === 0 &&
+    (!applied || Object.keys(advancedErrors).length === 0);
+  const previewOnly =
+    mode === "expert" && !applied ? changedFlags(workload, advanced) : [];
+  const appliedFlags = applied ? changedFlags(workload, advanced) : [];
   const totalBytes =
     (parseSize(config.object_size) ?? 0) *
     (Number.isFinite(config.object_count) ? config.object_count : 0);
@@ -86,8 +128,8 @@ export function ConfigurePage({
       </span>
       <Title order={1}>Configure a run</Title>
       <Text className="mt-compact mb-section">
-        Write test objects, read them back to verify integrity, then clean up
-        the run’s objects.
+        Choose where SPT runs and what it does: write and verify, write only, or
+        exercise the mock driver.
       </Text>
       {state?.job?.status === "running" && (
         <Alert role="note">
@@ -120,21 +162,26 @@ export function ConfigurePage({
           {review ? "Review your run" : "Workload configuration"}
         </Title>
         <Radio.Group
-          name="driver"
-          label="Storage driver"
+          name="workload"
+          label="Workload"
           labelProps={{ className: "sr-only" }}
-          value={driver}
+          value={workload}
           disabled={busy}
           onChange={(value) => {
-            setDriver(value as Driver);
+            setWorkload(value as Workload);
             setReview(false);
           }}
         >
           <div className="my-comfortable grid grid-cols-[repeat(auto-fit,minmax(min(15rem,100%),1fr))] gap-sm">
             <Radio
-              value="s3"
+              value="write-verify"
               label="S3 write + verify"
               description="Writes, reads back, and cleans up objects in the configured bucket."
+            />
+            <Radio
+              value="write"
+              label="S3 write"
+              description="Writes objects to the configured bucket without reading them back, then cleans them up."
             />
             <Radio
               value="mock"
@@ -159,11 +206,15 @@ export function ConfigurePage({
           {review ? (
             <RunReview
               config={config}
-              driver={driver}
+              workload={workload}
               mode={mode}
               clients={clients}
               totalBytes={totalBytes}
               draft={draft}
+              advanced={advanced}
+              advancedValid={Object.keys(advancedErrors).length === 0}
+              previewOnly={previewOnly}
+              appliedFlags={appliedFlags}
               busy={busy}
               ready={ready}
               onEdit={() => setReview(false)}
@@ -190,7 +241,14 @@ export function ConfigurePage({
                   limits={limits}
                   verified={verified}
                   clients={clients}
-                  driver={driver}
+                  workload={workload}
+                  setWorkload={(w) => {
+                    setWorkload(w);
+                    setReview(false);
+                  }}
+                  advanced={advanced}
+                  setAdvanced={setAdvanced}
+                  advancedErrors={advancedErrors}
                 />
               ) : (
                 <GuidedFields

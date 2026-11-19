@@ -101,7 +101,7 @@ func (a *app) handleRunCSV(w http.ResponseWriter, r *http.Request) {
 			rows, _ = metrics[keyChartSamples].([]map[string]any)
 		}
 	case keyPhase, kindWindow:
-		if phase != phaseCreate && phase != phaseVerify && phase != "READ" && phase != phaseDelete {
+		if phase != phaseCreate && phase != phaseVerify && phase != "READ" && phase != phaseDelete && !(str(metrics[keyWorkloadType]) == "delete" && (phase == "SEED" || phase == "CLEANUP")) {
 			writeJSON(w, http.StatusBadRequest, map[string]any{keyError: "Choose a supported run phase."})
 			return
 		}
@@ -120,7 +120,7 @@ func (a *app) handleRunCSV(w http.ResponseWriter, r *http.Request) {
 				if started.IsZero() {
 					// Match the chart's fallback to the first available phase sample.
 					for _, row := range all {
-						if phaseCodeForBackend(str(row[keyOpType])) != phaseCodeForBackend(phase) {
+						if exportPhase(row, str(metrics[keyWorkloadType])) != exportPhaseName(phase, str(metrics[keyWorkloadType])) {
 							continue
 						}
 						t, err := time.Parse(time.RFC3339Nano, str(row[keyTimestamp]))
@@ -131,7 +131,7 @@ func (a *app) handleRunCSV(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			for _, row := range all {
-				if phaseCodeForBackend(str(row["op_type"])) != phaseCodeForBackend(phase) {
+				if exportPhase(row, str(metrics[keyWorkloadType])) != exportPhaseName(phase, str(metrics[keyWorkloadType])) {
 					continue
 				}
 				if kind == kindWindow {
@@ -255,12 +255,13 @@ func (a *app) savedRun(runID string, latest map[string]any, includeMetrics bool)
 		startedAt = str(params["generatedAt"])
 	}
 	scenario, _ := params["scenarioParams"].(map[string]any)
-	options := map[string]any{
+	var options any = map[string]any{
 		"object_count":       scenario["ObjectCount"],
 		"object_size":        scenario["ObjectSize"],
 		keyThreads:           scenario["Threads"],
 		keyMaxRuntimeSeconds: params["autoTerminateSeconds"],
 		"driver":             savedRunDriver(params),
+		"workload":           str(params["workloadType"]),
 	}
 	status := savedRunStatus(dir, paramsDir, params, metricsSummaries(metrics))
 	job := map[string]any{keyRunID: runID, keyStatus: status, keyStartedAt: startedAt, keyOptions: options}
@@ -268,11 +269,14 @@ func (a *app) savedRun(runID string, latest map[string]any, includeMetrics bool)
 		// The dashboard recorded how this run ended; that outranks the file heuristic.
 		status = str(record[keyStatus])
 		job = record
+		if recorded, ok := record[keyOptions].(map[string]any); ok {
+			options = recorded
+		}
 		job[keyOptions] = options
 	}
 	if latest != nil && str(latest[keyRunID]) == runID {
 		job = publicJob(latest)
-		if opts, ok := latest[keyOptions].(map[string]any); ok {
+		if opts := latest[keyOptions]; opts != nil {
 			options = opts
 		}
 		job[keyOptions] = options
@@ -312,7 +316,7 @@ func savedRunStatus(dir, paramsDir string, params map[string]any, phases []map[s
 	if ended := traceLogOutcome(paramsDir); ended != "" {
 		return ended
 	}
-	if len(phases) >= 3 {
+	if str(params["workloadType"]) != "delete" && len(phases) >= 3 {
 		return jobCompleted
 	}
 	scenario, _ := params["scenarioParams"].(map[string]any)

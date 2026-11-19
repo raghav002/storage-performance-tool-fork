@@ -15,33 +15,33 @@ import (
 func TestValidateOptionsBounds(t *testing.T) {
 	a := &app{} // no settings file: the built-in default limits apply
 	for _, good := range []options{
-		{"", 100, "1MiB", 1, 60, ""},
-		{"guided", 320, "16MiB", 2, 600, ""},
-		{"expert", 1, "1KiB", 1, 10, ""},
-		{"expert", 777, "3MiB", 13, 1234, ""},
-		{"expert", 100_000, "1MiB", 64, 3600, ""},
-		{"expert", 100, "1GiB", 1, 60, ""},
+		{Mode: "", ObjectCount: 100, ObjectSize: "1MiB", Threads: 1, MaxRuntimeSeconds: 60, Driver: ""},
+		{Mode: "guided", ObjectCount: 320, ObjectSize: "16MiB", Threads: 2, MaxRuntimeSeconds: 600, Driver: ""},
+		{Mode: "expert", ObjectCount: 1, ObjectSize: "1KiB", Threads: 1, MaxRuntimeSeconds: 10, Driver: ""},
+		{Mode: "expert", ObjectCount: 777, ObjectSize: "3MiB", Threads: 13, MaxRuntimeSeconds: 1234, Driver: ""},
+		{Mode: "expert", ObjectCount: 100_000, ObjectSize: "1MiB", Threads: 64, MaxRuntimeSeconds: 3600, Driver: ""},
+		{Mode: "expert", ObjectCount: 100, ObjectSize: "1GiB", Threads: 1, MaxRuntimeSeconds: 60, Driver: ""},
 	} {
 		if err := a.validateOptions(good); err != nil {
 			t.Errorf("rejected %+v: %v", good, err)
 		}
 	}
 	bad := []options{
-		{"", 1000, "1MiB", 1, 60, ""},
-		{"guided", 100, "100MiB", 1, 60, ""},
-		{"guided", 100, "1MiB", 20, 60, ""},
-		{"guided", 100, "1MiB", 1, 999, ""},
-		{"guided", 777, "3MiB", 13, 1234, ""},
-		{"admin", 100, "1MiB", 1, 60, ""},
-		{"expert", 0, "1MiB", 1, 60, ""},
-		{"expert", 100_001, "1KiB", 1, 60, ""},
-		{"expert", 100, "1MiB", 0, 60, ""},
-		{"expert", 100, "1MiB", 65, 60, ""},
-		{"expert", 100, "1MiB", 1, 9, ""},
-		{"expert", 100, "1MiB", 1, 3601, ""},
-		{"expert", 100, "2GiB", 1, 60, ""},
-		{"expert", 101, "1GiB", 1, 60, ""},
-		{"expert", 100, "--help", 1, 60, ""},
+		{Mode: "", ObjectCount: 1000, ObjectSize: "1MiB", Threads: 1, MaxRuntimeSeconds: 60, Driver: ""},
+		{Mode: "guided", ObjectCount: 100, ObjectSize: "100MiB", Threads: 1, MaxRuntimeSeconds: 60, Driver: ""},
+		{Mode: "guided", ObjectCount: 100, ObjectSize: "1MiB", Threads: 20, MaxRuntimeSeconds: 60, Driver: ""},
+		{Mode: "guided", ObjectCount: 100, ObjectSize: "1MiB", Threads: 1, MaxRuntimeSeconds: 999, Driver: ""},
+		{Mode: "guided", ObjectCount: 777, ObjectSize: "3MiB", Threads: 13, MaxRuntimeSeconds: 1234, Driver: ""},
+		{Mode: "admin", ObjectCount: 100, ObjectSize: "1MiB", Threads: 1, MaxRuntimeSeconds: 60, Driver: ""},
+		{Mode: "expert", ObjectCount: 0, ObjectSize: "1MiB", Threads: 1, MaxRuntimeSeconds: 60, Driver: ""},
+		{Mode: "expert", ObjectCount: 100_001, ObjectSize: "1KiB", Threads: 1, MaxRuntimeSeconds: 60, Driver: ""},
+		{Mode: "expert", ObjectCount: 100, ObjectSize: "1MiB", Threads: 0, MaxRuntimeSeconds: 60, Driver: ""},
+		{Mode: "expert", ObjectCount: 100, ObjectSize: "1MiB", Threads: 65, MaxRuntimeSeconds: 60, Driver: ""},
+		{Mode: "expert", ObjectCount: 100, ObjectSize: "1MiB", Threads: 1, MaxRuntimeSeconds: 9, Driver: ""},
+		{Mode: "expert", ObjectCount: 100, ObjectSize: "1MiB", Threads: 1, MaxRuntimeSeconds: 3601, Driver: ""},
+		{Mode: "expert", ObjectCount: 100, ObjectSize: "2GiB", Threads: 1, MaxRuntimeSeconds: 60, Driver: ""},
+		{Mode: "expert", ObjectCount: 101, ObjectSize: "1GiB", Threads: 1, MaxRuntimeSeconds: 60, Driver: ""},
+		{Mode: "expert", ObjectCount: 100, ObjectSize: "--help", Threads: 1, MaxRuntimeSeconds: 60, Driver: ""},
 	}
 	for _, got := range bad {
 		if a.validateOptions(got) == nil {

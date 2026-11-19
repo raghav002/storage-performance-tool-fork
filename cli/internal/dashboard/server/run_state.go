@@ -40,7 +40,7 @@ func (a *app) currentState() (map[string]any, error) {
 		if epoch, ok := num(state, "started_epoch"); ok {
 			state[keyElapsedSeconds] = math.Max(0, float64(time.Now().Unix())-epoch)
 		}
-		state[keyPhase] = a.phaseFromOutput(str(state["results_dir"]))
+		state[keyPhase] = a.phaseFromOutput(str(state["results_dir"]), jobWorkload(state))
 		result := a.readRealRun(str(state["results_dir"]), str(state[keyRunID]), true)
 		live := a.liveMetrics(state)
 		if live != nil {
@@ -52,6 +52,9 @@ func (a *app) currentState() (map[string]any, error) {
 			}
 			if strings.Contains(phase, "delete") || strings.Contains(phase, "cleanup") {
 				label = "Cleanup"
+			}
+			if jobWorkload(state) == "delete" {
+				label = deletePhase(str(live["phase_id"]), str(live[keyPhase]))
 			}
 			state[keyPhase] = label
 			ss := live[keySamples].([]map[string]any)
@@ -184,7 +187,7 @@ func (a *app) latestSavedRun() map[string]any {
 	return nil
 }
 
-func (a *app) phaseFromOutput(runDir string) string {
+func (a *app) phaseFromOutput(runDir string, workload string) string {
 	files := []string{}
 	_ = filepath.WalkDir(runDir, func(path string, d os.DirEntry, err error) error {
 		if err == nil && !d.IsDir() && strings.HasSuffix(path, ".metrics.csv") && !strings.HasSuffix(path, ".total.csv") {
@@ -200,6 +203,9 @@ func (a *app) phaseFromOutput(runDir string) string {
 		y, _ := os.Stat(files[j])
 		return x != nil && y != nil && x.ModTime().After(y.ModTime())
 	})
+	if workload == "delete" {
+		return deletePhase(files[0], "")
+	}
 	name := strings.ToLower(filepath.Base(files[0]))
 	if strings.Contains(name, "delete") || strings.Contains(name, "cleanup") {
 		return "Cleanup"

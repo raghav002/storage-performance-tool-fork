@@ -87,6 +87,7 @@ func TestCustomExpertBoundaries(t *testing.T) {
 func TestCustomLimitsPayload(t *testing.T) {
 	a := &app{settings: customWorkloadSettings(t)}
 	want := map[string]any{
+		"delete": a.settings.Limits.Delete,
 		"guided": map[string]any{"object_counts": []int{3, 7}, "object_sizes": []string{"2KiB", "1MiB"}, "threads": []int{3}, "max_runtime_seconds": []int{20}},
 		"expert": map[string]any{
 			"object_count":        map[string]int{"min": 2, "max": 12},

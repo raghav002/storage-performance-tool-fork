@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -53,28 +54,29 @@ type catalogPhase struct {
 }
 
 type catalogRun struct {
-	ID            string         `json:"id"`
-	Name          string         `json:"name"`
-	Source        string         `json:"source"`
-	Status        string         `json:"status"`
-	Integrity     string         `json:"integrity"`
-	StartedAt     string         `json:"started_at,omitempty"`
-	Workload      string         `json:"workload,omitempty"`
-	Label         string         `json:"label,omitempty"`
-	ObjectSize    string         `json:"object_size,omitempty"`
-	ObjectCount   int64          `json:"object_count,omitempty"`
-	Threads       int64          `json:"threads,omitempty"`
-	Duration      string         `json:"duration,omitempty"`
-	S3Driver      string         `json:"s3_driver,omitempty"`
-	HostCount     int64          `json:"host_count,omitempty"`
-	EndpointHost  string         `json:"endpoint_host,omitempty"`
-	CLIVersion    string         `json:"cli_version,omitempty"`
-	EngineVersion string         `json:"engine_version,omitempty"`
-	Phases        []catalogPhase `json:"phases"`
-	Issues        []string       `json:"issues"`
-	SummaryFile   string         `json:"summary_file,omitempty"`
-	ModifiedAt    string         `json:"modified_at"`
-	dir           string
+	ID             string         `json:"id"`
+	Name           string         `json:"name"`
+	Source         string         `json:"source"`
+	Status         string         `json:"status"`
+	Integrity      string         `json:"integrity"`
+	StartedAt      string         `json:"started_at,omitempty"`
+	Workload       string         `json:"workload,omitempty"`
+	Label          string         `json:"label,omitempty"`
+	ObjectSize     string         `json:"object_size,omitempty"`
+	ObjectCount    int64          `json:"object_count,omitempty"`
+	Threads        int64          `json:"threads,omitempty"`
+	Duration       string         `json:"duration,omitempty"`
+	S3Driver       string         `json:"s3_driver,omitempty"`
+	DeleteIdentity string         `json:"delete_identity,omitempty"`
+	HostCount      int64          `json:"host_count,omitempty"`
+	EndpointHost   string         `json:"endpoint_host,omitempty"`
+	CLIVersion     string         `json:"cli_version,omitempty"`
+	EngineVersion  string         `json:"engine_version,omitempty"`
+	Phases         []catalogPhase `json:"phases"`
+	Issues         []string       `json:"issues"`
+	SummaryFile    string         `json:"summary_file,omitempty"`
+	ModifiedAt     string         `json:"modified_at"`
+	dir            string
 }
 
 type catalogCache struct {
@@ -103,14 +105,20 @@ type runParams struct {
 		HostCount int64 `json:"hostCount"`
 	} `json:"multiHost"`
 	Scenario struct {
-		WorkloadType string   `json:"WorkloadType"`
-		Endpoint     string   `json:"Endpoint"`
-		Endpoints    []string `json:"Endpoints"`
-		Threads      int64    `json:"Threads"`
-		ObjectSize   string   `json:"ObjectSize"`
-		ObjectCount  int64    `json:"ObjectCount"`
-		Duration     string   `json:"Duration"`
-		S3Driver     string   `json:"S3Driver"`
+		WorkloadType            string   `json:"WorkloadType"`
+		Endpoint                string   `json:"Endpoint"`
+		Endpoints               []string `json:"Endpoints"`
+		Threads                 int64    `json:"Threads"`
+		ObjectSize              string   `json:"ObjectSize"`
+		ObjectCount             int64    `json:"ObjectCount"`
+		Duration                string   `json:"Duration"`
+		S3Driver                string   `json:"S3Driver"`
+		DeleteBatchSize         int      `json:"DeleteBatchSize"`
+		SelectionOrder          string   `json:"SelectionOrder"`
+		DeleteExisting          bool     `json:"DeleteExisting"`
+		ItemsFile               string   `json:"ItemsFile"`
+		ValidateDeleteInventory bool     `json:"ValidateDeleteInventory"`
+		VerifyDelete            bool     `json:"VerifyDelete"`
 	} `json:"scenarioParams"`
 }
 
@@ -293,7 +301,7 @@ func (a *app) readCatalogRun(dir, rel string) catalogRun {
 		if !isTotalsFile(n) {
 			continue
 		}
-		phases, err := a.readTotals(filepath.Join(dir, n))
+		phases, err := a.readTotals(filepath.Join(dir, n), run.Workload)
 		if err != nil {
 			run.Issues = append(run.Issues, "Could not read "+n+".")
 			continue
@@ -322,6 +330,15 @@ func applyParams(run *catalogRun, p runParams) {
 	run.Threads = p.Scenario.Threads
 	run.Duration = p.Scenario.Duration
 	run.S3Driver = p.Scenario.S3Driver
+	if run.Workload == "delete" && p.Scenario.DeleteBatchSize > 0 {
+		source := "seeded"
+		if p.Scenario.DeleteExisting {
+			source = "existing-prefix"
+		} else if p.Scenario.ItemsFile != "" {
+			source = "manifest"
+		}
+		run.DeleteIdentity = fmt.Sprintf("%s; batch=%d; order=%s; pre=%t; post=%t", source, p.Scenario.DeleteBatchSize, p.Scenario.SelectionOrder, p.Scenario.ValidateDeleteInventory, p.Scenario.VerifyDelete)
+	}
 	run.HostCount = p.MultiHost.HostCount
 	run.CLIVersion = p.CLI.Version
 	endpoint := p.Scenario.Endpoint
@@ -380,11 +397,11 @@ func stepName(id string) string {
 	return id
 }
 
-func (a *app) readTotals(path string) ([]catalogPhase, error) {
+func (a *app) readTotals(path string, workload string) ([]catalogPhase, error) {
 	base := filepath.Base(path)
 	stepID := strings.TrimSuffix(base, "."+constants.ResultsArtifactSuffixMetricsTotal)
 	step := stepName(stepID)
-	data, err := a.parseMetricsFile(path, "", "", false, true)
+	data, err := a.parseMetricsFile(path, "", workload, false, true)
 	if err != nil {
 		return nil, err
 	}

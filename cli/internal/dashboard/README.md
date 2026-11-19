@@ -1,6 +1,6 @@
 # SPT Dashboard
 
-A small Go web server with an embedded React dashboard for running a bounded SPT write/verify workload and reviewing its metrics.
+A small Go web server with an embedded React dashboard for running bounded SPT workloads and reviewing their metrics.
 
 ## Build
 
@@ -111,6 +111,16 @@ Step 2 of **Configure run** offers two drivers:
 `/api/state` reports `target.mock_ready` and `target.mock_reasons` next to the S3 `ready`/`reasons`. `POST /api/runs` accepts `"driver": "mock"`; omitting `driver` keeps the S3 workload, so existing clients are unaffected.
 
 With more than one client machine, the live dashboard also shows a **per-machine** table read from each machine's own `/metrics/json`. These rows are shown next to the fleet totals and are never summed with them.
+
+## Guided Delete workload
+
+In Guided mode, pick **Delete** under **Configure run, Step 2**. Creates test objects, then measures how fast they get deleted. Only uses objects from that run.
+
+Settings grouped into **Objects**, **Load**, **Verification**, **Failure policy** and **Cleanup**. Pick the values, review, then start.
+
+Results show object creation, deletion and cleanup separately. Successful requests alone don't prove the objects are gone. Turn on verification to check.
+
+No time limit for this workload. Ends after the selected objects are processed. Use **Stop run** to end it early.
 
 ## Results catalog
 

@@ -113,8 +113,8 @@ export function HistoryPage({
                             className="my-0.75 mr-compact inline-block"
                             key={phase.phase}
                           >
-                            {phaseName(phase.phase)} {fmt(phase.successful_ops)}
-                            /{fmt(phase.failed_ops)}
+                            {phaseName(phase.phase, run.options?.workload)}{" "}
+                            {fmt(phase.successful_ops)}/{fmt(phase.failed_ops)}
                           </Text>
                         ))
                       ) : (

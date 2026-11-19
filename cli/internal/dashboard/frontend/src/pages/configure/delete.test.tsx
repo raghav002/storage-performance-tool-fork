@@ -11,12 +11,15 @@ import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { State } from "../../types";
 import { theme } from "../../theme";
+import { DeleteOutcome } from "../dashboard/DeleteOutcome";
 import { ConfigurePage } from "./ConfigurePage";
 import { initialDeleteOptions } from "./DeleteFields";
 import { fallbackLimits, validateOptions } from "../../utils/validation";
 import { apiClient } from "../../api/client";
+import { rowPhase, phaseName } from "../../utils/metrics";
 import { toDraft, parseExpertCommand } from "./configuration";
 import { runWorkloadType } from "../../utils/catalog";
+import { PhaseResults } from "../../components/RunMetrics";
 
 const originalAdapter = apiClient.defaults.adapter;
 const clients: QueryClient[] = [];
@@ -221,4 +224,59 @@ it("validates custom Delete presets and exclusive budgets", () => {
     parseExpertCommand("spt run delete --object-count 10", o, limits),
   ).toThrow(/write-verify/);
   expect(runWorkloadType(null, { options: o })).toBe("delete");
+});
+
+it("keeps measured deletion and cleanup in separate phase rows", () => {
+  const base = {
+    successful_ops: 3,
+    failed_ops: 0,
+    bandwidth_mib_s: null,
+    iops: 1,
+  };
+  const measured = {
+    ...base,
+    step_id: "002-delete",
+    phase: "DELETE",
+    op_type: "DELETE",
+  };
+  const residual = {
+    ...base,
+    step_id: "003-cleanup",
+    phase: "CLEANUP",
+    op_type: "DELETE",
+  };
+  expect(rowPhase(measured, "delete")).toBe("DELETE");
+  expect(rowPhase(residual, "delete")).toBe("CLEANUP");
+  expect(phaseName("DELETE", "delete")).toBe("Delete");
+  const onSelect = vi.fn();
+  render(
+    <MantineProvider theme={theme} env="test">
+      <PhaseResults
+        metrics={{
+          run_id: "r",
+          workload_type: "delete",
+          is_active: false,
+          is_aggregate: true,
+          samples: [],
+          phase_summaries: [measured, residual],
+        }}
+        onSelect={onSelect}
+      />
+    </MantineProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cleanup" }));
+  expect(onSelect.mock.calls).toEqual([["DELETE"], ["CLEANUP"]]);
+});
+
+it("marks missing finished Delete evidence unavailable rather than still waiting", () => {
+  render(
+    <MantineProvider theme={theme} env="test">
+      <DeleteOutcome />
+    </MantineProvider>,
+  );
+  expect(
+    screen.getByText(/DELETE object outcomes are unavailable/),
+  ).toBeTruthy();
+  expect(screen.queryByText(/Waiting for DELETE/)).toBeNull();
 });

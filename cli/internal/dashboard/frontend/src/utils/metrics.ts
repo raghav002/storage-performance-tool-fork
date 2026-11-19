@@ -1,4 +1,4 @@
-import type { DataStatus } from "../types";
+import type { DataStatus, Row } from "../types";
 export function numeric(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -58,6 +58,7 @@ export function elapsed(value: unknown): string {
 }
 export function phaseCode(name?: string) {
   const s = (name ?? "").toUpperCase();
+  if (s === "SEED" || s === "CLEANUP") return s;
   return /CREATE|WRITE/.test(s)
     ? "CREATE"
     : /VERIFY|READ/.test(s)
@@ -66,14 +67,27 @@ export function phaseCode(name?: string) {
         ? "DELETE"
         : "SPT";
 }
-export function phaseName(name?: string) {
-  return { CREATE: "Write", VERIFY: "Verify", DELETE: "Cleanup", SPT: "SPT" }[
-    phaseCode(name)
-  ];
+export function phaseName(name?: string, workload?: string) {
+  return {
+    SEED: "Create test objects",
+    CLEANUP: "Cleanup",
+    CREATE: "Write",
+    VERIFY: "Verify",
+    DELETE: workload === "delete" ? "Delete" : "Cleanup",
+    SPT: "SPT",
+  }[phaseCode(name)];
 }
 export function utc(value?: string) {
   const t = Date.parse(value ?? "");
   return Number.isFinite(t)
     ? new Date(t).toISOString().replace("T", " ").replace("Z", " UTC")
     : "—";
+}
+
+export function rowPhase(row: Row, workload?: string): string {
+  if (workload !== "delete") return phaseCode(row.phase ?? row.op_type);
+  const step = (row.step_id ?? row.source_file ?? "").toLowerCase();
+  if (step.includes("cleanup")) return "CLEANUP";
+  if (step.includes("seed") || row.op_type === "CREATE") return "SEED";
+  return phaseCode(row.phase ?? row.op_type);
 }

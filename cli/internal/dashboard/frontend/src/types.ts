@@ -1,5 +1,26 @@
 export type RunMode = "guided" | "expert";
+export type Workload = "write-verify" | "delete" | "mock";
+export type DeleteOptions = {
+  batch_size: number;
+  validate_inventory: boolean;
+  verify?: boolean;
+  verification_timeout_seconds: number;
+  max_failed_objects?: number;
+  max_failure_percent?: number;
+  failure_budget_grace_seconds?: number;
+  cleanup: boolean;
+};
+export type DeleteLimits = {
+  object_sizes: string[];
+  batch_sizes: number[];
+  verification_timeout_seconds: number[];
+  max_failed_objects: number[];
+  max_failure_percent: number[];
+  failure_budget_grace_seconds: number[];
+};
 export type Options = {
+  workload?: Workload;
+  delete?: DeleteOptions;
   mode?: RunMode;
   object_count: number;
   object_size: string;
@@ -9,7 +30,31 @@ export type Options = {
   driver?: Driver;
 };
 export type Driver = "s3" | "mock";
+export type DeleteDetail = {
+  objects: {
+    selected: number;
+    attempted: number;
+    accepted: number;
+    failed: number;
+    unattempted: number;
+    unresolved: number;
+  };
+  requests: {
+    attempted: number;
+    full_success: number;
+    partial: number;
+    failed: number;
+    unresolved: number;
+  };
+  failure_policy: { outcome: string };
+  verification: {
+    removal_confirmed: boolean;
+    verified_absent: number;
+    notice: string;
+  };
+};
 export type Row = {
+  delete_detail?: DeleteDetail;
   timestamp?: string;
   op_type?: string;
   phase?: string;
@@ -47,6 +92,8 @@ export type RunWarning = {
   source: string;
 };
 export type Metrics = {
+  delete_detail?: DeleteDetail;
+  delete_detail_error?: string;
   run_id: string;
   updated_at?: string;
   source_file?: string;
@@ -109,6 +156,7 @@ export type State = {
 export type Range = { min: number; max: number };
 // Published by the server; it enforces the same values on POST /api/runs.
 export type RunLimits = {
+  delete?: DeleteLimits;
   guided: {
     object_counts: number[];
     object_sizes: string[];
@@ -211,6 +259,7 @@ export type CatalogPhase = {
   node_count?: number | null;
 };
 export type CatalogRun = {
+  delete_identity?: string;
   id: string;
   name: string;
   source: "dashboard" | "cli";

@@ -12,6 +12,7 @@ import { EChart } from "./EChart";
 
 type Props = {
   summaries: Row[];
+  workload?: string;
   field: "iops" | "bandwidth_mib_s" | "p50_latency_us";
   title: string;
   unit: string;
@@ -20,6 +21,7 @@ type Props = {
 
 export function PhaseSummaryChart({
   summaries,
+  workload,
   field,
   title,
   unit,
@@ -28,10 +30,10 @@ export function PhaseSummaryChart({
   const data = useMemo(
     () =>
       summaries.map((row) => ({
-        phase: phaseName(row.phase),
+        phase: phaseName(row.phase, workload),
         value: numeric(row[field]),
       })),
-    [summaries, field],
+    [summaries, field, workload],
   );
   const hasValues = data.some((row) => row.value !== null);
   const option = useMemo<ChartOption>(

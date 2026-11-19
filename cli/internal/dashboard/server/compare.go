@@ -69,6 +69,13 @@ func settingsDifferences(base, run catalogRun) []string {
 		}
 	}
 	add("workload", base.Workload, run.Workload)
+	if base.Workload == "delete" && run.Workload == "delete" {
+		if base.DeleteIdentity == "" || run.DeleteIdentity == "" {
+			diffs = append(diffs, "Delete batching or selection settings are unavailable")
+		} else {
+			add("Delete settings", base.DeleteIdentity, run.DeleteIdentity)
+		}
+	}
 	add("object size", base.ObjectSize, run.ObjectSize)
 	add("object count", intText(base.ObjectCount), intText(run.ObjectCount))
 	add(keyThreads, intText(base.Threads), intText(run.Threads))

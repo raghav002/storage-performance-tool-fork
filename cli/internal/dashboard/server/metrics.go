@@ -77,11 +77,11 @@ func numberValue(m map[string]any, key string) float64 {
 	return 0
 }
 
-func (a *app) metricsFiles(runDir string, active bool) (string, bool) {
+func (a *app) metricsFiles(runDir string, active bool, workload string) (string, bool) {
 	entries, _ := os.ReadDir(runDir)
 	paths := []string{}
 	for _, e := range entries {
-		if !e.IsDir() && strings.Contains(e.Name(), ".metrics") && strings.HasSuffix(e.Name(), ".csv") {
+		if !e.IsDir() && strings.Contains(e.Name(), ".metrics") && strings.HasSuffix(e.Name(), ".csv") && !strings.HasSuffix(e.Name(), ".delete.metrics.total.csv") {
 			paths = append(paths, filepath.Join(runDir, e.Name()))
 		}
 	}
@@ -89,6 +89,18 @@ func (a *app) metricsFiles(runDir string, active bool) (string, bool) {
 		return "", false
 	}
 	eligible := func(items []string) []string {
+		if workload == "delete" {
+			measured := []string{}
+			for _, p := range items {
+				if deletePhase(p, "") == "DELETE" {
+					measured = append(measured, p)
+				}
+			}
+			if len(measured) > 0 {
+				return measured
+			}
+			return items
+		}
 		create := []string{}
 		pool := []string{}
 		for _, p := range items {
@@ -212,7 +224,7 @@ func (a *app) parseMetricsFile(path, runID, workload string, active, aggregate b
 			bwKeys = []string{"BWLast[MiB/s]", "BWAvg[MiB/s]"}
 		}
 		bw, bwok := parseNumber(raw, bwKeys...)
-		if !bwok {
+		if !bwok && !(workload == "delete" && strings.ToUpper(raw["OpType"]) == phaseDelete) {
 			continue
 		}
 		elapsed := 0.0
@@ -222,7 +234,16 @@ func (a *app) parseMetricsFile(path, runID, workload string, active, aggregate b
 			elapsed = ts.Sub(start).Seconds()
 		}
 		p50 := optNumber(raw, "LatencyMed[us]", "LatencyQ_0.5[us]")
-		samples = append(samples, map[string]any{keyTimestamp: ts.UTC().Format(time.RFC3339Nano), keyElapsedSeconds: elapsed, keyCumulativeOps: succ, keyCountFailed: failed, "average_iops": avg, keyIntervalIOPS: measured, metricBandwidth: bw, metricP50Latency: p50, "op_type": strings.TrimSpace(raw["OpType"]), "duration_seconds": numberOr(raw, []string{"StepDuration[s]"}, 0), "bytes_processed": optNumber(raw, "Size"), "concurrency": optNumber(raw, "Concurrency"), "concurrency_mean": optNumber(raw, "ConcurrencyMean"), "node_count": optNumber(raw, "NodeCount"), "corrupt_ops": optNumber(raw, "CountCorrupt"), "latency_mean_us": optNumber(raw, "LatencyAvg[us]"), "latency_min_us": optNumber(raw, "LatencyMin[us]"), "latency_max_us": optNumber(raw, "LatencyMax[us]"), "latency_p99_us": optNumber(raw, "LatencyQ_0.99[us]")})
+		sample := map[string]any{keyTimestamp: ts.UTC().Format(time.RFC3339Nano), keyElapsedSeconds: elapsed, keyCumulativeOps: succ, keyCountFailed: failed, "average_iops": avg, keyIntervalIOPS: measured, metricBandwidth: bw, metricP50Latency: p50, "op_type": strings.TrimSpace(raw["OpType"]), "duration_seconds": numberOr(raw, []string{"StepDuration[s]"}, 0), "bytes_processed": optNumber(raw, "Size"), "concurrency": optNumber(raw, "Concurrency"), "concurrency_mean": optNumber(raw, "ConcurrencyMean"), "node_count": optNumber(raw, "NodeCount"), "corrupt_ops": optNumber(raw, "CountCorrupt"), "latency_mean_us": optNumber(raw, "LatencyAvg[us]"), "latency_min_us": optNumber(raw, "LatencyMin[us]"), "latency_max_us": optNumber(raw, "LatencyMax[us]"), "latency_p99_us": optNumber(raw, "LatencyQ_0.99[us]")}
+		sample[keyStepID] = strings.TrimSuffix(strings.TrimSuffix(filepath.Base(path), ".metrics.total.csv"), ".metrics.csv")
+		if workload == "delete" && strings.ToUpper(raw["OpType"]) == phaseDelete {
+			sample[metricBandwidth] = nil
+			sample["bytes_processed"] = nil
+		}
+		if workload == "delete" {
+			sample[keyPhase] = deletePhase(str(sample[keyStepID]), raw["OpType"])
+		}
+		samples = append(samples, sample)
 	}
 	return map[string]any{keyRunID: runID, keyWorkloadType: workload, keySourceFile: filepath.Base(path), keyUpdatedAt: info.ModTime().UTC().Format(time.RFC3339Nano), keyIsActive: active, keyIsAggregate: aggregate, keySamples: samples}, nil
 }

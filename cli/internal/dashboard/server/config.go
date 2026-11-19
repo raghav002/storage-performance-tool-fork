@@ -31,6 +31,7 @@ type dashboardBranding struct {
 type workloadLimits struct {
 	Guided guidedLimits `json:"guided"`
 	Expert expertLimits `json:"expert"`
+	Delete deleteLimits `json:"delete"`
 }
 
 type guidedLimits struct {
@@ -56,6 +57,7 @@ func defaultSettings() dashboardSettings {
 	return dashboardSettings{
 		Branding: dashboardBranding{ProductName: "Storage Performance Tool", EnvironmentLabel: "Configured environment"},
 		Limits: workloadLimits{
+			Delete: defaultDeleteLimits(),
 			Guided: guidedLimits{ObjectCounts: []int{10, 25, 50, 100, 250, 320}, ObjectSizes: []string{"64KiB", "256KiB", "1MiB", "4MiB", "16MiB"}, Threads: []int{1, 2}, Runtimes: []int{60, 120, 300, 600}},
 			Expert: expertLimits{ObjectCountMin: expertMinObjects, ObjectCountMax: expertMaxObjects, ObjectSizeMin: expertMinObjectBytes, ObjectSizeMax: expertMaxObjectBytes, ThreadsMin: expertMinThreads, ThreadsMax: expertMaxThreads, RuntimeMin: expertMinRuntime, RuntimeMax: expertMaxRuntime, MaxTotalBytes: expertMaxTotalBytes},
 		},
@@ -127,6 +129,9 @@ func (s dashboardSettings) validate() error {
 	if hasDuplicates(g.ObjectCounts) || hasDuplicates(g.ObjectSizes) || hasDuplicates(g.Threads) || hasDuplicates(g.Runtimes) {
 		return errors.New("dashboard guided limits must not contain duplicate choices")
 	}
+	if err := s.Limits.Delete.validate(); err != nil {
+		return err
+	}
 	if err := s.Compare.validate(); err != nil {
 		return err
 	}
@@ -169,6 +174,7 @@ func (a *app) limitsPayload() map[string]any {
 	sizes := append([]string(nil), g.ObjectSizes...)
 	sort.Slice(sizes, func(i, j int) bool { x, _ := parseSize(sizes[i]); y, _ := parseSize(sizes[j]); return x < y })
 	return map[string]any{
+		"delete": a.effectiveSettings().Limits.Delete,
 		"guided": map[string]any{"object_counts": g.ObjectCounts, "object_sizes": sizes, keyThreads: g.Threads, keyMaxRuntimeSeconds: g.Runtimes},
 		"expert": map[string]any{"object_count": map[string]int{keyMin: e.ObjectCountMin, keyMax: e.ObjectCountMax}, "object_size_bytes": map[string]int64{keyMin: e.ObjectSizeMin, keyMax: e.ObjectSizeMax}, keyThreads: map[string]int{keyMin: e.ThreadsMin, keyMax: e.ThreadsMax}, keyMaxRuntimeSeconds: map[string]int{keyMin: e.RuntimeMin, keyMax: e.RuntimeMax}, "max_total_bytes": e.MaxTotalBytes},
 	}

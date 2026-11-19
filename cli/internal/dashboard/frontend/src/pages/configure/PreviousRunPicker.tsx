@@ -15,6 +15,7 @@ export function PreviousRunPicker({
   ).filter(
     (run) =>
       run.options &&
+      run.options.workload !== "delete" &&
       run.status === "completed" &&
       typeof run.options.object_count === "number" &&
       typeof run.options.object_size === "string" &&

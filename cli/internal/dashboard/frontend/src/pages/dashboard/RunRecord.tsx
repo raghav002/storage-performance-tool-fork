@@ -1,3 +1,4 @@
+import { DeleteReview } from "../configure/DeleteReview";
 import { Accordion } from "@mantine/core";
 import type { State } from "../../types";
 import { elapsed, formatNumber as fmt, utc } from "../../utils/metrics";
@@ -49,7 +50,9 @@ export function RunRecord({
                 Safety time limit
               </dt>
               <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
-                {elapsed(job?.options?.max_runtime_seconds)}
+                {job?.options?.workload === "delete"
+                  ? "Count-based; no runtime limit"
+                  : elapsed(job?.options?.max_runtime_seconds)}
               </dd>
             </div>
             <div>
@@ -69,6 +72,9 @@ export function RunRecord({
               </dd>
             </div>
           </dl>
+          {job?.options?.workload === "delete" && job.options.delete && (
+            <DeleteReview options={job.options.delete} />
+          )}
         </Accordion.Panel>
       </Accordion.Item>
     </Accordion>

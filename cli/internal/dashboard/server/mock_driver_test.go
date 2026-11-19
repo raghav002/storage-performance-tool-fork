@@ -147,7 +147,7 @@ func TestJobWorkloadAndMockArgv(t *testing.T) {
 		t.Error("jobWorkload")
 	}
 	a := &app{sptBin: "spt"}
-	argv := strings.Join(a.buildArgv("/r", "id", options{"", 25, "1MiB", 2, 60, driverMock}, map[string]any{"hosts": []string{"10.0.0.1", "10.0.0.2"}, "endpoint": "https://s3", "bucket": "b"}), " ")
+	argv := strings.Join(a.buildArgv("/r", "id", options{Mode: "", ObjectCount: 25, ObjectSize: "1MiB", Threads: 2, MaxRuntimeSeconds: 60, Driver: driverMock}, map[string]any{"hosts": []string{"10.0.0.1", "10.0.0.2"}, "endpoint": "https://s3", "bucket": "b"}), " ")
 	if !strings.Contains(argv, "run mock") || !strings.Contains(argv, "--test-hosts 10.0.0.1,10.0.0.2") || strings.Contains(argv, "https://s3") {
 		t.Errorf("mock argv: %s", argv)
 	}

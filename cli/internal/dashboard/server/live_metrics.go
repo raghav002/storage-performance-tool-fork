@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dell/storage-performance-tool/cli/internal/constants"
+	"github.com/dell/storage-performance-tool/cli/internal/deletemetrics"
 )
 
 func (a *app) readRealRun(runDir, runID string, active bool) map[string]any {
@@ -64,7 +65,7 @@ func (a *app) readRealRun(runDir, runID string, active bool) map[string]any {
 		if workload == "" {
 			continue
 		}
-		path, aggregate := a.metricsFiles(folder, active)
+		path, aggregate := a.metricsFiles(folder, active, workload)
 		if path == "" {
 			continue
 		}
@@ -73,6 +74,7 @@ func (a *app) readRealRun(runDir, runID string, active bool) map[string]any {
 			continue
 		}
 		result[keyRunID] = runID
+		details := savedDeleteDetails(b)
 		history := map[string][]map[string]any{}
 		files, _ := filepath.Glob(filepath.Join(folder, "*.metrics.csv"))
 		sort.Strings(files)
@@ -82,7 +84,7 @@ func (a *app) readRealRun(runDir, runID string, active bool) map[string]any {
 				continue
 			}
 			for _, sample := range part[keySamples].([]map[string]any) {
-				phase := strings.ToUpper(str(sample[keyOpType]))
+				phase := samplePhase(sample, workload)
 				if validPhase(phase) {
 					history[phase] = append(history[phase], sample)
 				}
@@ -90,7 +92,7 @@ func (a *app) readRealRun(runDir, runID string, active bool) map[string]any {
 		}
 		captured := map[string][]map[string]any{}
 		for _, sample := range a.savedLiveSamples(runID) {
-			phase := strings.ToUpper(str(sample[keyOpType]))
+			phase := samplePhase(sample, workload)
 			if validPhase(phase) {
 				captured[phase] = append(captured[phase], sample)
 			}
@@ -115,12 +117,18 @@ func (a *app) readRealRun(runDir, runID string, active bool) map[string]any {
 			summaries := []map[string]any{}
 			for _, p := range totals {
 				low := strings.ToLower(filepath.Base(p))
+				if !isTotalsFile(filepath.Base(p)) {
+					continue
+				}
 				phase := "SPT"
 				for _, name := range [][2]string{{"create", "Create"}, {"verify", phaseVerifyLabel}, {"delete", "Delete"}} {
 					if strings.Contains(low, name[0]) {
 						phase = name[1]
 						break
 					}
+				}
+				if workload == "delete" {
+					phase = deletePhase(p, "")
 				}
 				data, err := a.parseMetricsFile(p, filepath.Base(folder), workload, false, true)
 				if err != nil {
@@ -131,9 +139,18 @@ func (a *app) readRealRun(runDir, runID string, active bool) map[string]any {
 					continue
 				}
 				s := rows[len(rows)-1]
-				item := map[string]any{keyPhase: phase, keySourceFile: filepath.Base(p), keySuccessfulOps: s[keyCumulativeOps], metricFailed: s[keyCountFailed], metricIOPS: s[keyIntervalIOPS], metricBandwidth: s[metricBandwidth], metricP50Latency: s[metricP50Latency]}
+				item := map[string]any{keyPhase: phase, keyStepID: s[keyStepID], keyOpType: s[keyOpType], keySourceFile: filepath.Base(p), keySuccessfulOps: s[keyCumulativeOps], metricFailed: s[keyCountFailed], metricIOPS: s[keyIntervalIOPS], metricBandwidth: s[metricBandwidth], metricP50Latency: s[metricP50Latency]}
 				for _, k := range []string{keyTimestamp, "duration_seconds", "bytes_processed", "concurrency", "concurrency_mean", "node_count", metricCorrupt, "latency_mean_us", "latency_min_us", "latency_max_us", sptP99Latency} {
 					item[k] = s[k]
+				}
+				if workload == "delete" && phase == "DELETE" {
+					detail := details[str(s[keyStepID])]
+					if detail != nil && deletemetrics.ValidateTerminal(detail) == nil && float64(detail.Requests.FullSuccess) == numberValue(item, keySuccessfulOps) && float64(detail.Requests.Failed+detail.Requests.Partial) == numberValue(item, metricFailed) {
+						item["delete_detail"] = detail
+						result["delete_detail"] = detail
+					} else {
+						result["delete_detail_error"] = "Complete DELETE detail is unavailable; object outcomes are not confirmed."
+					}
 				}
 				summaries = append(summaries, item)
 			}
@@ -160,6 +177,9 @@ func (a *app) readRealRun(runDir, runID string, active bool) map[string]any {
 }
 
 func validPhase(p string) bool {
+	if p == "SEED" || p == "CLEANUP" {
+		return true
+	}
 	return p == phaseCreate || p == phaseVerify || p == phaseRead || p == phaseDelete
 }
 
@@ -403,6 +423,9 @@ func entryRates(entry map[string]any) map[string]any {
 			p99 = v
 		}
 	}
+	if str(entry[keyOpType]) == phaseDelete && (entry["delete_detail_expected"] == true || entry["delete"] != nil) {
+		bw = nil
+	}
 	return map[string]any{"success": success, keyFailed: numberValue(ops, "failed_count"), "corrupt": optionalMetric(ops, "corrupt_count"), "elapsed": elapsed, "bytes_total": bytesTotal, "latency_count": numberValue(latency, "count"), metricIOPS: iops, metricBandwidth: bw, metricP50Latency: p50, metricP99Latency: p99}
 }
 
@@ -445,11 +468,23 @@ func (a *app) liveMetricsAt(state map[string]any, metricsURL string) map[string]
 	}
 	stepElapsed := math.Max(0, float64(ts.UnixNano())/1e9-started)
 	sample := map[string]any{keyTimestamp: ts.UTC().Format(time.RFC3339Nano), keyElapsedSeconds: stepElapsed, keyCumulativeOps: success, keyCountFailed: failed, metricCorrupt: r["corrupt"], "average_iops": any(nil), keyIntervalIOPS: r[metricIOPS], metricBandwidth: r[metricBandwidth], "bandwidth_unit": "MiB/s", keySourceFile: metricsContract, metricP50Latency: r[metricP50Latency], sptP99Latency: r[metricP99Latency], keyStepID: str(entry[keyStepID]), keyOpType: str(entry[keyOpType]), "completion_percent": optionalMetric(entry, "completion_percent")}
+	if jobWorkload(state) == "delete" {
+		sample[keyPhase] = deletePhase(str(entry[keyStepID]), str(entry[keyOpType]))
+		if str(entry[keyOpType]) == phaseDelete {
+			sample[metricBandwidth] = nil
+		}
+		if detail := liveDeleteDetail(entry); detail != nil {
+			sample["delete_detail"] = detail
+		}
+	}
 	if elapsed > 0 {
 		sample["average_iops"] = success / elapsed
 	}
 	has := success > 0 || failed > 0 || r["latency_count"].(float64) > 0 || r["bytes_total"].(float64) > 0
-	out := map[string]any{keyRunID: str(state[keyRunID]), keyWorkloadType: jobWorkload(state), keySourceFile: metricsContract, keyUpdatedAt: sample[keyTimestamp], keyIsActive: true, keyIsAggregate: false, "scope": firstNonempty(str(entry["scope"]), "node"), keyPhase: firstNonempty(str(sample[keyOpType]), str(sample[keyStepID])), "phase_id": str(sample[keyStepID]), keyProgressPercent: sample["completion_percent"], keySamples: []map[string]any{}}
+	out := map[string]any{keyRunID: str(state[keyRunID]), keyWorkloadType: jobWorkload(state), keySourceFile: metricsContract, keyUpdatedAt: sample[keyTimestamp], keyIsActive: true, keyIsAggregate: false, "scope": firstNonempty(str(entry["scope"]), "node"), keyPhase: firstNonempty(str(sample[keyPhase]), str(sample[keyOpType]), str(sample[keyStepID])), "phase_id": str(sample[keyStepID]), keyProgressPercent: sample["completion_percent"], keySamples: []map[string]any{}}
+	if detail := sample["delete_detail"]; detail != nil {
+		out["delete_detail"] = detail
+	}
 	if partial, ok := entry["partial"].(bool); ok {
 		out["fleet_partial"] = partial
 	}
@@ -504,6 +539,9 @@ func (a *app) liveNodes(state map[string]any, hosts []string) []map[string]any {
 						continue
 					}
 					r := entryRates(m)
+					if jobWorkload(state) == "delete" && str(m[keyOpType]) == phaseDelete {
+						r[metricBandwidth] = nil
+					}
 					row = map[string]any{keyHost: hostAddress(host), "node_id": str(m["node_id"]), "role": str(m["role"]), keyStatus: nodeStatusReporting, keyOpType: str(m[keyOpType]), keySampleTS: str(m[keySampleTS]), keySuccessfulOps: r["success"], metricFailed: r[keyFailed], metricCorrupt: r["corrupt"], metricIOPS: r[metricIOPS], metricBandwidth: r[metricBandwidth], metricP50Latency: r[metricP50Latency], metricP99Latency: r[metricP99Latency]}
 					break
 				}
@@ -563,8 +601,14 @@ func jobWorkload(job map[string]any) string {
 	driver := ""
 	switch o := job[keyOptions].(type) {
 	case options:
+		if o.Workload != "" {
+			return o.Workload
+		}
 		driver = o.Driver
 	case map[string]any:
+		if str(o["workload"]) != "" {
+			return str(o["workload"])
+		}
 		driver = str(o["driver"])
 	}
 	if driver == driverMock {

@@ -11,7 +11,7 @@ import type { Metrics, Row } from "../types";
 import {
   elapsed,
   formatNumber as fmt,
-  phaseCode,
+  rowPhase,
   phaseName,
   utc,
 } from "../utils/metrics";
@@ -50,7 +50,9 @@ export function PhaseResults({
                   "Failed",
                   "Corrupt",
                   "Duration",
-                  "IOPS",
+                  m.workload_type === "delete"
+                    ? "Requests/s (Delete) / ops/s (seed)"
+                    : "IOPS",
                   "MiB/s",
                   "P50 (µs)",
                 ].map((h, index) => (
@@ -66,14 +68,14 @@ export function PhaseResults({
             </Table.Thead>
             <Table.Tbody>
               {m.phase_summaries.map((r) => (
-                <Table.Tr key={r.phase}>
+                <Table.Tr key={r.step_id ?? r.phase}>
                   <Table.Td>
                     <Button
                       variant="subtle"
                       size="compact-xs"
-                      onClick={() => onSelect(phaseCode(r.phase))}
+                      onClick={() => onSelect(rowPhase(r, m.workload_type))}
                     >
-                      {phaseName(r.phase)}
+                      {phaseName(r.phase, m.workload_type)}
                     </Button>
                   </Table.Td>
                   <Table.Td ta="right">{fmt(r.successful_ops)}</Table.Td>
@@ -110,12 +112,22 @@ export function MeasuredDetails({
     {
       title: "Counts and data",
       values: [
-        ["Successful operations", fmt(row?.cumulative_ops)],
+        [
+          m.workload_type === "delete" && phase !== "SEED"
+            ? "Successful requests"
+            : "Successful operations",
+          fmt(row?.cumulative_ops),
+        ],
         ["Failed operations", fmt(row?.count_failed)],
         ["Corrupt operations", fmt(row?.corrupt_ops)],
         ["Bytes processed", fmt(row?.bytes_processed)],
         ["Phase duration", elapsed(row?.duration_seconds)],
-        ["Average IOPS", fmt(row?.average_iops ?? row?.iops, 2)],
+        [
+          m.workload_type === "delete" && phase !== "SEED"
+            ? "Average requests/s"
+            : "Average IOPS",
+          fmt(row?.average_iops ?? row?.iops, 2),
+        ],
       ],
     },
     {
@@ -151,7 +163,7 @@ export function MeasuredDetails({
         <Accordion.Control>
           SPT measured details{" "}
           <span className="text-xs/[inherit] font-normal ml-sm text-muted max-[47.5rem]:block max-[47.5rem]:mt-xs max-[47.5rem]:mr-0 max-[47.5rem]:mb-0 max-[47.5rem]:ml-md">
-            {phaseName(phase)} phase
+            {phaseName(phase, m.workload_type)} phase
           </span>
         </Accordion.Control>
         <Accordion.Panel>

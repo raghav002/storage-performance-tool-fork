@@ -30,6 +30,13 @@ type artifactKind struct {
 // artifactKinds is the allow-list of SPT result suffixes the dashboard may offer.
 // Order is display preference within a kind; kind decides the UI group label.
 var artifactKinds = []artifactKind{
+	{"delete.metrics.total.csv", "csv", "Delete request and object totals"},
+	{"delete.requests.csv", "csv", "Delete requests"},
+	{"delete.objects.csv", "csv", "Delete object outcomes"},
+	{"delete.verification.csv", "csv", "Delete verification"},
+	{"items.csv", "csv", "Object inventory"},
+	{"verify-input.csv", "csv", "Frozen selection inventory"},
+	{"delete.complete.json", "other", "Delete artifact completion"},
 	{constants.ResultsArtifactSuffixMetricsTotal, "csv", "Metrics totals (CSV)"},
 	{constants.ResultsArtifactSuffixMetrics, "csv", "Metrics samples (CSV)"},
 	{constants.ResultsArtifactSuffixMetricsThreshold, "csv", "Threshold metrics (CSV)"},
@@ -51,6 +58,15 @@ const (
 
 func classifyArtifact(name string) (kind, label string, ok bool) {
 	lower := strings.ToLower(name)
+	if lower == "verify-input.csv" {
+		return "csv", "Frozen selection inventory", true
+	}
+	if lower == "items.csv" {
+		return "csv", "Object inventory", true
+	}
+	if lower == "delete.complete.json" {
+		return artifactKindOther, "Delete artifact completion", true
+	}
 	if strings.HasPrefix(lower, constants.ResultsSummaryFilePrefix) && strings.HasSuffix(lower, constants.ResultsSummaryFileSuffix) {
 		return artifactKindSummary, "Results summary", true
 	}

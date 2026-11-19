@@ -96,7 +96,7 @@ func TestMetricsFilesSelection(t *testing.T) {
 			} {
 				t.Run(mode.name, func(t *testing.T) {
 					a := &app{}
-					path, aggregate := a.metricsFiles(dir, mode.active)
+					path, aggregate := a.metricsFiles(dir, mode.active, driverWriteVerify)
 					want := ""
 					if mode.want != "" {
 						want = filepath.Join(dir, mode.want)
@@ -132,7 +132,7 @@ func TestMetricsFileSelectionControlsRates(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			a := &app{}
-			path, aggregate := a.metricsFiles(dir, tt.active)
+			path, aggregate := a.metricsFiles(dir, tt.active, driverWriteVerify)
 			if path != filepath.Join(dir, tt.file) || aggregate != tt.aggregate {
 				t.Fatalf("wrong source or mode: %q, aggregate %v", path, aggregate)
 			}

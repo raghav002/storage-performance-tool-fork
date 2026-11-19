@@ -1,6 +1,7 @@
 import { Button, Code, Text, Title } from "@mantine/core";
 import type { Driver, Options, RunMode } from "../../types";
 import { formatNumber as fmt } from "../../utils/metrics";
+import { DeleteReview } from "./DeleteReview";
 import { expertCommand, type ExpertDraft } from "./configuration";
 
 export function RunReview({
@@ -30,8 +31,12 @@ export function RunReview({
     <>
       <div className="p-lg bg-surface-review rounded-md mb-lg">
         <Title order={2}>
-          {driver === "mock" ? "Mock driver" : "Write + verify"} ·{" "}
-          {mode === "expert" ? "Expert" : "Guided"} · {clients} client machine
+          {config.workload === "delete"
+            ? "Delete"
+            : driver === "mock"
+              ? "Mock driver"
+              : "Write + verify"}{" "}
+          · {mode === "expert" ? "Expert" : "Guided"} · {clients} client machine
           {clients === 1 ? "" : "s"}
         </Title>
         <dl className="grid grid-cols-2 gap-lg max-[47.5rem]:grid-cols-1">
@@ -59,16 +64,20 @@ export function RunReview({
               {config.threads}
             </dd>
           </div>
-          <div>
-            <dt className="text-muted text-caption/[inherit] mb-1.75">
-              Safety time limit
-            </dt>
-            <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
-              {config.max_runtime_seconds}s
-            </dd>
-          </div>
+          {config.workload !== "delete" && (
+            <div>
+              <dt className="text-muted text-caption/[inherit] mb-1.75">
+                Safety time limit
+              </dt>
+              <dd className="m-0 text-control/[inherit] font-semibold wrap-anywhere">
+                {config.max_runtime_seconds}s
+              </dd>
+            </div>
+          )}
         </dl>
-        {driver === "mock" ? (
+        {config.workload === "delete" ? (
+          <DeleteReview options={config.delete!} />
+        ) : driver === "mock" ? (
           <Text size="sm" className="mt-xs">
             Mock run: no data is written to S3. Results show SPT's mock driver,
             not storage performance.

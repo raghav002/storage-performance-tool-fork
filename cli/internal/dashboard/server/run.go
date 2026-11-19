@@ -48,7 +48,7 @@ func (a *app) handleRun(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	var opts options
 	if err := dec.Decode(&opts); err != nil {
-		writeJSON(w, 400, map[string]any{keyError: "Choose a supported object count, size, thread count, and maximum runtime."})
+		writeJSON(w, 400, map[string]any{keyError: "Choose supported dashboard workload settings."})
 		return
 	}
 	if err := ensureEOF(dec); err != nil {
@@ -238,6 +238,12 @@ func (a *app) validateOptions(o options) error {
 	if o.Driver != "" && o.Driver != driverS3 && o.Driver != driverMock {
 		return userError("Choose the S3 or mock storage driver.")
 	}
+	if err := a.validateWorkload(o); err != nil {
+		return err
+	}
+	if o.Workload == "delete" {
+		return a.validateDelete(o)
+	}
 	switch o.Mode {
 	case "", modeGuided:
 		return a.validateGuided(o)
@@ -339,6 +345,9 @@ func unlockClose(f *os.File) {
 }
 
 func (a *app) buildArgv(runDir, runID string, o options, target map[string]any) []string {
+	if o.Workload == "delete" {
+		return a.buildDeleteArgv(runDir, runID, o, target)
+	}
 	if o.Driver == driverMock {
 		// "spt run mock" selects the dummy-mock driver; it takes no endpoint, bucket, or credentials.
 		return []string{a.sptBin, "run", "mock", "--headless", "--object-count", strconv.Itoa(o.ObjectCount), "--object-size", o.ObjectSize, "--threads", strconv.Itoa(o.Threads), "--test-hosts", targetHosts(target), "--service-threads", strconv.Itoa(o.Threads), "--auto-terminate-seconds", strconv.Itoa(o.MaxRuntimeSeconds), "--label", sourceDashboard, "--results-dir", runDir}
@@ -352,6 +361,11 @@ func (a *app) childEnvironment(o options, target map[string]any) []string {
 		// Dashboard runs don't support NIC sets. SPT rejects a mock run that has one, and a NIC
 		// set would change an S3 run, so an operator's .env must not pass one to SPT.
 		"SPT_INTERFACES": "", "SPT_HOST_INTERFACES": ""}
+	if o.Workload == "delete" {
+		set["SPT_RDMA"] = "false"
+		set["SPT_PART_SIZE"] = ""
+		set["S3_BUCKETS"] = ""
+	}
 	for k, v := range set {
 		values[k] = v
 	}

@@ -44,6 +44,8 @@ function readExpertProfiles(): SavedExpertProfile[] {
           typeof item === "object" &&
           typeof item.name === "string" &&
           !!item.options &&
+          item.options.workload !== "delete" &&
+          !item.options.delete &&
           typeof item.options.object_count === "number" &&
           typeof item.options.object_size === "string" &&
           typeof item.options.threads === "number" &&

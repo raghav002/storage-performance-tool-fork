@@ -47,7 +47,9 @@ export function RunOverview({
             Current phase
           </span>
           <strong className="text-sm/[inherit] font-semibold">
-            {job?.phase || phaseName(m?.phase)}
+            {m?.workload_type === "delete"
+              ? phaseName(job?.phase ?? m.phase, "delete")
+              : job?.phase || phaseName(m?.phase)}
           </strong>
         </div>
         <div className="grid gap-1.75">

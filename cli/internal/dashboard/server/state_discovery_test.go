@@ -183,7 +183,7 @@ func TestStateOutputPhaseUsesNewestIntervalFile(t *testing.T) {
 				}
 				setDiscoveryTime(t, path, i+1)
 			}
-			if got := a.phaseFromOutput(filepath.Dir(dir)); got != test.want {
+			if got := a.phaseFromOutput(filepath.Dir(dir), driverWriteVerify); got != test.want {
 				t.Fatalf("phase = %q, want %q", got, test.want)
 			}
 		})
@@ -202,7 +202,7 @@ func TestStateOutputPhaseUsesNewestIntervalFile(t *testing.T) {
 					}
 				}
 			}
-			if got := a.phaseFromOutput(dir); got != "SPT setup" {
+			if got := a.phaseFromOutput(dir, driverWriteVerify); got != "SPT setup" {
 				t.Fatalf("phase = %q for %s", got, kind)
 			}
 		})

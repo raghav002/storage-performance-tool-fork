@@ -8,7 +8,7 @@ import {
   Title,
 } from "@mantine/core";
 import { useState } from "react";
-import type { Driver, Options, RunMode, State } from "../../types";
+import type { Driver, Options, RunMode, State, Workload } from "../../types";
 import { useStartRun } from "../../api/mutations";
 import { defaults } from "../../config";
 import { formatNumber as fmt } from "../../utils/metrics";
@@ -22,6 +22,7 @@ import {
 } from "../../utils/validation";
 import { fromDraft, toDraft, type ExpertDraft } from "./configuration";
 import { ExpertWorkspace } from "./ExpertWorkspace";
+import { DeleteFields, initialDeleteOptions } from "./DeleteFields";
 import { GuidedFields } from "./GuidedFields";
 import { RunReview } from "./RunReview";
 import { StorageConfiguration } from "./StorageConfiguration";
@@ -37,17 +38,26 @@ export function ConfigurePage({
   offline: boolean;
   onStarted: () => void;
 }) {
+  const [workload, setWorkload] = useState<Workload>("write-verify");
+  const [deletion, setDeletion] = useState<Options>(() =>
+    initialDeleteOptions(fallbackLimits),
+  );
   const [guided, setGuided] = useState<Options>({ ...defaults }),
     [draft, setDraft] = useState<ExpertDraft>(() => toDraft(defaults)),
     [review, setReview] = useState(false),
-    [storageDirty, setStorageDirty] = useState(false),
-    [driver, setDriver] = useState<Driver>("s3");
+    [storageDirty, setStorageDirty] = useState(false);
+  const driver: Driver = workload === "mock" ? "mock" : "s3";
   const startMutation = useStartRun();
   const busy = startMutation.isPending;
   const error = startMutation.error?.message ?? "";
   const limits = state?.limits ?? fallbackLimits;
   const config: Options = {
-    ...(mode === "expert" ? fromDraft(draft) : { ...guided, mode: "guided" }),
+    ...(workload === "delete"
+      ? deletion
+      : mode === "expert"
+        ? fromDraft(draft)
+        : { ...guided, mode: "guided" }),
+    workload,
     ...(driver === "mock" ? { driver } : {}),
   };
   const errors: OptionErrors = validateOptions(config, limits);
@@ -60,6 +70,7 @@ export function ConfigurePage({
   if (mode !== previousMode) {
     setPreviousMode(mode);
     setReview(false);
+    if (mode === "expert" && workload === "delete") setWorkload("write-verify");
   }
   const clients = state?.storage?.hosts.length ?? 1;
   const { verified, targetReady } = driverReadiness(
@@ -86,8 +97,9 @@ export function ConfigurePage({
       </span>
       <Title order={1}>Configure a run</Title>
       <Text className="mt-compact mb-section">
-        Write test objects, read them back to verify integrity, then clean up
-        the run’s objects.
+        {workload === "delete"
+          ? "Create test objects, then measure how quickly SPT deletes them."
+          : "Write test objects, read them back to verify integrity, then clean up the run’s objects."}
       </Text>
       {state?.job?.status === "running" && (
         <Alert role="note">
@@ -120,22 +132,30 @@ export function ConfigurePage({
           {review ? "Review your run" : "Workload configuration"}
         </Title>
         <Radio.Group
-          name="driver"
-          label="Storage driver"
+          name="workload"
+          label="Workload"
           labelProps={{ className: "sr-only" }}
-          value={driver}
+          value={workload}
           disabled={busy}
           onChange={(value) => {
-            setDriver(value as Driver);
+            setWorkload(value as Workload);
+            if (value === "delete") setDeletion(initialDeleteOptions(limits));
             setReview(false);
           }}
         >
           <div className="my-comfortable grid grid-cols-[repeat(auto-fit,minmax(min(15rem,100%),1fr))] gap-sm">
             <Radio
-              value="s3"
+              value="write-verify"
               label="S3 write + verify"
               description="Writes, reads back, and cleans up objects in the configured bucket."
             />
+            {mode === "guided" && (
+              <Radio
+                value="delete"
+                label="Delete"
+                description="Creates its own test objects, then measures deletion. Existing data is not selected."
+              />
+            )}
             <Radio
               value="mock"
               label="Mock driver"
@@ -178,11 +198,20 @@ export function ConfigurePage({
               }}
             >
               <Text size="sm" className="my-comfortable">
-                {mode === "expert"
-                  ? "Expert mode: enter any values within the server's limits."
-                  : "Guided mode: choose from preset sizes for short, safe runs. Switch to Expert in the top bar for custom values."}
+                {workload === "delete"
+                  ? "Guided Delete: choose preset settings for a finite test."
+                  : mode === "expert"
+                    ? "Expert mode: enter any values within the server's limits."
+                    : "Guided mode: choose from preset sizes for short, safe runs. Switch to Expert in the top bar for custom values."}
               </Text>
-              {mode === "expert" ? (
+              {workload === "delete" ? (
+                <DeleteFields
+                  config={deletion}
+                  setConfig={setDeletion}
+                  errors={errors}
+                  limits={limits}
+                />
+              ) : mode === "expert" ? (
                 <ExpertWorkspace
                   draft={draft}
                   setDraft={setDraft}
@@ -212,7 +241,12 @@ export function ConfigurePage({
                 <strong>{fmt(totalBytes / 1048576, 2)} MiB</strong>
                 {mode === "expert" &&
                   ` of ${formatBytes(limits.expert.max_total_bytes)} allowed`}{" "}
-                · Unique prefix · Best effort cleanup
+                · Unique prefix ·{" "}
+                {workload === "delete"
+                  ? config.delete?.cleanup
+                    ? "Residual cleanup enabled"
+                    : "Residual cleanup off"
+                  : "Best effort cleanup"}
               </Alert>
               <Button variant="filled" type="submit" disabled={!valid}>
                 Review run

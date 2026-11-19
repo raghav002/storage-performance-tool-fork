@@ -31,6 +31,7 @@ import {
   formatNumber as fmt,
   numeric,
   phaseCode,
+  rowPhase,
   phaseName,
   utc,
 } from "../utils/metrics";
@@ -119,7 +120,7 @@ export function Charts({
     const rows = history
       .filter(
         (r) =>
-          phaseCode(r.op_type) === phase &&
+          rowPhase(r, m.workload_type) === phase &&
           Number.isFinite(Date.parse(r.timestamp ?? "")),
       )
       .sort((a, b) => Date.parse(a.timestamp!) - Date.parse(b.timestamp!));
@@ -136,7 +137,14 @@ export function Charts({
       p50: numeric(r.p50_latency_us),
       p99: numeric(r.latency_p99_us),
     }));
-  }, [m.chart_samples, m.is_aggregate, m.samples, phase, startedAt]);
+  }, [
+    m.chart_samples,
+    m.is_aggregate,
+    m.samples,
+    m.workload_type,
+    phase,
+    startedAt,
+  ]);
   const [mode, setMode] = useState<"timeline" | "summary">("timeline"),
     [cleanup, setCleanup] = useState(false),
     [inspection, setInspection] = useState<{
@@ -203,7 +211,11 @@ export function Charts({
     });
   }
   const summaries = (m.phase_summaries ?? []).filter(
-    (r) => cleanup || phaseCode(r.phase) !== "DELETE",
+    (r) =>
+      cleanup ||
+      (m.workload_type === "delete"
+        ? rowPhase(r, m.workload_type) !== "CLEANUP"
+        : phaseCode(r.phase) !== "DELETE"),
   );
   return (
     <Paper
@@ -220,7 +232,7 @@ export function Charts({
           </Title>
           <Text size="caption" className="mt-1.25 max-[47.5rem]:max-w-62.5">
             {display === "timeline"
-              ? `${phaseName(phase)} phase · ${samples.length} recorded samples`
+              ? `${phaseName(phase, m.workload_type)} phase · ${samples.length} recorded samples`
               : "Phase summary"}
           </Text>
         </div>
@@ -430,20 +442,41 @@ export function Charts({
             </Alert>
           )}
           <div className="mt-lg grid gap-lg">
-            {graphs.map((g) => (
-              <TrendChart
-                key={g.key}
-                samples={shown}
-                title={g.label}
-                unit={g.unit}
-                series={g.series}
-                start={start}
-                end={end}
-                active={inspection ? active : null}
-                pinned={inspection?.pinned ?? false}
-                onInspect={inspect}
-              />
-            ))}
+            {graphs
+              .filter(
+                (g) =>
+                  !(
+                    m.workload_type === "delete" &&
+                    phase !== "SEED" &&
+                    g.key === "bandwidth"
+                  ),
+              )
+              .map((g) => (
+                <TrendChart
+                  key={g.key}
+                  samples={shown}
+                  title={
+                    m.workload_type === "delete" &&
+                    phase === "DELETE" &&
+                    g.key === "throughput"
+                      ? "Requests per second"
+                      : g.label
+                  }
+                  unit={
+                    m.workload_type === "delete" &&
+                    phase === "DELETE" &&
+                    g.key === "throughput"
+                      ? "requests/s"
+                      : g.unit
+                  }
+                  series={g.series}
+                  start={start}
+                  end={end}
+                  active={inspection ? active : null}
+                  pinned={inspection?.pinned ?? false}
+                  onInspect={inspect}
+                />
+              ))}
           </div>
           <Paper p="md" radius="md" bg="var(--spt-surface-subtle)" mt="md">
             <div className="mb-md flex flex-wrap items-center justify-between gap-sm">
@@ -503,8 +536,8 @@ export function Charts({
             </Text>
             <Text size="xs" c="var(--spt-text-subtle)" className="mt-xs">
               Hover to inspect. Click a plot or use the slider to hold a sample;
-              Escape clears selection. All three plots share the time window and
-              cursor. Missing values remain gaps.
+              Escape clears selection. Plots share the time window and cursor.
+              Missing values remain gaps.
             </Text>
           </Paper>
         </>
@@ -519,6 +552,7 @@ export function Charts({
             <div className="my-lg grid grid-cols-1 gap-md min-[93.75rem]:grid-cols-3">
               {graphs.map((graph) => (
                 <PhaseSummaryChart
+                  workload={m.workload_type}
                   key={graph.key}
                   summaries={summaries}
                   field={graph.summaryField}

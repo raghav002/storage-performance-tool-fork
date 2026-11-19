@@ -33,12 +33,16 @@ function loadLimits(key: string): Limits {
 export function PerformanceLimits(props: Props) {
   const { state } = props;
   const o = state.job?.options ?? defaults;
-  const key = [
-    "spt-performance-limits-v1",
-    `${state.target.endpoint_label ?? ""}/${state.target.bucket ?? ""}`,
-    o.object_size,
-    o.threads,
-  ].join(":");
+  const key =
+    [
+      "spt-performance-limits-v1",
+      `${state.target.endpoint_label ?? ""}/${state.target.bucket ?? ""}`,
+      o.object_size,
+      o.threads,
+    ].join(":") +
+    (o.workload === "delete"
+      ? `:delete:${o.delete?.batch_size ?? "unknown"}:${props.phase}`
+      : "");
   return (
     <Accordion mb="panel">
       <LimitsForm key={key} {...props} storageKey={key} />
@@ -60,11 +64,14 @@ function LimitsForm({
       latency: limits.latency === null ? "" : String(limits.latency),
     })),
     [message, setMessage] = useState("");
+  const isDelete =
+    (o.workload === "delete" || state.metrics?.workload_type === "delete") &&
+    phase !== "SEED";
   const checks = [
     {
       key: "iops" as const,
       value: numeric(row?.interval_iops),
-      label: "IOPS",
+      label: isDelete ? "requests" : "IOPS",
       minimum: true,
     },
     {
@@ -79,7 +86,7 @@ function LimitsForm({
       label: "P50 latency",
       minimum: false,
     },
-  ];
+  ].filter((c) => !isDelete || c.key !== "bandwidth");
   function save() {
     const parsed = Object.fromEntries(
       Object.entries(draft).map(([k, v]) => [
@@ -108,8 +115,9 @@ function LimitsForm({
       <Accordion.Control>
         Performance limits{" "}
         <span className="text-xs/[inherit] font-normal ml-sm text-muted max-[47.5rem]:block max-[47.5rem]:mt-xs max-[47.5rem]:mr-0 max-[47.5rem]:mb-0 max-[47.5rem]:ml-md">
-          {phaseName(phase)} ·{" "}
-          {checks.filter((c) => limits[c.key] !== null).length}/3 set
+          {phaseName(phase, state.metrics?.workload_type ?? o.workload)} ·{" "}
+          {checks.filter((c) => limits[c.key] !== null).length}/{checks.length}{" "}
+          set
         </span>
       </Accordion.Control>
       <Accordion.Panel>
@@ -137,7 +145,9 @@ function LimitsForm({
                 className="min-w-0"
                 label={`${c.minimum ? "Minimum" : "Maximum"} ${c.label} (${
                   c.key === "iops"
-                    ? "ops/s"
+                    ? isDelete
+                      ? "requests/s"
+                      : "ops/s"
                     : c.key === "bandwidth"
                       ? "MiB/s"
                       : "µs"

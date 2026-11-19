@@ -54,11 +54,13 @@ var (
 
 type options struct {
 	// Mode is "guided" or "expert"; an empty mode is treated as guided.
-	Mode              string `json:"mode,omitempty"`
-	ObjectCount       int    `json:"object_count"`
-	ObjectSize        string `json:"object_size"`
-	Threads           int    `json:"threads"`
-	MaxRuntimeSeconds int    `json:"max_runtime_seconds"`
+	Mode              string         `json:"mode,omitempty"`
+	Workload          string         `json:"workload,omitempty"`
+	Delete            *deleteOptions `json:"delete,omitempty"`
+	ObjectCount       int            `json:"object_count"`
+	ObjectSize        string         `json:"object_size"`
+	Threads           int            `json:"threads"`
+	MaxRuntimeSeconds int            `json:"max_runtime_seconds"`
 	// Driver is "s3" (default, write + verify against the configured bucket) or
 	// "mock" (SPT's dummy-mock storage driver; no S3 endpoint or credentials).
 	Driver string `json:"driver,omitempty"`

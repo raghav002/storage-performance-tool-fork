@@ -22,10 +22,12 @@ import {
   formatMetric,
   numeric,
   phaseCode,
+  rowPhase,
   phaseName,
 } from "../../utils/metrics";
 import { DashboardHeader } from "./DashboardHeader";
 import { RunOverview } from "./RunOverview";
+import { DeleteOutcome } from "./DeleteOutcome";
 import { RunRecord } from "./RunRecord";
 
 // How long "Stopping…" may last before the page suggests checking the VM.
@@ -94,22 +96,25 @@ export function DashboardPage({
   const summaries = m?.phase_summaries ?? [];
   const history =
     m?.chart_samples ?? (m?.is_aggregate ? [] : (m?.samples ?? []));
+  const isDelete =
+    m?.workload_type === "delete" || job?.options?.workload === "delete";
+  const workload = isDelete ? "delete" : m?.workload_type;
   const available: string[] = [
     ...new Set([
-      ...summaries.map((r) => phaseCode(r.phase)),
-      ...history.map((r) => phaseCode(r.op_type)),
-      ...(m?.samples ?? []).map((r) => phaseCode(r.op_type)),
+      ...summaries.map((r) => rowPhase(r, workload)),
+      ...history.map((r) => rowPhase(r, workload)),
+      ...(m?.samples ?? []).map((r) => rowPhase(r, workload)),
     ]),
   ];
   const [phase, setPhase] = useState<string>(
-    phaseCode(m?.is_active ? m.phase : "CREATE"),
+    phaseCode(m?.is_active ? m.phase : isDelete ? "DELETE" : "CREATE"),
   );
   const selectedPhase = available.includes(phase)
     ? phase
-    : (available[0] ?? "CREATE");
-  const final = summaries.find((r) => phaseCode(r.phase) === selectedPhase);
+    : (available[0] ?? (isDelete ? "DELETE" : "CREATE"));
+  const final = summaries.find((r) => rowPhase(r, workload) === selectedPhase);
   const latest = [...(m?.samples ?? []), ...history]
-    .filter((r) => phaseCode(r.op_type) === selectedPhase)
+    .filter((r) => rowPhase(r, workload) === selectedPhase)
     .sort(
       (a, b) => Date.parse(a.timestamp ?? "") - Date.parse(b.timestamp ?? ""),
     )
@@ -140,15 +145,20 @@ export function DashboardPage({
             ? "Run interrupted"
             : job?.status === "unknown"
               ? "Run outcome needs review"
-              : failureCount !== null && failureCount > 0
-                ? "Failed operations reported"
-                : job?.status === "running"
-                  ? "Benchmark in progress"
-                  : job?.status === "completed"
-                    ? "Run completed"
-                    : m
-                      ? "Recorded SPT results"
-                      : "Ready for your first benchmark";
+              : isDelete &&
+                  job?.status === "completed" &&
+                  m?.delete_detail?.failure_policy.outcome ===
+                    "completed_within_failure_budget"
+                ? "Deletion completed within failure budget"
+                : failureCount !== null && failureCount > 0
+                  ? "Failed operations reported"
+                  : job?.status === "running"
+                    ? "Benchmark in progress"
+                    : job?.status === "completed"
+                      ? "Run completed"
+                      : m
+                        ? "Recorded SPT results"
+                        : "Ready for your first benchmark";
   const has = (key: string) => selected.includes(key);
   return (
     <>
@@ -218,6 +228,14 @@ export function DashboardPage({
             selectedPhase={selectedPhase}
           />
           <RunWarnings warnings={m?.warnings} />
+          {isDelete && (
+            <DeleteOutcome
+              pending={job?.status === "running"}
+              detail={m?.delete_detail ?? row?.delete_detail}
+              error={m?.delete_detail_error}
+            />
+          )}
+
           {m && (
             <>
               <div className="flex flex-wrap gap-lg items-center mb-comfortable">
@@ -227,7 +245,7 @@ export function DashboardPage({
                   onChange={(e) => setPhase(e.target.value)}
                   data={available.map((p) => ({
                     value: p,
-                    label: phaseName(p),
+                    label: phaseName(p, workload),
                   }))}
                   className="min-w-40"
                 />
@@ -241,13 +259,17 @@ export function DashboardPage({
               {has("cards") && (
                 <div className="grid grid-cols-4 gap-md mb-panel max-[47.5rem]:grid-cols-2 max-[47.5rem]:gap-sm">
                   <MetricCard
-                    label={`${phaseName(selectedPhase)} IOPS`}
+                    label={`${phaseName(selectedPhase, workload)} ${isDelete && selectedPhase === "DELETE" ? "requests" : "IOPS"}`}
                     value={formatMetric(
                       row?.interval_iops,
                       2,
                       m.is_active ? m.data_status : undefined,
                     )}
-                    unit="ops/s"
+                    unit={
+                      isDelete && selectedPhase === "DELETE"
+                        ? "requests/s"
+                        : "ops/s"
+                    }
                     detail={
                       !m.is_active && final
                         ? "Average successful operations per second"
@@ -279,13 +301,17 @@ export function DashboardPage({
                     accent="purple"
                   />
                   <MetricCard
-                    label="Successful operations"
+                    label={
+                      isDelete && selectedPhase === "DELETE"
+                        ? "Successful requests"
+                        : "Successful operations"
+                    }
                     value={formatMetric(
                       row?.cumulative_ops,
                       0,
                       m.is_active ? m.data_status : undefined,
                     )}
-                    detail={`In ${phaseName(selectedPhase).toLowerCase()} phase · ${formatMetric(row?.count_failed, 0, m.is_active ? m.data_status : undefined)} failed`}
+                    detail={`In ${phaseName(selectedPhase, workload).toLowerCase()} phase · ${formatMetric(row?.count_failed, 0, m.is_active ? m.data_status : undefined)} failed`}
                     accent="orange"
                   />
                 </div>

@@ -169,12 +169,20 @@ export function runWorkloadType(
   job?: Pick<Job, "options"> | null,
 ): string | undefined {
   if (metrics?.workload_type) return metrics.workload_type;
-  return job?.options?.driver === "mock" ? "mock" : undefined;
+  return (
+    job?.options?.workload ??
+    (job?.options?.driver === "mock" ? "mock" : undefined)
+  );
 }
 
 /** True when optional shape fields agree (only compared when both sides define them). */
 export function sameRunShape(a: CatalogRun, b: CatalogRun): boolean {
   if (a.workload !== b.workload) return false;
+  if (
+    a.workload === "delete" &&
+    (!a.delete_identity || a.delete_identity !== b.delete_identity)
+  )
+    return false;
   if (a.object_size !== b.object_size) return false;
   if (a.threads !== b.threads) return false;
   if (

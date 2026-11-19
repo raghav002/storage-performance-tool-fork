@@ -43,6 +43,10 @@ export const expertPresets: { label: string; options: Options }[] = [
   },
 ];
 export function toDraft(o: Options): ExpertDraft {
+  if (o.workload === "delete" || o.delete)
+    throw new Error(
+      "Delete settings cannot be loaded into the Write + verify Expert form.",
+    );
   const { amount, unit } = splitSize(o.object_size);
   return {
     object_count: String(o.object_count),

@@ -1,13 +1,22 @@
 // Client-side mirrors of the dashboard server's input rules (main.go, storage.go).
 // They give immediate feedback only; the server validates every request again.
-import type { Options, RunLimits } from "../types";
+import type { DeleteLimits, Options, RunLimits } from "../types";
 
 export const sizeUnits = { KiB: 10, MiB: 20, GiB: 30 } as const;
 export type SizeUnit = keyof typeof sizeUnits;
 const sizePattern = /^([1-9][0-9]{0,6})(KiB|MiB|GiB)$/;
 
 // Same values the server publishes; used until the first /api/state arrives.
+export const deleteLimits: DeleteLimits = {
+  object_sizes: ["1KiB", "4KiB", "64KiB"],
+  batch_sizes: [1, 10, 100, 1000],
+  verification_timeout_seconds: [10, 30, 60],
+  max_failed_objects: [0, 10, 100, 100000],
+  max_failure_percent: [0, 1, 5, 10, 100],
+  failure_budget_grace_seconds: [0, 10, 30, 60],
+};
 export const fallbackLimits: RunLimits = {
+  delete: deleteLimits,
   guided: {
     object_counts: [10, 25, 50, 100, 250, 320],
     object_sizes: ["64KiB", "256KiB", "1MiB", "4MiB", "16MiB"],
@@ -51,6 +60,55 @@ export type OptionErrors = Partial<Record<keyof Options, string>>;
 
 export function validateOptions(o: Options, limits: RunLimits): OptionErrors {
   const errors: OptionErrors = {};
+  if (o.workload === "delete") {
+    const d = limits.delete ?? deleteLimits;
+    if (o.mode === "expert" || o.driver === "mock")
+      errors.workload = "Delete requires Guided mode and S3.";
+    if (!limits.guided.object_counts.includes(o.object_count))
+      errors.object_count = "Choose a listed object count.";
+    if (!d.object_sizes.includes(o.object_size))
+      errors.object_size = "Choose a listed Delete object size.";
+    if (!limits.guided.threads.includes(o.threads))
+      errors.threads = "Choose a listed thread count.";
+    const size = parseSize(o.object_size);
+    if (size !== null && o.object_count * size > limits.expert.max_total_bytes)
+      errors.object_count = "Test data exceeds the configured maximum.";
+    if (o.max_runtime_seconds !== 0)
+      errors.max_runtime_seconds = "Count-based Delete has no runtime limit.";
+    const x = o.delete;
+    if (
+      !x ||
+      !d.batch_sizes.includes(x.batch_size) ||
+      !d.verification_timeout_seconds.includes(x.verification_timeout_seconds)
+    )
+      errors.delete = "Choose listed Delete settings.";
+    else if (
+      (x.max_failed_objects === undefined) ===
+      (x.max_failure_percent === undefined)
+    )
+      errors.delete = "Choose either a failed-object count or a percentage.";
+    else if (
+      x.max_failed_objects !== undefined &&
+      !d.max_failed_objects.includes(x.max_failed_objects)
+    )
+      errors.delete = "Choose a listed failed-object count.";
+    else if (
+      x.max_failure_percent !== undefined &&
+      !d.max_failure_percent.includes(x.max_failure_percent)
+    )
+      errors.delete = "Choose a listed failure percentage.";
+    else if (
+      x.failure_budget_grace_seconds !== undefined &&
+      (!(x.max_failure_percent !== undefined && x.max_failure_percent > 0) ||
+        !d.failure_budget_grace_seconds.includes(
+          x.failure_budget_grace_seconds,
+        ))
+    )
+      errors.delete = "Grace requires a positive failure percentage.";
+    return errors;
+  }
+  if (o.delete) errors.delete = "Delete settings require Delete workload.";
+
   if (o.mode === "expert") {
     const e = limits.expert;
     const inRange = (v: number, r: { min: number; max: number }) =>

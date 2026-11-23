@@ -6,6 +6,7 @@ import { useSavedRun, useServerState } from "./api/queries";
 import { AppSidebar } from "./components/layout/AppSidebar";
 import { AppHeader } from "./components/layout/AppHeader";
 import { AppFooter } from "./components/layout/AppFooter";
+import { HelpAssistant } from "./components/HelpAssistant";
 import { ConfigurePage } from "./pages/configure/ConfigurePage";
 import { HistoryPage } from "./pages/history/HistoryPage";
 import { ConnectPage } from "./pages/connect/ConnectPage";
@@ -178,6 +179,7 @@ export default function App() {
         </main>
         <AppFooter state={state} received={received} />
       </div>
+      <HelpAssistant />
     </div>
   );
 }

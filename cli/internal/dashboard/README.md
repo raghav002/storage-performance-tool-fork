@@ -142,6 +142,14 @@ The three numbers can be changed in the compare view for one comparison, or as d
 
 The live dashboard has a collapsed **Errors and logs** panel, and catalog **Details** shows a run's logs. Both filter by level (All, WARN+, ERROR), show at most the last 200 matching lines (up to 2,000 via the API), and name the files they read. While a run is active the live view shows the dashboard-captured console output; afterwards it reads SPT's `*.messages.log` and `*.errors.log` from the results folder. Values that look like credentials are redacted before they leave the server.
 
+## Help assistant
+
+The **?** button in the bottom-right corner opens a Help panel. Type a question in your own words; the panel shows up to three matching questions from a prewritten bank under **Did you mean?**, and picking one shows its prewritten answer and the README section it comes from. If nothing matches closely enough, **Browse all questions** lists the whole bank.
+
+Matching runs entirely in the browser and sends nothing to the server. It isn't a language model: each question and its alternate phrasings become TF-IDF vectors over words, word pairs and character trigrams (after stopword removal, light stemming and a small synonym list), and the panel shows entries whose cosine similarity to the typed question is at least the threshold. It matches wording, not meaning, so a question with none of the bank's words won't be found.
+
+To add or change an entry, edit `frontend/src/help/faq.ts` (keep answers in step with this README), add one or two held-out phrasings for it to `frontend/src/help/faq.eval.ts`, run `npm test`, and rebuild `server/index.html`. The tests require at least 90% of held-out questions to get the right suggestion and off-topic questions to get none. If they fail after a change, recalibrate `HELP_THRESHOLD` as described next to it.
+
 ## HTTP API
 
 All endpoints answer only on loopback with a loopback `Host` header; any other host gets `403`.

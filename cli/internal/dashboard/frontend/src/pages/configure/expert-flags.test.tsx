@@ -79,13 +79,18 @@ const state = {
   },
 } as unknown as State;
 
-function renderExpert(mode: "guided" | "expert" = "expert") {
+function renderExpert(
+  mode: "guided" | "expert" = "expert",
+  // Completed runs that GET /api/runs reports, for the Previous run picker.
+  history: unknown[] = [],
+) {
   const posts: unknown[] = [];
   apiClient.defaults.adapter = async (config) => {
     if (config.url === "/api/runs" && config.method === "post")
       posts.push(JSON.parse(String(config.data)));
+    const listing = config.url === "/api/runs" && config.method === "get";
     return {
-      data: { job: null },
+      data: listing ? { runs: history } : { job: null },
       status: 202,
       statusText: "",
       headers: { "content-type": "application/json" },
@@ -349,6 +354,42 @@ describe("expert flag groups", () => {
         }) as HTMLInputElement
       ).value,
     ).toBe("50");
+  });
+
+  it("duplicates a previous run's workload and flags", async () => {
+    renderExpert("expert", [
+      {
+        run_id: "mt-dashboard-20261120T100000-abcd",
+        status: "completed",
+        options: {
+          mode: "expert",
+          object_count: 50,
+          object_size: "1MiB",
+          threads: 2,
+          max_runtime_seconds: 120,
+          workload: "write",
+          // A saved run carries only its changed flags; an unknown one is dropped.
+          flags: { checksum: "crc32", cleanup: false, "secret-key": "abc" },
+        },
+        phase_summaries: [],
+      },
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: /^Previous run/ }));
+    expect(
+      await screen.findByRole("option", {
+        name: "mt-dashboard-20261120T100000-abcd · Write",
+      }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Duplicate settings" }));
+    expect(radio(/^S3 write$/).checked).toBe(true);
+    expect(spin(/^Maximum objects/).value).toBe("50");
+    expect(
+      within(tags("object-data", "write")).getByText("1 changed"),
+    ).toBeTruthy();
+    expect(
+      within(tags("cleanup", "write")).getByText("1 changed"),
+    ).toBeTruthy();
+    expect(screen.getByText(/^Write run settings loaded/)).toBeTruthy();
   });
 
   it("keeps each workload's flags when switching drivers", async () => {

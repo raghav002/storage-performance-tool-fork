@@ -15,6 +15,18 @@ export const workloadName = (w: Workload) =>
 // The storage driver a workload runs on: only mock uses SPT's mock driver.
 export const driverForWorkload = (w: Workload): Driver =>
   w === "mock" ? "mock" : "s3";
+// The workload a run request (or a saved run's options) starts, read the same
+// way the server reads it: the mock driver wins, then "workload", then the
+// write-verify default.
+export const workloadOfRequest = (
+  o: Pick<Options, "driver" | "workload"> | undefined,
+): Workload =>
+  o?.driver === "mock"
+    ? "mock"
+    : o?.workload === "write"
+      ? "write"
+      : "write-verify";
+
 // The run request fields that pick a workload: write-verify is the default, so
 // it sends neither; mock is chosen by its driver.
 export const workloadRequest = (

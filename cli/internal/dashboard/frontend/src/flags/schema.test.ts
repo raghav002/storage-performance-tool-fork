@@ -7,6 +7,7 @@ import {
   flagGroups,
   flagsFor,
   shortAliases,
+  workloadOfRequest,
   workloadRequest,
   type FlagDef,
   type Workload,
@@ -207,5 +208,9 @@ describe("expert flag schema", () => {
     expect(workloadRequest("write-verify")).toEqual({});
     expect(workloadRequest("write")).toEqual({ workload: "write" });
     expect(workloadRequest("mock")).toEqual({ driver: "mock" });
+    // Reading a request (or a saved run's options) back gives the same workload.
+    for (const w of workloads)
+      expect(workloadOfRequest(workloadRequest(w))).toBe(w);
+    expect(workloadOfRequest(undefined)).toBe("write-verify");
   });
 });

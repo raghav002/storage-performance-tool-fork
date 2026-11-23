@@ -303,7 +303,15 @@ export function ExpertWorkspace({
               )}
             </div>
           )}
-          {start === "previous" && <PreviousRunPicker setDraft={setDraft} />}
+          {start === "previous" && (
+            <PreviousRunPicker
+              onDuplicate={(run) => {
+                setWorkload(run.workload);
+                setDraft(run.draft);
+                setAdvanced(run.workload, run.advanced);
+              }}
+            />
+          )}
           {start === "command" && (
             <div>
               <Textarea

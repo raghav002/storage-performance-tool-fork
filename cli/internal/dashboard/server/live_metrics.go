@@ -560,15 +560,12 @@ func (a *app) collectLiveHistory(runID string) {
 
 // jobWorkload names the SPT workload a dashboard job runs, from its saved options.
 func jobWorkload(job map[string]any) string {
-	driver := ""
-	switch o := job[keyOptions].(type) {
+	var o options
+	switch saved := job[keyOptions].(type) {
 	case options:
-		driver = o.Driver
+		o = saved
 	case map[string]any:
-		driver = str(o["driver"])
+		o.Driver, o.Workload = str(saved["driver"]), str(saved["workload"])
 	}
-	if driver == driverMock {
-		return "mock"
-	}
-	return driverWriteVerify
+	return runWorkload(o)
 }

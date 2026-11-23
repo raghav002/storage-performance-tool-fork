@@ -2,12 +2,27 @@ import { Button, NativeSelect } from "@mantine/core";
 import { useState } from "react";
 import type { Options } from "../../types";
 import { useRuns } from "../../api/queries";
+import { cleanAdvanced } from "../../flags/profiles";
+import {
+  workloadName,
+  workloadOfRequest,
+  type FlagValue,
+  type Workload,
+} from "../../flags/schema";
 import { toDraft, type ExpertDraft } from "./configuration";
 
+// A completed run's settings, as expert mode applies them: its workload, the
+// four core settings and every flag it ran with (the rest at their defaults).
+export type DuplicatedRun = {
+  workload: Workload;
+  draft: ExpertDraft;
+  advanced: Record<string, FlagValue>;
+};
+
 export function PreviousRunPicker({
-  setDraft,
+  onDuplicate,
 }: {
-  setDraft: (draft: ExpertDraft) => void;
+  onDuplicate: (run: DuplicatedRun) => void;
 }) {
   const history = useRuns();
   const previousRuns = (
@@ -44,7 +59,7 @@ export function PreviousRunPicker({
       >
         {previousRuns.map((r) => (
           <option key={r.run_id} value={r.run_id}>
-            {r.run_id}
+            {r.run_id} · {workloadName(workloadOfRequest(r.options))}
           </option>
         ))}
         {!previousRuns.length && <option value="">No runs available</option>}
@@ -56,9 +71,17 @@ export function PreviousRunPicker({
         onClick={() => {
           const selected = previousRuns.find((r) => r.run_id === previousID);
           if (selected?.options) {
-            setDraft(toDraft(selected.options as Options));
+            const workload = workloadOfRequest(selected.options);
+            // Saved flags are checked like a profile's: unknown, blocked or
+            // invalid values fall back to their defaults.
+            const advanced = cleanAdvanced(workload, selected.options.flags);
+            onDuplicate({
+              workload,
+              draft: toDraft(selected.options as Options),
+              advanced,
+            });
             setMessage(
-              "Previous run settings loaded. Review them before running.",
+              `${workloadName(workload)} run settings loaded. Review them before running.`,
             );
           }
         }}

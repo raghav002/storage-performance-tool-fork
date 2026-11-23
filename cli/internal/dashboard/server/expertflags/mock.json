@@ -1,0 +1,39 @@
+{
+  "workload": "mock",
+  "groups": [
+    {
+      "id": "run-size",
+      "title": "Run size & limits",
+      "purpose": "How much work the run does and how long it may take.",
+      "flags": [
+        "object-count",
+        "object-size",
+        "threads",
+        "auto-terminate-seconds"
+      ]
+    },
+    {
+      "id": "cleanup",
+      "title": "Cleanup",
+      "purpose": "Add a mock delete phase after the create phase.",
+      "flags": [
+        {
+          "name": "cleanup",
+          "label": "Add a delete phase",
+          "help": "Exercise the delete step of the pipeline after creating objects.",
+          "default": false,
+          "alwaysPass": false
+        }
+      ]
+    },
+    {
+      "id": "distribution",
+      "title": "Distribution & engine",
+      "purpose": "How the client machines and the SPT engine share the load.",
+      "flags": [
+        "min-hosts",
+        "service-threads"
+      ]
+    }
+  ]
+}

@@ -6,7 +6,13 @@ import {
   type OptionErrors,
   type SizeUnit,
 } from "../../utils/validation";
+import { flagsFor, type CoreField } from "../../flags/schema";
 import type { ExpertDraft } from "./configuration";
+import { FlagHelp } from "./FlagHelp";
+
+// The core flags mean the same for every workload, so one description each.
+const coreHelp = (field: CoreField) =>
+  flagsFor("write-verify").find((f) => f.core === field)?.help ?? "";
 
 export function ExpertFields({
   draft,
@@ -27,7 +33,8 @@ export function ExpertFields({
     hint: string,
   ) => (
     <TextInput
-      label={label}
+      label={<FlagHelp help={coreHelp(key)}>{label}</FlagHelp>}
+      aria-description={coreHelp(key)}
       type="number"
       inputMode="numeric"
       min={range.min}
@@ -49,7 +56,7 @@ export function ExpertFields({
       )}
       <Input.Wrapper
         id="expert-object-size-amount"
-        label="Object size"
+        label={<FlagHelp help={coreHelp("object_size")}>Object size</FlagHelp>}
         error={errors.object_size}
         description={
           !errors.object_size
@@ -66,6 +73,7 @@ export function ExpertFields({
             step={1}
             value={draft.size_amount}
             aria-label="Object size amount"
+            aria-description={coreHelp("object_size")}
             error={!!errors.object_size}
             onChange={(ev) =>
               setDraft({ ...draft, size_amount: ev.target.value })

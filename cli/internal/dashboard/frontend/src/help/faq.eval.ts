@@ -1,0 +1,63 @@
+// Held-out questions for checking the help matcher. None of these appear in
+// faq.ts, so they measure how well rewording is handled. Only tests import
+// this file; it is not part of the dashboard bundle.
+
+/** [question a user might type, id of the entry that answers it] */
+export const onTopic: [string, string][] = [
+  ["how can i halt the benchmark that's running right now", "stop-run"],
+  ["abort current test", "stop-run"],
+  ["i stopped a run and now its results are missing", "stopped-run-deleted"],
+  ["does stopping a run delete its data", "stopped-run-deleted"],
+  ["run status says interrupted by dashboard", "stopped-vs-interrupted"],
+  ["meaning of stopped by user", "stopped-vs-interrupted"],
+  ["there is no stop button for my run", "stop-hidden"],
+  ["why can't i stop this run", "stop-hidden"],
+  ["stopping has been going for ages", "stop-slow"],
+  ["the run hangs while stopping", "stop-slow"],
+  ["guided mode vs expert mode", "guided-vs-expert"],
+  ["what object sizes can i pick in guided", "guided-vs-expert"],
+  ["raise the maximum number of threads", "change-limits"],
+  ["configure custom limits with a json file", "change-limits"],
+  ["workload settings are greyed out", "settings-locked"],
+  ["start run button won't work", "settings-locked"],
+  ["what does verifying the connection do", "verify-connection"],
+  ["verification keeps failing", "verify-connection"],
+  ["how do i add another load generating host", "client-machines"],
+  ["ssh password for client machine", "client-machines"],
+  ["test the dashboard without s3", "mock-driver"],
+  ["what's the dummy mock driver for", "mock-driver"],
+  ["port forward the dashboard over ssh", "ssh-tunnel"],
+  ["use the dashboard from my laptop", "ssh-tunnel"],
+  ["getting a 403 error", "loopback-403"],
+  ["forbidden open the dashboard through its ssh tunnel", "loopback-403"],
+  ["run the dashboard on port 9000", "dashboard-port"],
+  ["stop it from opening a browser", "dashboard-port"],
+  ["where do i put my s3 access key and secret", "credentials"],
+  ["which bucket does it use", "credentials"],
+  ["where does it save results", "storage-locations"],
+  ["location of the dashboard state directory", "storage-locations"],
+  ["see runs i started from the cli", "results-catalog"],
+  ["why is a run listed as malformed", "results-catalog"],
+  ["compare several runs", "compare-runs"],
+  ["pick a baseline run", "compare-runs"],
+  ["what does regressed mean", "regression-flags"],
+  ["why is a run not comparable", "regression-flags"],
+  ["attach to a running cli benchmark", "connect-active-run"],
+  ["monitor a test launched from the terminal", "connect-active-run"],
+  ["where are the error logs for a run", "run-logs"],
+  ["show warnings and errors", "run-logs"],
+  ["if i close the tab does the benchmark continue", "close-browser"],
+  ["what does ctrl+c do", "close-browser"],
+];
+
+/** Questions the bank cannot answer; they must get no suggestions. */
+export const offTopic: string[] = [
+  "what's the weather like tomorrow",
+  "how do I install kubernetes",
+  "tell me a joke",
+  "who won the football game",
+  "recommend a good pizza place",
+  "translate hello into french",
+  "what is the capital of australia",
+  "write me a poem about cats",
+];

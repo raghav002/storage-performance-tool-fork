@@ -46,10 +46,15 @@ const SYNONYM_GROUPS: Record<string, string[]> = {
   machine: ["host", "node", "client", "server", "vm"],
   start: ["launch", "begin", "kick"],
   log: ["logs", "error", "errors", "message"],
-  setting: ["option", "config", "configuration", "parameter", "limit"],
+  setting: ["option", "config", "configure", "configuration", "parameter"],
   dashboard: ["gui", "ui", "console", "page", "app"],
   compare: ["comparison", "diff", "versus", "vs"],
-  slow: ["stuck", "hang", "hanging", "forever", "long"],
+  slow: ["stuck", "hang", "hanging", "forever", "long", "ages"],
+  increase: ["raise", "bigger", "larger", "higher", "more", "allow"],
+  choose: ["pick", "select", "choice"],
+  local: ["laptop", "computer", "pc", "own"],
+  connect: ["attach", "monitor", "watch"],
+  store: ["save", "kept", "keep", "location", "located"],
 };
 
 /** Strips common English suffixes so word forms share one feature. */

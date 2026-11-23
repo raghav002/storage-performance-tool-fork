@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { defaults } from "../config";
 import {
   advancedDefaults,
   allRunFlags,
   blockedFlags,
   driverForWorkload,
+  findFlag,
   flagGroups,
   flagsFor,
   shortAliases,
@@ -21,61 +23,6 @@ const goSources = import.meta.glob("../../../../../cmd/*.go", {
   import: "default",
   eager: true,
 }) as Record<string, string>;
-
-// The shared flag files the dashboard server builds its allow-lists from
-// (server/expertflags/), read at test time.
-const flagFiles = import.meta.glob("../../../server/expertflags/*.json", {
-  import: "default",
-  eager: true,
-}) as Record<string, unknown>;
-const fileNamed = (name: string) =>
-  Object.entries(flagFiles).find(([path]) => path.endsWith(`/${name}`))?.[1];
-
-type FileFlag = Record<string, unknown> & { name: string };
-type FileGroup = {
-  id: string;
-  title: string;
-  purpose: string;
-  flags: FileFlag[];
-};
-
-// A workload's sections as the shared files describe them: each entry's
-// catalog definition with the workload's own fields laid over it.
-function fileGroups(workload: Workload): FileGroup[] {
-  const catalog = fileNamed("flags.json") as Record<
-    string,
-    Record<string, unknown>
-  >;
-  const file = fileNamed(`${workload}.json`) as {
-    groups: { id: string; title: string; purpose: string; flags: unknown[] }[];
-  };
-  return file.groups.map((g) => ({
-    id: g.id,
-    title: g.title,
-    purpose: g.purpose,
-    flags: g.flags.map((entry) => {
-      const { name, ...override } =
-        typeof entry === "string" ? { name: entry } : (entry as FileFlag);
-      return { name, ...catalog[name], ...override } as FileFlag;
-    }),
-  }));
-}
-
-// The browser's view of a flag in the files' terms. The files give region and
-// hostname their own kinds; the browser still calls both "string".
-function asFileFlag(f: FlagDef): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...f };
-  if (f.name === "region" || f.name === "endpoint-hostname")
-    out.kind = "string";
-  return out;
-}
-function withoutFileOnly(f: FileFlag): Record<string, unknown> {
-  const { alwaysPass, ...rest } = f;
-  void alwaysPass; // server-only: whether runs pass the default when unset
-  const kind =
-    rest.kind === "region" || rest.kind === "hostname" ? "string" : rest.kind;
-  return { ...rest, kind };
-}
 
 // Flag names spt run registers: runCmd.Flags().X(...) in run.go, plus the
 // helpers run.go calls with runCmd.Flags() (bucket sets, endpoint selection).
@@ -159,19 +106,50 @@ describe("expert flag schema", () => {
     }
   });
 
-  it.each(workloads)(
-    "%s matches the shared flag files the server reads",
-    (w) => {
-      const files = fileGroups(w);
-      expect(files.length, "workload file found").toBeGreaterThan(0);
-      expect(flagGroups[w].map((g) => [g.id, g.title, g.purpose])).toEqual(
-        files.map((g) => [g.id, g.title, g.purpose]),
-      );
-      expect(flagsFor(w).map(asFileFlag)).toEqual(
-        files.flatMap((g) => g.flags).map(withoutFileOnly),
-      );
-    },
-  );
+  it("builds each workload from the shared flag files", () => {
+    // The sections come in each workload file's order.
+    expect(flagGroups.mock.map((g) => g.id)).toEqual([
+      "run-size",
+      "cleanup",
+      "distribution",
+    ]);
+    // A workload's own fields are laid over the catalog's definition.
+    const cleanup = (w: Workload) => findFlag(w, "cleanup")!;
+    expect(cleanup("write-verify")).toMatchObject({
+      label: "Clean up verified objects",
+      default: true,
+    });
+    expect(cleanup("write")).toMatchObject({
+      label: "Clean up written objects",
+      default: true,
+    });
+    expect(cleanup("mock")).toMatchObject({
+      label: "Add a delete phase",
+      default: false,
+    });
+    // Everything else comes from the catalog unchanged.
+    expect(findFlag("write", "checksum")).toEqual(
+      findFlag("write-verify", "checksum"),
+    );
+    expect(findFlag("write", "region")?.kind).toBe("region");
+    expect(findFlag("write", "endpoint-hostname")?.kind).toBe("hostname");
+    // alwaysPass is for the server only.
+    expect(findFlag("write-verify", "cleanup")).not.toHaveProperty(
+      "alwaysPass",
+    );
+  });
+
+  it.each(workloads)("%s core defaults match the run defaults", (w) => {
+    const core = Object.fromEntries(
+      flagGroups[w][0].flags.map((f) => [f.core, f.default]),
+    );
+    expect(core).toEqual({
+      object_count: String(defaults.object_count),
+      object_size: defaults.object_size,
+      threads: String(defaults.threads),
+      max_runtime_seconds: String(defaults.max_runtime_seconds),
+    });
+  });
 
   it("lists exactly the flags spt run registers", () => {
     const registered = registeredRunFlags();

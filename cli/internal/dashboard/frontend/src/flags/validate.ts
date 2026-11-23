@@ -97,13 +97,13 @@ export function validateFlagValue(f: FlagDef, value: FlagValue): string | null {
       return f.options?.includes(v)
         ? null
         : `Choose one of: ${f.options?.join(", ")}.`;
+    case "region":
+      return regionPattern.test(v)
+        ? null
+        : "Use lowercase letters, digits and hyphens, e.g. us-east-1.";
+    case "hostname":
+      return hostnamePattern.test(v) ? null : "Enter a valid hostname.";
     case "string":
-      if (f.name === "region")
-        return regionPattern.test(v)
-          ? null
-          : "Use lowercase letters, digits and hyphens, e.g. us-east-1.";
-      if (f.name === "endpoint-hostname")
-        return hostnamePattern.test(v) ? null : "Enter a valid hostname.";
       return /\s/.test(v) || v.length > 255 ? "Enter a single word." : null;
   }
 }

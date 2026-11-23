@@ -1,8 +1,8 @@
-// Expert-mode flag schema for the workloads the dashboard runs today.
-// The dashboard server applies only the four core settings; every other flag
-// here is preview-only: kept in the browser, saved in profiles and shown in
-// the CLI preview, never sent with a run request.
-import { defaults } from "../config";
+// Expert-mode flag schema for the workloads the dashboard runs today. The
+// flags themselves come from the JSON files the dashboard server also reads
+// (server/expertflags/, see its README): flags.json defines each flag once, and
+// each <workload>.json lists that workload's sections, with the few fields
+// that differ for it. This module checks those files and builds flagGroups.
 import type { Driver, Options } from "../types";
 
 export type Workload = "write-verify" | "write" | "mock";
@@ -39,7 +39,15 @@ export const workloadRequest = (
       : {};
 
 export type FlagKind =
-  "int" | "float" | "bool" | "size" | "duration" | "enum" | "string";
+  | "int"
+  | "float"
+  | "bool"
+  | "size"
+  | "duration"
+  | "enum"
+  | "region"
+  | "hostname"
+  | "string";
 export type FlagValue = string | boolean;
 export type CoreField = Exclude<
   keyof Options,
@@ -68,330 +76,115 @@ export type GroupDef = {
   flags: readonly FlagDef[];
 };
 
-const runSize: GroupDef = {
-  id: "run-size",
-  title: "Run size & limits",
-  purpose: "How much work the run does and how long it may take.",
-  flags: [
-    {
-      name: "object-count",
-      short: "n",
-      kind: "int",
-      label: "Maximum objects",
-      help: "Stop after this many objects.",
-      default: String(defaults.object_count),
-      core: "object_count",
-    },
-    {
-      name: "object-size",
-      short: "o",
-      kind: "size",
-      label: "Object size",
-      help: "Size of each object, in KiB, MiB or GiB.",
-      default: defaults.object_size,
-      core: "object_size",
-    },
-    {
-      name: "threads",
-      short: "t",
-      kind: "int",
-      label: "Threads / client",
-      help: "Parallel client threads on each client machine.",
-      default: String(defaults.threads),
-      core: "threads",
-    },
-    {
-      name: "auto-terminate-seconds",
-      kind: "int",
-      label: "Safety limit (seconds)",
-      help: "Stop the run after this many seconds, even if objects remain.",
-      default: String(defaults.max_runtime_seconds),
-      core: "max_runtime_seconds",
-    },
-  ],
-};
+// The shared flag files, bundled into the page at build time.
+const flagFiles = import.meta.glob("../../../server/expertflags/*.json", {
+  import: "default",
+  eager: true,
+}) as Record<string, unknown>;
 
-const distribution: GroupDef = {
-  id: "distribution",
-  title: "Distribution & engine",
-  purpose: "How the client machines and the SPT engine share the load.",
-  flags: [
-    {
-      name: "min-hosts",
-      kind: "int",
-      label: "Minimum client machines",
-      help: "Start when at least this many machines connect. 0 requires all of them.",
-      default: "0",
-      min: 0,
-      max: 8,
-    },
-    {
-      name: "service-threads",
-      kind: "int",
-      label: "Engine service threads",
-      help: "Carrier threads for the engine's virtual threads. Empty uses the dashboard default, the thread count.",
-      default: "",
-      min: 1,
-      max: 1024,
-    },
-  ],
-};
-
-const writeVerifyGroups: readonly GroupDef[] = [
-  runSize,
-  {
-    id: "object-data",
-    title: "Object data",
-    purpose:
-      "What the written bytes look like to compression, dedup and checksums.",
-    flags: [
-      {
-        name: "object-data-compressibility",
-        kind: "float",
-        label: "Compressibility (%)",
-        help: "Share of each 4 KB chunk that is zero-filled. 0 is fully random.",
-        default: "0",
-        min: 0,
-        max: 100,
-      },
-      {
-        name: "object-data-dedupable",
-        kind: "bool",
-        label: "Allow deduplication",
-        help: "Off stamps every 4 KB with a unique header so storage cannot dedupe it.",
-        default: true,
-      },
-      {
-        name: "checksum",
-        kind: "enum",
-        label: "S3 checksum",
-        help: "Ask S3 to check each upload with this checksum algorithm. Off sends no checksum.",
-        default: "",
-        options: ["crc32", "crc32c", "sha1", "sha256", "crc64-nvme"],
-      },
-    ],
-  },
-  {
-    id: "multipart",
-    title: "Multipart upload",
-    purpose:
-      "Upload large objects in parts, with their own concurrency limits.",
-    flags: [
-      {
-        name: "part-size",
-        kind: "size",
-        label: "Part size",
-        help: "Upload each object in parts of this size. Empty sends each object in one request; must be smaller than the object size.",
-        default: "",
-      },
-      {
-        name: "mpu-concurrent-objects",
-        kind: "int",
-        label: "Concurrent multipart objects",
-        help: "How many objects may upload in parts at the same time. 0 is unlimited; needs a part size.",
-        default: "0",
-        min: 0,
-        max: 1024,
-      },
-      {
-        name: "mpu-concurrent-parts",
-        kind: "int",
-        label: "Concurrent parts per object",
-        help: "How many parts of one object upload at the same time. 0 is unlimited; needs a part size.",
-        default: "0",
-        min: 0,
-        max: 1024,
-      },
-    ],
-  },
-  {
-    id: "verification",
-    title: "Verification & cleanup",
-    purpose:
-      "When objects are read back, how failures are reported and what is removed.",
-    flags: [
-      {
-        name: "defer-verification",
-        kind: "bool",
-        label: "Defer verification",
-        help: "Stop after writing and verify later with read-verify. Not allowed with cleanup.",
-        default: false,
-      },
-      {
-        name: "cleanup",
-        kind: "bool",
-        label: "Clean up verified objects",
-        help: "Delete each successfully verified object after the run.",
-        default: true,
-      },
-      {
-        name: "integrity-max-console-failures",
-        kind: "int",
-        label: "Failure samples shown",
-        help: "Corruption samples printed to the console. 0 hides them.",
-        default: "20",
-        min: 0,
-        max: 10000,
-      },
-      {
-        name: "integrity-runtime-identity-tier",
-        kind: "enum",
-        label: "Engine identity check",
-        help: "Image proves one engine image across machines; payload also compares its files.",
-        default: "image",
-        options: ["image", "payload"],
-      },
-    ],
-  },
-  {
-    id: "key-layout",
-    title: "Key layout",
-    purpose: "How object keys are spread across prefix directories.",
-    flags: [
-      {
-        name: "prefix-shards",
-        kind: "int",
-        label: "Prefix shards",
-        help: "How many prefix directories object keys are spread over. -1 picks a count from the concurrency; 0 keeps keys flat.",
-        default: "-1",
-        min: -1,
-        max: 65536,
-      },
-    ],
-  },
-  {
-    id: "protocol",
-    title: "Protocol & driver",
-    purpose: "Which S3 client SPT uses and how it signs requests.",
-    flags: [
-      {
-        name: "s3-driver",
-        kind: "enum",
-        label: "S3 driver",
-        help: "Default is SPT's Netty driver; aws uses the AWS SDK.",
-        default: "default",
-        options: ["default", "aws"],
-      },
-      {
-        name: "auth-version",
-        kind: "enum",
-        label: "Signature version",
-        help: "Which S3 signature version signs each request. Version 4 is the current standard.",
-        default: "4",
-        options: ["2", "4"],
-      },
-      {
-        name: "region",
-        kind: "string",
-        label: "Region",
-        help: "AWS region for requests. Empty keeps the engine's selection.",
-        default: "",
-      },
-    ],
-  },
-  {
-    id: "endpoint-routing",
-    title: "Endpoint routing",
-    purpose: "Which address each request connects to. Netty driver only.",
-    flags: [
-      {
-        name: "endpoint-selection",
-        kind: "enum",
-        label: "Endpoint selection",
-        help: "Round-robin rotates over the endpoint's IPv4 addresses; per-request DNS resolves its hostname each time.",
-        default: "default",
-        options: ["default", "round-robin", "per-request-dns"],
-      },
-      {
-        name: "endpoint-hostname",
-        kind: "string",
-        label: "Logical hostname",
-        help: "Round-robin only: hostname for the Host header, signing and TLS SNI.",
-        default: "",
-      },
-      {
-        name: "dns-timeout",
-        kind: "duration",
-        label: "DNS timeout",
-        help: "How long one DNS lookup may take with per-request DNS. Empty uses 5s.",
-        default: "",
-      },
-      {
-        name: "endpoint-connect-timeout",
-        kind: "duration",
-        label: "Connect timeout",
-        help: "How long a TCP connect may take with round-robin or per-request DNS. Empty uses 30s.",
-        default: "",
-      },
-      {
-        name: "slice-endpoints",
-        kind: "bool",
-        label: "Slice endpoints across machines",
-        help: "Give each client machine its own share of the endpoints.",
-        default: false,
-      },
-    ],
-  },
-  distribution,
-  {
-    id: "results",
-    title: "Results",
-    purpose: "Extra artifacts saved with the run's results.",
-    flags: [
-      {
-        name: "save-items",
-        kind: "bool",
-        label: "Save item list",
-        help: "Save items.csv with every created object. Can be large.",
-        default: false,
-      },
-    ],
-  },
+const flagKinds: readonly FlagKind[] = [
+  "int",
+  "float",
+  "bool",
+  "size",
+  "duration",
+  "enum",
+  "region",
+  "hostname",
+  "string",
+];
+const coreFields: readonly CoreField[] = [
+  "object_count",
+  "object_size",
+  "threads",
+  "max_runtime_seconds",
 ];
 
-// spt run write rejects the verification-only flags (defer-verification and the
-// integrity flags), so write keeps only cleanup from that group.
-const writeCleanup: GroupDef = {
-  id: "cleanup",
-  title: "Cleanup",
-  purpose: "What is removed after the run.",
-  flags: [
-    {
-      name: "cleanup",
-      kind: "bool",
-      label: "Clean up written objects",
-      help: "Delete each written object after the run. Off leaves them under the run's own prefix.",
-      default: true,
-    },
-  ],
-};
-const writeGroups: readonly GroupDef[] = writeVerifyGroups.map((g) =>
-  g.id === "verification" ? writeCleanup : g,
-);
+type Json = Record<string, unknown>;
+const isRecord = (v: unknown): v is Json =>
+  !!v && typeof v === "object" && !Array.isArray(v);
 
-const mockGroups: readonly GroupDef[] = [
-  runSize,
-  {
-    id: "cleanup",
-    title: "Cleanup",
-    purpose: "Add a mock delete phase after the create phase.",
-    flags: [
-      {
-        name: "cleanup",
-        kind: "bool",
-        label: "Add a delete phase",
-        help: "Exercise the delete step of the pipeline after creating objects.",
-        default: false,
-      },
-    ],
-  },
-  distribution,
-];
+function flagFile(name: string): unknown {
+  const entry = Object.entries(flagFiles).find(([path]) =>
+    path.endsWith(`/${name}`),
+  );
+  if (!entry) throw new Error(`Expert flag file ${name} is missing.`);
+  return entry[1];
+}
+
+// One flag as the files describe it, checked and typed. alwaysPass is the
+// server's business (whether runs pass the default when unset), so it is dropped.
+function toFlagDef(name: string, raw: Json, where: string): FlagDef {
+  const fail = (why: string): never => {
+    throw new Error(`${where}: --${name} ${why}`);
+  };
+  const { kind, short, core, label, help, min, max, options } = raw;
+  const value = raw.default;
+  if (!flagKinds.includes(kind as FlagKind))
+    fail(`has unknown kind ${String(kind)}`);
+  if (typeof label !== "string" || typeof help !== "string")
+    fail("needs a label and help text");
+  if (typeof value !== "string" && typeof value !== "boolean")
+    fail("needs a text or true/false default");
+  const f: FlagDef = {
+    name,
+    kind: kind as FlagKind,
+    label: label as string,
+    help: help as string,
+    default: value as FlagValue,
+  };
+  if (short !== undefined)
+    f.short = typeof short === "string" ? short : fail("has a bad short form");
+  if (core !== undefined)
+    f.core = coreFields.includes(core as CoreField)
+      ? (core as CoreField)
+      : fail("names an unknown core field");
+  if (min !== undefined)
+    f.min = typeof min === "number" ? min : fail("has a non-numeric min");
+  if (max !== undefined)
+    f.max = typeof max === "number" ? max : fail("has a non-numeric max");
+  if (options !== undefined)
+    f.options =
+      Array.isArray(options) && options.every((o) => typeof o === "string")
+        ? options
+        : fail("needs a list of text options");
+  return f;
+}
+
+// A workload's sections: each entry's catalog definition, with the workload's
+// own fields (an entry like {"name": "cleanup", "default": false}) laid over it.
+function loadGroups(workload: Workload): GroupDef[] {
+  const where = `${workload}.json`;
+  const catalog = flagFile("flags.json");
+  const file = flagFile(where);
+  if (!isRecord(catalog) || !isRecord(file) || file.workload !== workload)
+    throw new Error(`${where} does not describe the ${workload} workload.`);
+  if (!Array.isArray(file.groups)) throw new Error(`${where} has no groups.`);
+  return file.groups.map((g: unknown) => {
+    if (!isRecord(g) || !Array.isArray(g.flags))
+      throw new Error(`${where} has a malformed group.`);
+    return {
+      id: String(g.id),
+      title: String(g.title),
+      purpose: String(g.purpose),
+      flags: g.flags.map((entry: unknown) => {
+        const { name, ...override } =
+          typeof entry === "string" ? { name: entry } : (entry as Json);
+        const base = catalog[String(name)];
+        if (!isRecord(base))
+          throw new Error(`${where}: --${String(name)} is not in flags.json.`);
+        const { alwaysPass, ...merged } = { ...base, ...override };
+        void alwaysPass;
+        return toFlagDef(String(name), merged, where);
+      }),
+    };
+  });
+}
 
 export const flagGroups: Record<Workload, readonly GroupDef[]> = {
-  "write-verify": writeVerifyGroups,
-  write: writeGroups,
-  mock: mockGroups,
+  "write-verify": loadGroups("write-verify"),
+  write: loadGroups("write"),
+  mock: loadGroups("mock"),
 };
 
 export function flagsFor(workload: Workload): FlagDef[] {
@@ -417,7 +210,7 @@ export function advancedDefaults(
 }
 
 // Workloads whose expert flags the dashboard server applies to runs
-// (server/expert_flags.go). Other workloads' flags are preview-only: shown in
+// (server/expertflags/). Other workloads' flags are preview-only: shown in
 // the CLI preview and saved in profiles, never sent with a run.
 export const appliedWorkloads: ReadonlySet<Workload> = new Set<Workload>([
   "write-verify",

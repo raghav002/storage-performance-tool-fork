@@ -465,6 +465,23 @@ describe("expert flag groups", () => {
     );
   });
 
+  it("keeps a switch flag's name hoverable above the switch", async () => {
+    renderExpert();
+    await openGroup("Object data");
+    const toggle = await dedupe();
+    // Mantine's Switch stretches its invisible input over the whole control,
+    // label included. jsdom does no layout, so check the name is lifted above
+    // it; in a browser that is what lets the pointer reach the name.
+    const name = toggle.closest("label")!.querySelector("[data-flag-help]")!;
+    expect(name.textContent).toBe("Allow deduplication");
+    expect(name.classList.contains("relative")).toBe(true);
+    expect(name.classList.contains("z-1")).toBe(true);
+    fireEvent.mouseEnter(name);
+    expect((await screen.findByRole("tooltip")).textContent).toMatch(
+      /^Off stamps every 4 KB/,
+    );
+  });
+
   it("describes the four core settings the same way", async () => {
     renderExpert();
     const name = screen

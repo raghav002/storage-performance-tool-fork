@@ -9,11 +9,11 @@ import (
 	"time"
 )
 
-// Expert runs may set the spt run flags below, and only these. The browser's
-// flag schema (frontend/src/flags/schema.ts) offers the same flags, but this
-// allow-list is the authority: anything else is rejected before SPT starts.
-// Credentials, endpoints, buckets, hosts, paths, the image, engine overrides,
-// ports, RDMA, NIC sets and --duration are never accepted.
+// Expert runs may set only the spt run flags listed in expertflags/ (loaded by
+// expert_flag_catalog.go), the same files the browser reads. This allow-list is
+// the authority: anything else is rejected before SPT starts. Credentials,
+// endpoints, buckets, hosts, paths, the image, engine overrides, ports, RDMA,
+// NIC sets and --duration are never accepted, because no file lists them.
 
 type flagKind int
 
@@ -48,78 +48,10 @@ var (
 
 const maxFlagDuration = 5 * time.Minute
 
-// writeVerifyFlags are the flags of `spt run write-verify` that expert runs may
-// set, in the order they are passed to SPT.
-var writeVerifyFlags = []expertFlag{
-	{name: "object-data-compressibility", kind: flagFloat, min: 0, max: 100, dashboard: "0"},
-	{name: "object-data-dedupable", kind: flagBool, dashboard: "true"},
-	{name: "checksum", kind: flagEnum, options: []string{"crc32", "crc32c", "sha1", "sha256", "crc64-nvme"}},
-	{name: "part-size", kind: flagSize},
-	{name: "mpu-concurrent-objects", kind: flagInt, min: 0, max: 1024},
-	{name: "mpu-concurrent-parts", kind: flagInt, min: 0, max: 1024},
-	{name: "defer-verification", kind: flagBool},
-	{name: "cleanup", kind: flagBool, dashboard: "true"},
-	{name: "integrity-max-console-failures", kind: flagInt, min: 0, max: 10000},
-	{name: "integrity-runtime-identity-tier", kind: flagEnum, options: []string{"image", "payload"}},
-	{name: "prefix-shards", kind: flagInt, min: -1, max: 65536},
-	{name: "s3-driver", kind: flagEnum, options: []string{"default", "aws"}, dashboard: "default"},
-	{name: "auth-version", kind: flagEnum, options: []string{"2", "4"}, dashboard: "4"},
-	{name: "region", kind: flagRegion},
-	{name: "endpoint-selection", kind: flagEnum, options: []string{"default", "round-robin", "per-request-dns"}},
-	{name: "endpoint-hostname", kind: flagHostname},
-	{name: "dns-timeout", kind: flagDuration},
-	{name: "endpoint-connect-timeout", kind: flagDuration},
-	{name: "slice-endpoints", kind: flagBool},
-	{name: "min-hosts", kind: flagInt, min: 0, max: maxHosts},
-	{name: "service-threads", kind: flagInt, min: 1, max: 1024},
-	{name: "save-items", kind: flagBool},
-}
-
-// writeFlags are the flags of `spt run write` that expert runs may set: the
-// write-verify flags without the verification-only ones (defer-verification
-// and the integrity flags), which spt run rejects for write.
-var writeFlags = []expertFlag{
-	{name: "object-data-compressibility", kind: flagFloat, min: 0, max: 100, dashboard: "0"},
-	{name: "object-data-dedupable", kind: flagBool, dashboard: "true"},
-	{name: "checksum", kind: flagEnum, options: []string{"crc32", "crc32c", "sha1", "sha256", "crc64-nvme"}},
-	{name: "part-size", kind: flagSize},
-	{name: "mpu-concurrent-objects", kind: flagInt, min: 0, max: 1024},
-	{name: "mpu-concurrent-parts", kind: flagInt, min: 0, max: 1024},
-	{name: "cleanup", kind: flagBool, dashboard: "true"},
-	{name: "prefix-shards", kind: flagInt, min: -1, max: 65536},
-	{name: "s3-driver", kind: flagEnum, options: []string{"default", "aws"}, dashboard: "default"},
-	{name: "auth-version", kind: flagEnum, options: []string{"2", "4"}, dashboard: "4"},
-	{name: "region", kind: flagRegion},
-	{name: "endpoint-selection", kind: flagEnum, options: []string{"default", "round-robin", "per-request-dns"}},
-	{name: "endpoint-hostname", kind: flagHostname},
-	{name: "dns-timeout", kind: flagDuration},
-	{name: "endpoint-connect-timeout", kind: flagDuration},
-	{name: "slice-endpoints", kind: flagBool},
-	{name: "min-hosts", kind: flagInt, min: 0, max: maxHosts},
-	{name: "service-threads", kind: flagInt, min: 1, max: 1024},
-	{name: "save-items", kind: flagBool},
-}
-
-// mockFlags are the flags of `spt run mock` that expert runs may set. Dashboard
-// mock runs pass no --cleanup, so the delete phase is off unless set.
-var mockFlags = []expertFlag{
-	{name: "cleanup", kind: flagBool},
-	{name: "min-hosts", kind: flagInt, min: 0, max: maxHosts},
-	{name: "service-threads", kind: flagInt, min: 1, max: 1024},
-}
-
-// expertFlagsFor returns the flags a workload accepts, or nil when the
-// workload takes no expert flags.
+// expertFlagsFor returns the flags a workload accepts, in the order they are
+// passed to SPT, or nil when the workload takes no expert flags.
 func expertFlagsFor(workload string) []expertFlag {
-	switch workload {
-	case driverWriteVerify:
-		return writeVerifyFlags
-	case workloadWrite:
-		return writeFlags
-	case driverMock:
-		return mockFlags
-	}
-	return nil
+	return expertFlagLists[workload]
 }
 
 func findExpertFlag(flags []expertFlag, name string) (expertFlag, bool) {

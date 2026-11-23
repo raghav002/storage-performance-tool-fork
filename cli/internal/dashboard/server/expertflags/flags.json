@@ -1,0 +1,208 @@
+{
+  "object-count": {
+    "kind": "int",
+    "short": "n",
+    "core": "object_count",
+    "label": "Maximum objects",
+    "help": "Stop after this many objects.",
+    "default": "100"
+  },
+  "object-size": {
+    "kind": "size",
+    "short": "o",
+    "core": "object_size",
+    "label": "Object size",
+    "help": "Size of each object, in KiB, MiB or GiB.",
+    "default": "64KiB"
+  },
+  "threads": {
+    "kind": "int",
+    "short": "t",
+    "core": "threads",
+    "label": "Threads / client",
+    "help": "Parallel client threads on each client machine.",
+    "default": "1"
+  },
+  "auto-terminate-seconds": {
+    "kind": "int",
+    "core": "max_runtime_seconds",
+    "label": "Safety limit (seconds)",
+    "help": "Stop the run after this many seconds, even if objects remain.",
+    "default": "60"
+  },
+  "object-data-compressibility": {
+    "kind": "float",
+    "label": "Compressibility (%)",
+    "help": "Share of each 4 KB chunk that is zero-filled. 0 is fully random.",
+    "default": "0",
+    "min": 0,
+    "max": 100,
+    "alwaysPass": true
+  },
+  "object-data-dedupable": {
+    "kind": "bool",
+    "label": "Allow deduplication",
+    "help": "Off stamps every 4 KB with a unique header so storage cannot dedupe it.",
+    "default": true,
+    "alwaysPass": true
+  },
+  "checksum": {
+    "kind": "enum",
+    "label": "S3 checksum",
+    "help": "Ask S3 to check each upload with this checksum algorithm. Off sends no checksum.",
+    "default": "",
+    "options": [
+      "crc32",
+      "crc32c",
+      "sha1",
+      "sha256",
+      "crc64-nvme"
+    ]
+  },
+  "part-size": {
+    "kind": "size",
+    "label": "Part size",
+    "help": "Upload each object in parts of this size. Empty sends each object in one request; must be smaller than the object size.",
+    "default": ""
+  },
+  "mpu-concurrent-objects": {
+    "kind": "int",
+    "label": "Concurrent multipart objects",
+    "help": "How many objects may upload in parts at the same time. 0 is unlimited; needs a part size.",
+    "default": "0",
+    "min": 0,
+    "max": 1024
+  },
+  "mpu-concurrent-parts": {
+    "kind": "int",
+    "label": "Concurrent parts per object",
+    "help": "How many parts of one object upload at the same time. 0 is unlimited; needs a part size.",
+    "default": "0",
+    "min": 0,
+    "max": 1024
+  },
+  "defer-verification": {
+    "kind": "bool",
+    "label": "Defer verification",
+    "help": "Stop after writing and verify later with read-verify. Not allowed with cleanup.",
+    "default": false
+  },
+  "cleanup": {
+    "kind": "bool",
+    "label": "Clean up verified objects",
+    "help": "Delete each successfully verified object after the run.",
+    "default": true,
+    "alwaysPass": true
+  },
+  "integrity-max-console-failures": {
+    "kind": "int",
+    "label": "Failure samples shown",
+    "help": "Corruption samples printed to the console. 0 hides them.",
+    "default": "20",
+    "min": 0,
+    "max": 10000
+  },
+  "integrity-runtime-identity-tier": {
+    "kind": "enum",
+    "label": "Engine identity check",
+    "help": "Image proves one engine image across machines; payload also compares its files.",
+    "default": "image",
+    "options": [
+      "image",
+      "payload"
+    ]
+  },
+  "prefix-shards": {
+    "kind": "int",
+    "label": "Prefix shards",
+    "help": "How many prefix directories object keys are spread over. -1 picks a count from the concurrency; 0 keeps keys flat.",
+    "default": "-1",
+    "min": -1,
+    "max": 65536
+  },
+  "s3-driver": {
+    "kind": "enum",
+    "label": "S3 driver",
+    "help": "Default is SPT's Netty driver; aws uses the AWS SDK.",
+    "default": "default",
+    "options": [
+      "default",
+      "aws"
+    ],
+    "alwaysPass": true
+  },
+  "auth-version": {
+    "kind": "enum",
+    "label": "Signature version",
+    "help": "Which S3 signature version signs each request. Version 4 is the current standard.",
+    "default": "4",
+    "options": [
+      "2",
+      "4"
+    ],
+    "alwaysPass": true
+  },
+  "region": {
+    "kind": "region",
+    "label": "Region",
+    "help": "AWS region for requests. Empty keeps the engine's selection.",
+    "default": ""
+  },
+  "endpoint-selection": {
+    "kind": "enum",
+    "label": "Endpoint selection",
+    "help": "Round-robin rotates over the endpoint's IPv4 addresses; per-request DNS resolves its hostname each time.",
+    "default": "default",
+    "options": [
+      "default",
+      "round-robin",
+      "per-request-dns"
+    ]
+  },
+  "endpoint-hostname": {
+    "kind": "hostname",
+    "label": "Logical hostname",
+    "help": "Round-robin only: hostname for the Host header, signing and TLS SNI.",
+    "default": ""
+  },
+  "dns-timeout": {
+    "kind": "duration",
+    "label": "DNS timeout",
+    "help": "How long one DNS lookup may take with per-request DNS. Empty uses 5s.",
+    "default": ""
+  },
+  "endpoint-connect-timeout": {
+    "kind": "duration",
+    "label": "Connect timeout",
+    "help": "How long a TCP connect may take with round-robin or per-request DNS. Empty uses 30s.",
+    "default": ""
+  },
+  "slice-endpoints": {
+    "kind": "bool",
+    "label": "Slice endpoints across machines",
+    "help": "Give each client machine its own share of the endpoints.",
+    "default": false
+  },
+  "min-hosts": {
+    "kind": "int",
+    "label": "Minimum client machines",
+    "help": "Start when at least this many machines connect. 0 requires all of them.",
+    "default": "0",
+    "min": 0,
+    "max": 8
+  },
+  "service-threads": {
+    "kind": "int",
+    "label": "Engine service threads",
+    "help": "Carrier threads for the engine's virtual threads. Empty uses the dashboard default, the thread count.",
+    "default": "",
+    "min": 1,
+    "max": 1024
+  },
+  "save-items": {
+    "kind": "bool",
+    "label": "Save item list",
+    "help": "Save items.csv with every created object. Can be large.",
+    "default": false
+  }
+}

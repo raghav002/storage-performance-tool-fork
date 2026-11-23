@@ -1,0 +1,94 @@
+{
+  "workload": "write-verify",
+  "groups": [
+    {
+      "id": "run-size",
+      "title": "Run size & limits",
+      "purpose": "How much work the run does and how long it may take.",
+      "flags": [
+        "object-count",
+        "object-size",
+        "threads",
+        "auto-terminate-seconds"
+      ]
+    },
+    {
+      "id": "object-data",
+      "title": "Object data",
+      "purpose": "What the written bytes look like to compression, dedup and checksums.",
+      "flags": [
+        "object-data-compressibility",
+        "object-data-dedupable",
+        "checksum"
+      ]
+    },
+    {
+      "id": "multipart",
+      "title": "Multipart upload",
+      "purpose": "Upload large objects in parts, with their own concurrency limits.",
+      "flags": [
+        "part-size",
+        "mpu-concurrent-objects",
+        "mpu-concurrent-parts"
+      ]
+    },
+    {
+      "id": "verification",
+      "title": "Verification & cleanup",
+      "purpose": "When objects are read back, how failures are reported and what is removed.",
+      "flags": [
+        "defer-verification",
+        "cleanup",
+        "integrity-max-console-failures",
+        "integrity-runtime-identity-tier"
+      ]
+    },
+    {
+      "id": "key-layout",
+      "title": "Key layout",
+      "purpose": "How object keys are spread across prefix directories.",
+      "flags": [
+        "prefix-shards"
+      ]
+    },
+    {
+      "id": "protocol",
+      "title": "Protocol & driver",
+      "purpose": "Which S3 client SPT uses and how it signs requests.",
+      "flags": [
+        "s3-driver",
+        "auth-version",
+        "region"
+      ]
+    },
+    {
+      "id": "endpoint-routing",
+      "title": "Endpoint routing",
+      "purpose": "Which address each request connects to. Netty driver only.",
+      "flags": [
+        "endpoint-selection",
+        "endpoint-hostname",
+        "dns-timeout",
+        "endpoint-connect-timeout",
+        "slice-endpoints"
+      ]
+    },
+    {
+      "id": "distribution",
+      "title": "Distribution & engine",
+      "purpose": "How the client machines and the SPT engine share the load.",
+      "flags": [
+        "min-hosts",
+        "service-threads"
+      ]
+    },
+    {
+      "id": "results",
+      "title": "Results",
+      "purpose": "Extra artifacts saved with the run's results.",
+      "flags": [
+        "save-items"
+      ]
+    }
+  ]
+}

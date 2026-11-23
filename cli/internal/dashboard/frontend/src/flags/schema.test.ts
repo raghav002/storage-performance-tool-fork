@@ -22,37 +22,59 @@ const goSources = import.meta.glob("../../../../../cmd/*.go", {
   eager: true,
 }) as Record<string, string>;
 
-// The dashboard server's own expert-flag allow-list, read at test time.
-const serverFlagsSource = Object.values(
-  import.meta.glob("../../../server/expert_flags.go", {
-    query: "?raw",
-    import: "default",
-    eager: true,
-  }) as Record<string, string>,
-)[0];
+// The shared flag files the dashboard server builds its allow-lists from
+// (server/expertflags/), read at test time.
+const flagFiles = import.meta.glob("../../../server/expertflags/*.json", {
+  import: "default",
+  eager: true,
+}) as Record<string, unknown>;
+const fileNamed = (name: string) =>
+  Object.entries(flagFiles).find(([path]) => path.endsWith(`/${name}`))?.[1];
 
-// Each workload's allow-list in expert_flags.go: name -> [min, max] for
-// numeric flags, or null for the others. maxHosts is the server's 8 machines.
-function serverAllowList(
-  workload: Workload,
-): Map<string, [number, number] | null> {
-  const variable = {
-    "write-verify": "writeVerifyFlags",
-    write: "writeFlags",
-    mock: "mockFlags",
-  }[workload];
-  const block = new RegExp(
-    `var ${variable} = \\[\\]expertFlag\\{([\\s\\S]*?)\\n\\}`,
-  ).exec(serverFlagsSource)?.[1];
-  const out = new Map<string, [number, number] | null>();
-  for (const line of (block ?? "").split("\n")) {
-    const name = /name: "([^"]+)"/.exec(line)?.[1];
-    if (!name) continue;
-    const range = /min: (-?\d+), max: (\w+)/.exec(line);
-    const max = range?.[2] === "maxHosts" ? 8 : Number(range?.[2]);
-    out.set(name, range ? [Number(range[1]), max] : null);
-  }
+type FileFlag = Record<string, unknown> & { name: string };
+type FileGroup = {
+  id: string;
+  title: string;
+  purpose: string;
+  flags: FileFlag[];
+};
+
+// A workload's sections as the shared files describe them: each entry's
+// catalog definition with the workload's own fields laid over it.
+function fileGroups(workload: Workload): FileGroup[] {
+  const catalog = fileNamed("flags.json") as Record<
+    string,
+    Record<string, unknown>
+  >;
+  const file = fileNamed(`${workload}.json`) as {
+    groups: { id: string; title: string; purpose: string; flags: unknown[] }[];
+  };
+  return file.groups.map((g) => ({
+    id: g.id,
+    title: g.title,
+    purpose: g.purpose,
+    flags: g.flags.map((entry) => {
+      const { name, ...override } =
+        typeof entry === "string" ? { name: entry } : (entry as FileFlag);
+      return { name, ...catalog[name], ...override } as FileFlag;
+    }),
+  }));
+}
+
+// The browser's view of a flag in the files' terms. The files give region and
+// hostname their own kinds; the browser still calls both "string".
+function asFileFlag(f: FlagDef): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...f };
+  if (f.name === "region" || f.name === "endpoint-hostname")
+    out.kind = "string";
   return out;
+}
+function withoutFileOnly(f: FileFlag): Record<string, unknown> {
+  const { alwaysPass, ...rest } = f;
+  void alwaysPass; // server-only: whether runs pass the default when unset
+  const kind =
+    rest.kind === "region" || rest.kind === "hostname" ? "string" : rest.kind;
+  return { ...rest, kind };
 }
 
 // Flag names spt run registers: runCmd.Flags().X(...) in run.go, plus the
@@ -138,16 +160,16 @@ describe("expert flag schema", () => {
   });
 
   it.each(workloads)(
-    "%s offers exactly the flags the server applies, with its ranges",
+    "%s matches the shared flag files the server reads",
     (w) => {
-      const server = serverAllowList(w);
-      expect(server.size, "allow-list found").toBeGreaterThan(0);
-      const gui = flagsFor(w).filter((f) => !f.core);
-      expect(gui.map((f) => f.name).sort()).toEqual([...server.keys()].sort());
-      for (const f of gui) {
-        const range = server.get(f.name);
-        if (range) expect([f.min, f.max], f.name).toEqual(range);
-      }
+      const files = fileGroups(w);
+      expect(files.length, "workload file found").toBeGreaterThan(0);
+      expect(flagGroups[w].map((g) => [g.id, g.title, g.purpose])).toEqual(
+        files.map((g) => [g.id, g.title, g.purpose]),
+      );
+      expect(flagsFor(w).map(asFileFlag)).toEqual(
+        files.flatMap((g) => g.flags).map(withoutFileOnly),
+      );
     },
   );
 

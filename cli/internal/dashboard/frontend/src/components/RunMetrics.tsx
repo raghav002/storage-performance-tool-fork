@@ -53,6 +53,7 @@ export function PhaseResults({
                   "IOPS",
                   "MiB/s",
                   "P50 (µs)",
+                  "P99 (µs)",
                 ].map((h, index) => (
                   <Table.Th
                     key={h}
@@ -83,6 +84,7 @@ export function PhaseResults({
                   <Table.Td ta="right">{fmt(r.iops, 2)}</Table.Td>
                   <Table.Td ta="right">{fmt(r.bandwidth_mib_s, 2)}</Table.Td>
                   <Table.Td ta="right">{fmt(r.p50_latency_us, 1)}</Table.Td>
+                  <Table.Td ta="right">{fmt(r.latency_p99_us, 1)}</Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>

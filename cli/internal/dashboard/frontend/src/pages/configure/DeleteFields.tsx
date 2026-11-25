@@ -19,7 +19,7 @@ export function initialDeleteOptions(limits: RunLimits): Options {
         ? 30
         : d.verification_timeout_seconds[0],
       max_failed_objects: d.max_failed_objects[0],
-      cleanup: false,
+      cleanup: true,
     },
   };
 }

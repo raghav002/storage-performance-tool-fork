@@ -99,81 +99,89 @@ function setup() {
   return { ...view, wrapper, started };
 }
 
-it("groups Guided Delete settings, reviews choices, and submits typed Delete options", async () => {
-  let submitted: Record<string, unknown> | undefined;
-  apiClient.defaults.adapter = async (config) => {
-    expect(config.url).toBe("/api/runs");
-    submitted = JSON.parse(config.data);
-    return {
-      data: {
-        job: { run_id: "mt-dashboard-test", status: "running" },
-        message: "Started",
-      },
-      status: 202,
-      statusText: "Accepted",
-      headers: { "content-type": "application/json" },
-      config,
+it.each([true, false])(
+  "groups Guided Delete settings, reviews choices, and submits typed Delete options with cleanup=%s",
+  async (cleanupEnabled) => {
+    let submitted: Record<string, unknown> | undefined;
+    apiClient.defaults.adapter = async (config) => {
+      expect(config.url).toBe("/api/runs");
+      submitted = JSON.parse(config.data);
+      return {
+        data: {
+          job: { run_id: "mt-dashboard-test", status: "running" },
+          message: "Started",
+        },
+        status: 202,
+        statusText: "Accepted",
+        headers: { "content-type": "application/json" },
+        config,
+      };
     };
-  };
-  const { started } = setup();
-  fireEvent.click(screen.getByRole("radio", { name: "Delete" }));
-  for (const name of [
-    "Objects",
-    "Load",
-    "Verification",
-    "Failure policy",
-    "Cleanup",
-  ])
-    expect(screen.getByRole("group", { name })).toBeTruthy();
-  expect(screen.queryByLabelText("Safety time limit")).toBeNull();
-  expect(
-    (screen.getByLabelText("Seed object size") as HTMLSelectElement).value,
-  ).toBe("1KiB");
-  fireEvent.change(screen.getByLabelText("Objects per request"), {
-    target: { value: "100" },
-  });
-  fireEvent.click(screen.getByLabelText("Check objects exist before deletion"));
-  fireEvent.click(
-    screen.getByLabelText("Check objects are absent after deletion"),
-  );
-  fireEvent.change(screen.getByLabelText("Failure budget"), {
-    target: { value: "percentage" },
-  });
-  fireEvent.change(screen.getByLabelText("Allowed failures (%)"), {
-    target: { value: "5" },
-  });
-  fireEvent.change(screen.getByLabelText("Failure budget grace (seconds)"), {
-    target: { value: "30" },
-  });
-  fireEvent.click(
-    screen.getByLabelText("Retry deletion of leftover test objects"),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Review run" }));
-  expect(screen.getByText(/Objects per request: 100/)).toBeTruthy();
-  expect(
-    screen.getByText(/Existing data is not selected.*no runtime limit/),
-  ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Start run" }));
-  await waitFor(() => expect(started).toHaveBeenCalledOnce());
-  expect(submitted).toMatchObject({
-    workload: "delete",
-    mode: "guided",
-    object_count: 10,
-    object_size: "1KiB",
-    max_runtime_seconds: 0,
-    delete: {
-      batch_size: 100,
-      validate_inventory: true,
-      verify: true,
-      max_failure_percent: 5,
-      failure_budget_grace_seconds: 30,
-      cleanup: true,
-    },
-  });
-  expect(
-    (submitted!.delete as Record<string, unknown>).max_failed_objects,
-  ).toBeUndefined();
-});
+    const { started } = setup();
+    fireEvent.click(screen.getByRole("radio", { name: "Delete" }));
+    for (const name of [
+      "Objects",
+      "Load",
+      "Verification",
+      "Failure policy",
+      "Cleanup",
+    ])
+      expect(screen.getByRole("group", { name })).toBeTruthy();
+    expect(screen.queryByLabelText("Safety time limit")).toBeNull();
+    expect(
+      (screen.getByLabelText("Seed object size") as HTMLSelectElement).value,
+    ).toBe("1KiB");
+    fireEvent.change(screen.getByLabelText("Objects per request"), {
+      target: { value: "100" },
+    });
+    fireEvent.click(
+      screen.getByLabelText("Check objects exist before deletion"),
+    );
+    fireEvent.click(
+      screen.getByLabelText("Check objects are absent after deletion"),
+    );
+    fireEvent.change(screen.getByLabelText("Failure budget"), {
+      target: { value: "percentage" },
+    });
+    fireEvent.change(screen.getByLabelText("Allowed failures (%)"), {
+      target: { value: "5" },
+    });
+    fireEvent.change(screen.getByLabelText("Failure budget grace (seconds)"), {
+      target: { value: "30" },
+    });
+    const cleanupCheckbox = screen.getByLabelText(
+      "Retry deletion of leftover test objects",
+    ) as HTMLInputElement;
+    expect(cleanupCheckbox.checked).toBe(true);
+    if (!cleanupEnabled) fireEvent.click(cleanupCheckbox);
+    expect(cleanupCheckbox.checked).toBe(cleanupEnabled);
+    fireEvent.click(screen.getByRole("button", { name: "Review run" }));
+    expect(screen.getByText(/Objects per request: 100/)).toBeTruthy();
+    expect(
+      screen.getByText(/Existing data is not selected.*no runtime limit/),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Start run" }));
+    await waitFor(() => expect(started).toHaveBeenCalledOnce());
+    expect(submitted).toMatchObject({
+      workload: "delete",
+      mode: "guided",
+      object_count: 10,
+      object_size: "1KiB",
+      max_runtime_seconds: 0,
+      delete: {
+        batch_size: 100,
+        validate_inventory: true,
+        verify: true,
+        max_failure_percent: 5,
+        failure_budget_grace_seconds: 30,
+        cleanup: cleanupEnabled,
+      },
+    });
+    expect(
+      (submitted!.delete as Record<string, unknown>).max_failed_objects,
+    ).toBeUndefined();
+  },
+);
 
 it("keeps Delete out of the Expert form and restores normal write settings", () => {
   const { rerender } = setup();
